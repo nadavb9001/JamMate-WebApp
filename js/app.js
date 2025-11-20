@@ -111,6 +111,12 @@ const app = {
         document.getElementById('btnFullscreen').onclick = () => {
             !document.fullscreenElement ? document.documentElement.requestFullscreen() : document.exitFullscreen();
         };
+        
+        // NEW: Save Preset Listener
+        document.getElementById('btnSavePreset').onclick = () => {
+            View.updateStatus('Preset Saved! (Simulation)');
+            console.log("Save Preset Triggered");
+        };
 
         window.soloEffectOpen = false;
         window.showSoloEffect = function(name, idx) {
@@ -118,7 +124,6 @@ const app = {
             const overlay = document.createElement('div'); overlay.className = 'solo-effect-overlay';
             const cont = document.createElement('div'); cont.className = 'solo-effect-container';
             
-            // RESTORED: Popup Title (CSS will hide duplicate inner title)
             cont.innerHTML = `
                 <div class="solo-effect-title">${name}</div>
                 <button class="solo-effect-close-btn" onclick="window.closeSoloEffect()">X</button>
@@ -147,7 +152,11 @@ const app = {
         document.getElementById('btnEasyMode').onclick = (e) => {
             const tab = document.getElementById('effects-tab');
             tab.classList.toggle('easy-mode');
-            e.target.style.background = tab.classList.contains('easy-mode') ? 'var(--color-accent)' : 'var(--color-bg-surface)';
+            // Update button styling to show active state
+            const isActive = tab.classList.contains('easy-mode');
+            e.target.style.background = isActive ? 'var(--color-accent)' : 'var(--color-bg-surface)';
+            e.target.style.color = isActive ? '#000' : 'var(--color-text-primary)';
+            View.updateStatus(isActive ? "Easy Mode Enabled" : "Easy Mode Disabled");
         };
     }
 };

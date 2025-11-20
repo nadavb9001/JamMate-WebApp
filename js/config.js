@@ -152,6 +152,15 @@ export const APP_CONFIG = {
         "knobs": ["level", "feedback", "damp", "dry", "wet", "freeze", "gain", "depth", "rate", "type"], 
         "dropdowns": [] 
       } 
+    },
+	{ 
+      "title": "Generic", 
+      "short_name": "Gnrc", 
+      "params": { 
+        "checkbox": "enable", 
+        "knobs": ["level", "par1", "par2", "par2", "par2", "par2", "par2", "par2", "par2", "par2"], 
+        "dropdowns": ["generic1", "generic2"]
+      } 
     }
   ],
   "dropdowns": {
@@ -168,6 +177,8 @@ export const APP_CONFIG = {
     "ovrd_brand": ["TubeScreamer", "Blues Driver", "Klon", "ODR1"],
     "eq_type": ["Neutral", "Mid Scoop", "Mid Boost", "Bass Boost", "Treble Boost"],
     "eq_freq_scale": ["100%", "75%", "50%", "125%", "150%"],
-    "division": ["1/32", "1/16", "1/16t", "1/16d", "1/8", "1/8t", "1/8d", "1/4", "1/4t", "1/4d", "1/2", "1"]
+    "division": ["1/32", "1/16", "1/16t", "1/16d", "1/8", "1/8t", "1/8d", "1/4", "1/4t", "1/4d", "1/2", "1"],
+	"generic1": ["A1", "B1", "C1", "D1", "E1"],
+	"generic2": ["A2", "B2", "C2", "D2", "E2"],
   }
 };

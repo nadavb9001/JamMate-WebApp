@@ -1,13 +1,13 @@
 export class IIRDesigner {
     constructor(canvas, qKnob, onInteract = null) {
+        // ... (Constructor code remains the same) ...
         this.canvas = canvas;
         this.ctx = canvas.getContext('2d');
         this.width = canvas.width = canvas.offsetWidth;
         this.height = canvas.height = canvas.offsetHeight;
         this.qKnob = qKnob;
-        this.onInteract = onInteract; // Connection to Status Bar
+        this.onInteract = onInteract; 
         this.selectedIndex = null;
-        
         this.dragging = null;
         this.hoverIndex = null;
         this.lastClickTime = 0;
@@ -45,13 +45,23 @@ export class IIRDesigner {
     reportStatus(idx) {
         if(idx === null || !this.points[idx] || !this.onInteract) return;
         const pt = this.points[idx];
+        
+        // UPDATED: Using newlines for 3-row display
         let text = `Freq: ${Math.round(pt.freq)} Hz`;
+        
         if (pt.type !== 'hpf' && pt.type !== 'lpf') {
-            text += ` | Gain: ${pt.gain.toFixed(1)} dB`;
+            text += `\nGain: ${pt.gain.toFixed(1)} dB`;
+        } else {
+            text += `\nGain: --`;
         }
-        text += ` | Q: ${pt.q.toFixed(2)}`;
+        
+        text += `\nQ: ${pt.q.toFixed(2)}`;
+        
         this.onInteract(text);
     }
+
+    // ... (The rest of the class: setBiquadCount, bindEvents, findPoint, updatePoint, math functions, draw, reset) ...
+    // ... (No other logic changes needed) ...
 
     setBiquadCount(count) {
         const newPoints = [];
@@ -97,6 +107,7 @@ export class IIRDesigner {
                     this.qKnob.value = this.points[this.hoverIndex].q;
                     this.qKnob.draw();
                 }
+                
                 this.reportStatus(this.hoverIndex);
                 this.draw();
             }
@@ -112,7 +123,7 @@ export class IIRDesigner {
                     this.points[idx].enabled = !this.points[idx].enabled;
                     this.lastClickTime = 0;
                     this.lastClickIndex = null;
-                    if(this.onInteract) this.onInteract(this.points[idx].enabled ? "Band Enabled" : "Band Disabled");
+                    this.onInteract(this.points[idx].enabled ? "Point Enabled" : "Point Disabled");
                 } else {
                     this.selectedIndex = idx;
                     if (this.qKnob) {

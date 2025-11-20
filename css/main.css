@@ -216,6 +216,8 @@ body:fullscreen {
     display: block;
 }
 
+/* ... (Variables, Reset, Header styles remain unchanged) ... */
+
 /* =========================================
    STATUS BAR (HEADS UP DISPLAY)
    ========================================= */
@@ -234,16 +236,23 @@ body:fullscreen {
 
 #statusMessage {
     font-family: 'Segoe UI', sans-serif;
-    font-size: 28px;
+    
+    /* UPDATED: Smaller font, line-height for multi-row */
+    font-size: 22px; 
     font-weight: 800; 
+    line-height: 1.4;
+    white-space: pre-line; /* Renders \n as new line */
+    
     color: #ffffff;   
     text-shadow: 0 2px 4px #000;
-    background: rgba(0, 0, 0, 0.6); 
-    padding: 8px 20px;
-    border-radius: 30px;
+    background: rgba(0, 0, 0, 0.75); 
+    
+    /* UPDATED: Slightly more padding for multiline */
+    padding: 12px 30px;
+    border-radius: 15px;
+    
     border: 1px solid rgba(255,255,255,0.2);
     
-    /* Default hidden, fade in when updated */
     opacity: 0; 
     transition: opacity 0.3s ease-out; 
 }
@@ -252,9 +261,11 @@ body:fullscreen {
 body.light-theme #statusMessage {
     color: #222222; 
     text-shadow: 0 1px 2px rgba(255,255,255,0.8);
-    background: rgba(255, 255, 255, 0.8); 
+    background: rgba(255, 255, 255, 0.9); 
     border: 1px solid rgba(0,0,0,0.1);
 }
+
+/* ... (Easy Mode Popup styles remain unchanged) ... */
 
 /* =========================================
    EASY MODE / SOLO POPUP

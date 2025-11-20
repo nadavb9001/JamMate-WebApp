@@ -15,8 +15,8 @@
                 <div class="device-name">JamMate_BL</div>
             </div>
             <div style="display: flex; gap: 10px; align-items: center;">
-                <button class="btn-fullscreen" id="btnEasyMode" title="Toggle Easy Mode">📱</button>
-                <button class="btn-fullscreen" id="btnFullscreen" title="Toggle Fullscreen">⛶</button>
+                <button class="btn-fullscreen" id="btnSavePreset" title="Save Preset">💾</button>
+                
                 <button class="btn-fullscreen" id="btnConnect" title="Connect BLE" aria-label="Connect BLE">
                     <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
                         <path fill="currentColor" d="M17.71 7.71L12 2h-1v7.59L6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 11 14.41V22h1l5.71-5.71-4.3-4.29 4.3-4.29zM13 5.83l1.88 1.88L13 9.59V5.83zm1.88 10.46L13 18.17v-3.76l1.88 1.88z"/>
@@ -36,8 +36,7 @@
     
     <div class="tab-content active" id="effects-tab">
         <div class="preset-controls">
-          <div style="display:grid;grid-template-columns:auto 1fr 1fr auto auto;gap:6px;align-items:center;">
-            <button id="btnSavePreset" class="btn-reset-small" title="Save to this slot">💾</button>
+          <div style="display:grid; grid-template-columns:1fr 1fr auto auto; gap:6px; align-items:center;">
             <div style="display:flex;flex-direction:column;">
               <label class="control-label">Bank</label>
               <select id="presetBank">
@@ -98,10 +97,16 @@
     </div>
     
     <div class="tab-content" id="setup-tab">
+        
         <div class="preset-controls" style="border-bottom: 2px solid var(--color-border); padding-bottom: 15px; margin-bottom: 15px;">
-            <h2 style="text-align: center; color: var(--color-accent); margin-bottom: 15px;">Settings</h2>
-            <button class="btn-fullscreen" id="btnTheme" title="Toggle Theme" style="width: 100%; height: 50px; font-size: 20px;">🎨 Theme</button>
+            <h2 style="text-align: center; color: var(--color-accent); margin-bottom: 15px;">Interface</h2>
+            <div style="display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;">
+                <button class="btn-fullscreen" id="btnTheme" title="Toggle Theme" style="width: auto; padding: 0 20px; height: 50px; font-size: 16px;">🎨 Theme</button>
+                <button class="btn-fullscreen" id="btnEasyMode" title="Toggle Easy Mode" style="width: auto; padding: 0 20px; height: 50px; font-size: 16px;">📱 Easy Mode</button>
+                <button class="btn-fullscreen" id="btnFullscreen" title="Toggle Fullscreen" style="width: auto; padding: 0 20px; height: 50px; font-size: 16px;">⛶ Fullscreen</button>
+            </div>
         </div>
+
         <div class="preset-controls">
             <h2 style="text-align: center; color: var(--color-accent); margin-bottom: 20px;">Daisy Control</h2>
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 20px;">
@@ -114,6 +119,7 @@
                 <div class="knob-container"><div class="knob" id="blVolKnob"></div><div class="knob-label">BT Vol</div></div>
             </div>
         </div>
+        
         <div class="preset-controls">
             <h2 style="text-align: center; color: var(--color-accent); margin-bottom: 20px;">Utilities</h2>
             <div style="display: flex; gap: 15px; align-items: flex-start; justify-content: center; margin-bottom: 15px;">

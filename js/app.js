@@ -1,6 +1,8 @@
 import { APP_CONFIG } from './config.js';
 import { View } from './ui/View.js';
 import { Knob } from './ui/Knob.js';
+import { BLEService } from './services/BLEService.js';
+import { Protocol } from './services/Protocol.js';
 
 const app = {
     config: APP_CONFIG,
@@ -15,12 +17,25 @@ const app = {
     init() {
         console.log("JamMate Visual Controller Starting...");
         
+        // Init Data
         this.config.tabs.forEach((_, idx) => {
             this.effectParams[idx] = {};
             this.effectStates[idx] = { enabled: false, selected: false };
         });
 
+        // Init View
         View.init(this);
+        
+        // BLE Callbacks
+        BLEService.onStatusChange = (status) => {
+            View.updateConnectionStatus(status);
+        };
+        BLEService.onDataReceived = (dataView) => {
+            console.log("[BLE RX] Bytes:", dataView.byteLength);
+            // TODO: Handle incoming state (0x31)
+        };
+
+        // Setup UI Components
         this.setupTabs();
         View.setupEffectsGrid(this.config);
         
@@ -30,10 +45,72 @@ const app = {
             View.updateDrumCell(cell, this.drumPattern[r][c]);
         });
 
-        this.setupStaticKnobs();
+        this.setupStaticKnobs(); // <--- This was missing in previous partial snippet
         this.setupFileUpload();
         this.setupGlobalListeners();
     },
+
+    // =========================================================
+    // LOGIC & ACTIONS
+    // =========================================================
+
+    selectEffect(idx) {
+        this.currentEffect = idx;
+        Object.keys(this.effectStates).forEach(i => {
+            this.effectStates[i].selected = (parseInt(i) === idx);
+        });
+        View.updateEffectButtons(this.effectStates);
+        
+        // Pass Callbacks to View for Protocol v3
+        View.showEffectControls(
+            this.config.tabs[idx], 
+            idx, 
+            this.effectParams[idx], 
+            this.effectStates,
+            
+            // 1. On Knob Change
+            (paramId, value) => {
+                this.effectParams[idx][`knob${paramId}`] = value;
+                const packet = Protocol.createParamUpdate(idx, paramId, value);
+                BLEService.send(packet);
+            },
+
+            // 2. On Dropdown Change
+            (paramId, value) => {
+                const offsetId = 10 + paramId; // Dropdowns start at 10
+                this.effectParams[idx][`dropdown${paramId}`] = value;
+                const packet = Protocol.createParamUpdate(idx, offsetId, value);
+                BLEService.send(packet);
+            },
+
+            // 3. On Toggle
+            (enabled) => {
+                this.effectStates[idx].enabled = enabled;
+                View.updateEffectButtons(this.effectStates);
+                const packet = Protocol.createToggleUpdate(idx, enabled);
+                BLEService.send(packet);
+            },
+
+            // 4. On EQ Change
+            (bandIdx, freq, gain, q) => {
+                const packet = Protocol.createEQUpdate(bandIdx, freq, gain, q);
+                BLEService.send(packet);
+            }
+        );
+    },
+
+    toggleEffectEnabled(idx) {
+        const newState = !this.effectStates[idx].enabled;
+        this.effectStates[idx].enabled = newState;
+        View.updateEffectButtons(this.effectStates);
+        
+        const packet = Protocol.createToggleUpdate(idx, newState);
+        BLEService.send(packet);
+    },
+
+    // =========================================================
+    // SETUP HELPERS
+    // =========================================================
 
     setupTabs() {
         document.querySelectorAll('.tab').forEach(tab => {
@@ -45,20 +122,6 @@ const app = {
                 document.getElementById(tabName + '-tab').classList.add('active');
             });
         });
-    },
-
-    selectEffect(idx) {
-        this.currentEffect = idx;
-        Object.keys(this.effectStates).forEach(i => {
-            this.effectStates[i].selected = (parseInt(i) === idx);
-        });
-        View.updateEffectButtons(this.effectStates);
-        View.showEffectControls(this.config.tabs[idx], idx, this.effectParams[idx], this.effectStates);
-    },
-
-    toggleEffectEnabled(idx) {
-        this.effectStates[idx].enabled = !this.effectStates[idx].enabled;
-        View.updateEffectButtons(this.effectStates);
     },
 
     setupStaticKnobs() {
@@ -85,15 +148,12 @@ const app = {
             const arrayBuffer = await file.arrayBuffer();
             const audioContext = new (window.AudioContext || window.webkitAudioContext)();
             const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
-            
             this.audioData = audioBuffer.getChannelData(0);
             this.sampleRate = audioBuffer.sampleRate;
-            
             View.drawWaveform(this.audioData, 'waveformCanvas');
             View.drawSpectrum(this.audioData, this.sampleRate, 'spectrumCanvas');
             document.getElementById('btnSendIR').disabled = false;
         });
-
         const irPointsSelect = document.getElementById('irPoints');
         if(irPointsSelect) {
             irPointsSelect.addEventListener('change', () => {
@@ -112,10 +172,16 @@ const app = {
             !document.fullscreenElement ? document.documentElement.requestFullscreen() : document.exitFullscreen();
         };
         
-        // NEW: Save Preset Listener
         document.getElementById('btnSavePreset').onclick = () => {
             View.updateStatus('Preset Saved! (Simulation)');
-            console.log("Save Preset Triggered");
+        };
+        
+        document.getElementById('btnConnect').onclick = () => {
+            if(BLEService.isConnected) {
+                BLEService.disconnect();
+            } else {
+                BLEService.connect();
+            }
         };
 
         window.soloEffectOpen = false;
@@ -130,13 +196,9 @@ const app = {
             `;
             
             overlay.appendChild(cont); document.body.appendChild(overlay);
-            
             const controls = document.getElementById('effectControls');
             cont.appendChild(controls);
-            
-            if(app.iirDesigner) {
-                requestAnimationFrame(() => app.iirDesigner.draw());
-            }
+            if(app.iirDesigner) requestAnimationFrame(() => app.iirDesigner.draw());
         };
         
         window.closeSoloEffect = function() {
@@ -152,7 +214,6 @@ const app = {
         document.getElementById('btnEasyMode').onclick = (e) => {
             const tab = document.getElementById('effects-tab');
             tab.classList.toggle('easy-mode');
-            // Update button styling to show active state
             const isActive = tab.classList.contains('easy-mode');
             e.target.style.background = isActive ? 'var(--color-accent)' : 'var(--color-bg-surface)';
             e.target.style.color = isActive ? '#000' : 'var(--color-text-primary)';

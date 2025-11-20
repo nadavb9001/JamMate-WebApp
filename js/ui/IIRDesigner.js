@@ -1,12 +1,14 @@
 export class IIRDesigner {
-    constructor(canvas, qKnob, onInteract = null) {
-        // ... (Constructor code remains the same) ...
+    // UPDATED: Added onDataChange callback
+    constructor(canvas, qKnob, onInteract = null, onDataChange = null) {
         this.canvas = canvas;
         this.ctx = canvas.getContext('2d');
         this.width = canvas.width = canvas.offsetWidth;
         this.height = canvas.height = canvas.offsetHeight;
         this.qKnob = qKnob;
         this.onInteract = onInteract; 
+        this.onDataChange = onDataChange; // New Callback for Protocol
+        
         this.selectedIndex = null;
         this.dragging = null;
         this.hoverIndex = null;
@@ -19,6 +21,10 @@ export class IIRDesigner {
                     this.points[this.selectedIndex].q = this.qKnob.value;
                     this.draw();
                 }
+            };
+            // UPDATED: Trigger data send when Q knob is released
+            this.qKnob.onrelease = () => {
+                if (this.selectedIndex !== null) this.triggerDataChange(this.selectedIndex);
             };
         }
 
@@ -42,26 +48,27 @@ export class IIRDesigner {
         requestAnimationFrame(() => this.draw());
     }
 
+    // Helper to send data
+    triggerDataChange(idx) {
+        if(idx !== null && this.points[idx] && this.onDataChange) {
+            const pt = this.points[idx];
+            // Send: Index, Freq, Gain, Q
+            this.onDataChange(idx, pt.freq, pt.gain, pt.q);
+        }
+    }
+
     reportStatus(idx) {
         if(idx === null || !this.points[idx] || !this.onInteract) return;
         const pt = this.points[idx];
-        
-        // UPDATED: Using newlines for 3-row display
         let text = `Freq: ${Math.round(pt.freq)} Hz`;
-        
         if (pt.type !== 'hpf' && pt.type !== 'lpf') {
             text += `\nGain: ${pt.gain.toFixed(1)} dB`;
         } else {
             text += `\nGain: --`;
         }
-        
         text += `\nQ: ${pt.q.toFixed(2)}`;
-        
         this.onInteract(text);
     }
-
-    // ... (The rest of the class: setBiquadCount, bindEvents, findPoint, updatePoint, math functions, draw, reset) ...
-    // ... (No other logic changes needed) ...
 
     setBiquadCount(count) {
         const newPoints = [];
@@ -109,6 +116,7 @@ export class IIRDesigner {
                 }
                 
                 this.reportStatus(this.hoverIndex);
+                this.triggerDataChange(this.hoverIndex); // UPDATED: Send on Scroll
                 this.draw();
             }
         }, {passive: false});
@@ -123,7 +131,8 @@ export class IIRDesigner {
                     this.points[idx].enabled = !this.points[idx].enabled;
                     this.lastClickTime = 0;
                     this.lastClickIndex = null;
-                    this.onInteract(this.points[idx].enabled ? "Point Enabled" : "Point Disabled");
+                    if(this.onInteract) this.onInteract(this.points[idx].enabled ? "Band Enabled" : "Band Disabled");
+                    // Note: We might want a Toggle Command for EQ bands later, but currently 0x22 handles params.
                 } else {
                     this.selectedIndex = idx;
                     if (this.qKnob) {
@@ -142,7 +151,13 @@ export class IIRDesigner {
             if (e.type === 'touchstart') e.preventDefault();
         };
 
-        const onEnd = () => { this.dragging = null; };
+        const onEnd = () => { 
+            // UPDATED: Send data when dragging stops
+            if (this.dragging !== null) {
+                this.triggerDataChange(this.dragging);
+            }
+            this.dragging = null; 
+        };
 
         this.canvas.addEventListener('mousedown', onStart);
         this.canvas.addEventListener('touchstart', onStart, {passive: false});

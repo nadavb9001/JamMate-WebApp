@@ -1,5 +1,4 @@
 export class IIRDesigner {
-    // UPDATED: Added onDataChange callback
     constructor(canvas, qKnob, onInteract = null, onDataChange = null) {
         this.canvas = canvas;
         this.ctx = canvas.getContext('2d');
@@ -7,7 +6,7 @@ export class IIRDesigner {
         this.height = canvas.height = canvas.offsetHeight;
         this.qKnob = qKnob;
         this.onInteract = onInteract; 
-        this.onDataChange = onDataChange; // New Callback for Protocol
+        this.onDataChange = onDataChange; 
         
         this.selectedIndex = null;
         this.dragging = null;
@@ -22,9 +21,11 @@ export class IIRDesigner {
                     this.draw();
                 }
             };
-            // UPDATED: Trigger data send when Q knob is released
             this.qKnob.onrelease = () => {
-                if (this.selectedIndex !== null) this.triggerDataChange(this.selectedIndex);
+                if (this.selectedIndex !== null) {
+                    console.log("[IIR] Q Knob Released -> Sending Data");
+                    this.triggerDataChange(this.selectedIndex);
+                }
             };
         }
 
@@ -48,12 +49,13 @@ export class IIRDesigner {
         requestAnimationFrame(() => this.draw());
     }
 
-    // Helper to send data
     triggerDataChange(idx) {
         if(idx !== null && this.points[idx] && this.onDataChange) {
             const pt = this.points[idx];
-            // Send: Index, Freq, Gain, Q
+            console.log(`[IIR] Triggering Data Change for Band ${idx}: F=${Math.round(pt.freq)}, G=${pt.gain.toFixed(1)}, Q=${pt.q.toFixed(1)}`);
             this.onDataChange(idx, pt.freq, pt.gain, pt.q);
+        } else {
+            console.warn("[IIR] Cannot send data: Missing index or callback");
         }
     }
 
@@ -116,7 +118,7 @@ export class IIRDesigner {
                 }
                 
                 this.reportStatus(this.hoverIndex);
-                this.triggerDataChange(this.hoverIndex); // UPDATED: Send on Scroll
+                this.triggerDataChange(this.hoverIndex);
                 this.draw();
             }
         }, {passive: false});
@@ -132,7 +134,8 @@ export class IIRDesigner {
                     this.lastClickTime = 0;
                     this.lastClickIndex = null;
                     if(this.onInteract) this.onInteract(this.points[idx].enabled ? "Band Enabled" : "Band Disabled");
-                    // Note: We might want a Toggle Command for EQ bands later, but currently 0x22 handles params.
+                    console.log("[IIR] Double Click Toggle -> Sending Data");
+                    this.triggerDataChange(idx);
                 } else {
                     this.selectedIndex = idx;
                     if (this.qKnob) {
@@ -152,8 +155,8 @@ export class IIRDesigner {
         };
 
         const onEnd = () => { 
-            // UPDATED: Send data when dragging stops
             if (this.dragging !== null) {
+                console.log("[IIR] Drag End -> Sending Data");
                 this.triggerDataChange(this.dragging);
             }
             this.dragging = null; 
@@ -172,6 +175,7 @@ export class IIRDesigner {
 
         this.canvas.addEventListener('mouseup', onEnd);
         this.canvas.addEventListener('touchend', onEnd);
+        this.canvas.addEventListener('mouseleave', onEnd);
     }
 
     findPoint(x, y) {
@@ -190,7 +194,7 @@ export class IIRDesigner {
             pt.gain = 0;
         } else {
             pt.freq = Math.max(60, Math.min(15000, this.xToFreq(x)));
-            pt.gain = Math.max(-30, Math.min(20, this.yToGain(y)));
+            pt.gain = Math.max(-20, Math.min(20, this.yToGain(y)));
         }
         this.reportStatus(idx);
         this.draw();
@@ -232,6 +236,7 @@ export class IIRDesigner {
         this.ctx.strokeStyle = '#999';
         this.ctx.lineWidth = 1;
 
+        // Grid
         [20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000].forEach(freq => {
             const x = this.freqToX(freq);
             this.ctx.beginPath(); this.ctx.moveTo(x, 0); this.ctx.lineTo(x, this.height); this.ctx.stroke();
@@ -251,6 +256,7 @@ export class IIRDesigner {
         this.ctx.strokeStyle = '#999'; this.ctx.lineWidth = 2;
         this.ctx.beginPath(); this.ctx.moveTo(0, y0); this.ctx.lineTo(this.width, y0); this.ctx.stroke();
 
+        // Curve
         this.ctx.strokeStyle = '#0f0';
         this.ctx.lineWidth = 3;
         this.ctx.beginPath();
@@ -265,6 +271,7 @@ export class IIRDesigner {
 
             this.points.forEach(pt => {
                 if (pt.enabled) {
+                    // === FIXED: Common variables declared here ===
                     const w0 = 2 * Math.PI * pt.freq / fs;
                     const alpha = Math.sin(w0) / (2 * pt.q);
                     const A = Math.pow(10, pt.gain / 40.0);
@@ -282,6 +289,7 @@ export class IIRDesigner {
                         b0 = (1 - cosw0) / 2; b1 = 1 - cosw0; b2 = (1 - cosw0) / 2;
                         a0 = 1 + alpha; a1 = -2 * cosw0; a2 = 1 - alpha;
                     }
+                    
                     b0 /= a0; b1 /= a0; b2 /= a0; a1 /= a0; a2 /= a0;
                     
                     const numSq = b0*b0 + b1*b1 + b2*b2 + 2*(b0*b1 + b1*b2)*Math.cos(w) + 2*b0*b2*Math.cos(2*w);
@@ -297,11 +305,13 @@ export class IIRDesigner {
         }
         this.ctx.stroke();
 
+        // Points & Labels
         this.points.forEach((pt, idx) => {
             const x = this.freqToX(pt.freq);
             const y = this.gainToY(pt.gain);
             const isSel = (idx === this.selectedIndex);
             const isHov = (idx === this.hoverIndex);
+            const isRightEdge = (x > this.width - 60);
 
             this.ctx.fillStyle = pt.enabled ? pt.color : '#555';
             this.ctx.beginPath();
@@ -312,7 +322,6 @@ export class IIRDesigner {
             this.ctx.lineWidth = (isSel || isHov) ? 3 : 2;
             this.ctx.stroke();
             
-            const isRightEdge = (x > this.width - 60);
             this.ctx.fillStyle = pt.enabled ? '#0f0' : '#888';
             this.ctx.font = '10px monospace';
             this.ctx.textAlign = isRightEdge ? 'right' : 'left';

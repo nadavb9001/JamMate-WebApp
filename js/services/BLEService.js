@@ -8,7 +8,12 @@ export const BLEService = {
     server: null,
     characteristic: null,
     isConnected: false,
-    isSyncing: false, // Flag to prevent echo loops
+    isSyncing: false,
+
+    // Reassembly State
+    rxBuffer: null,      // Uint8Array to hold incoming payload
+    rxExpectedLen: 0,    // Total bytes expected
+    rxCmd: 0,            // The command ID we are waiting for
 
     onStatusChange: null,
     onDataReceived: null,
@@ -59,7 +64,7 @@ export const BLEService = {
 
     async send(data) {
         if (!this.characteristic || !this.isConnected) return;
-        if (this.isSyncing) return; // Block outbound during sync
+        if (this.isSyncing) return; 
 
         try {
             await this.characteristic.writeValue(data);
@@ -74,15 +79,86 @@ export const BLEService = {
         this.characteristic = null;
         this.isConnected = false;
         this.isSyncing = false;
+        
+        // Reset Buffer
+        this.rxBuffer = null;
+        this.rxExpectedLen = 0;
+        
         this._setStatus('disconnected');
     },
 
     _handleData(event) {
-        if (this.onDataReceived) {
-            this.onDataReceived(event.target.value);
+        const incoming = new Uint8Array(event.target.value.buffer);
+        
+        // --- REASSEMBLY LOGIC ---
+
+        // Case 1: We are already building a packet
+        if (this.rxBuffer) {
+            // Append new chunk
+            const newBuffer = new Uint8Array(this.rxBuffer.length + incoming.length);
+            newBuffer.set(this.rxBuffer);
+            newBuffer.set(incoming, this.rxBuffer.length);
+            this.rxBuffer = newBuffer;
+
+            // Check if complete
+            if (this.rxBuffer.length >= this.rxExpectedLen) {
+                this._finalizePacket();
+            }
+            return;
+        }
+
+        // Case 2: New Packet Start
+        const cmd = incoming[0];
+
+        // Check if this is a Large Data Command (0x31 or 0x34) that needs reassembly
+        if (cmd === 0x31 || cmd === 0x34) {
+            // Header format: [CMD, LEN_L, LEN_H]
+            if (incoming.length >= 3) {
+                const len = incoming[1] | (incoming[2] << 8);
+                this.rxExpectedLen = len;
+                this.rxCmd = cmd;
+                
+                // Start buffer with whatever payload data came in this first packet (bytes 3+)
+                this.rxBuffer = incoming.slice(3);
+                
+                // Optimization: If message was small and arrived fully in one packet
+                if (this.rxBuffer.length >= this.rxExpectedLen) {
+                    this._finalizePacket();
+                }
+            }
+        } 
+        else {
+            // Single-packet command (like ACK), pass through immediately
+            if (this.onDataReceived) {
+                this.onDataReceived(event.target.value);
+            }
         }
     },
 
+    _finalizePacket() {
+        // Reconstruct the full "Virtual" packet for app.js to parse
+        // Format: [CMD, LEN_L, LEN_H, ...PAYLOAD...]
+        const totalLen = 3 + this.rxBuffer.length;
+        const fullPacket = new Uint8Array(totalLen);
+        
+        fullPacket[0] = this.rxCmd;
+        fullPacket[1] = this.rxExpectedLen & 0xFF;
+        fullPacket[2] = (this.rxExpectedLen >> 8) & 0xFF;
+        fullPacket.set(this.rxBuffer, 3);
+
+        console.log(`[BLE] Reassembled ${this.rxBuffer.length} bytes. Passing to App.`);
+
+        if (this.onDataReceived) {
+            this.onDataReceived(new DataView(fullPacket.buffer));
+        }
+
+        // Reset State
+        this.rxBuffer = null;
+        this.rxExpectedLen = 0;
+        this.rxCmd = 0;
+    }
+
+    ,
     _setStatus(status) {
         if (this.onStatusChange) this.onStatusChange(status);
     }

@@ -355,5 +355,44 @@ export const View = {
             magnitude[k] = Math.sqrt(real * real + imag * imag) / N;
         }
         return magnitude;
+    },
+	
+	updateTuner(freq) {
+        const noteStrings = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+        const freqEl = document.getElementById('freqDisplay');
+        const stringEl = document.getElementById('stringDisplay');
+        const needleEl = document.getElementById('tunerNeedle');
+        const centsEl = document.getElementById('centsDisplay');
+        const targetEl = document.getElementById('targetFreq');
+
+        if (!freqEl || !stringEl) return;
+
+        if (freq < 20) {
+            freqEl.textContent = "-- Hz"; stringEl.textContent = "--"; centsEl.textContent = "-- cents";
+            needleEl.style.transform = "translateX(-50%) rotate(0deg)";
+            return;
+        }
+
+        const noteNum = 12 * Math.log2(freq / 440) + 69;
+        const roundedNote = Math.round(noteNum);
+        const diff = noteNum - roundedNote; 
+        const cents = diff * 100;
+        const noteIndex = roundedNote % 12;
+        const noteName = noteStrings[noteIndex < 0 ? noteIndex + 12 : noteIndex]; 
+        const targetFreq = 440 * Math.pow(2, (roundedNote - 69) / 12);
+
+        freqEl.textContent = `${freq.toFixed(1)} Hz`;
+        stringEl.textContent = noteName;
+        targetEl.textContent = `${targetFreq.toFixed(1)} Hz`;
+        centsEl.textContent = `${cents > 0 ? '+' : ''}${cents.toFixed(0)} cents`;
+        
+        const rotation = Math.max(-45, Math.min(45, cents));
+        needleEl.style.transform = `translateX(-50%) rotate(${rotation}deg)`;
+        
+        if (Math.abs(cents) < 5) {
+            stringEl.style.color = "#0f0"; needleEl.style.backgroundColor = "#0f0";
+        } else {
+            stringEl.style.color = "var(--color-accent)"; needleEl.style.backgroundColor = "#f00";
+        }
     }
 };

@@ -56,6 +56,12 @@ const app = {
                 const blob = dataView.buffer.slice(3);
                 this.loadStateFromBlob(blob);
             } 
+			// NEW: Tuner Data (0x35)
+            if (cmd === 0x35) {
+                // Payload is Float32 (Little Endian) starting at byte 3
+                const freq = dataView.getFloat32(3, true); // true for Little Endian
+                View.updateTuner(freq);
+            }
             else {
                 console.log(`[BLE] Unknown Cmd: 0x${cmd.toString(16)}, Len: ${dataView.byteLength}`);
             }
@@ -311,6 +317,24 @@ const app = {
         document.getElementById('btnConnect').onclick = () => {
             if(BLEService.isConnected) BLEService.disconnect(); else BLEService.connect();
         };
+		document.getElementById('tunerEnable').addEventListener('change', (e) => {
+            const enabled = e.target.checked;
+            // Send "Tune" command logic via UTIL or TOGGLE?
+            // Assuming Tuner is treated as a Utility (like Noise) or special state.
+            // Let's reuse the UTIL command (Type 2 for Tuner maybe?)
+            // OR create a specific Toggle for Tuner if it's an effect.
+            
+            // If Tuner is just another effect in your list (Tab 2), selectEffect logic handles it.
+            // BUT if it's a global mode, we send a special packet.
+            
+            // Protocol v3 doesn't have explicit Tuner cmd, but we can use SET_UTIL (0x23) with Type 2.
+            // Packet: [0x23][Len][Type=2][En][0][0]
+             const packet = Protocol.createUtilUpdate(2, enabled, 0, 0);
+             BLEService.send(packet);
+             
+             if(enabled) View.updateStatus("Tuner ON");
+             else View.updateStatus("Tuner OFF");
+        });
 
         const setupDoubleClickHandler = (id, onToggle) => {
             const btn = document.getElementById(id);

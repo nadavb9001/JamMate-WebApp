@@ -2,7 +2,8 @@ export const Protocol = {
     // Command IDs
 CMD: {
         SET_PARAM: 0x20, SET_TOGGLE: 0x21, SET_EQ_BAND: 0x22, SET_UTIL: 0x23,
-        GET_STATE: 0x30, STATE_DATA: 0x31, SAVE_PRESET: 0x32, LOAD_REQ: 0x33, PRESET_DATA: 0x34
+        GET_STATE: 0x30, STATE_DATA: 0x31, SAVE_PRESET: 0x32, LOAD_REQ: 0x33, PRESET_DATA: 0x34, 
+		TUNER_DATA: 0x35  // NEW
     },
 
     // =========================================================
@@ -30,20 +31,25 @@ CMD: {
         return buffer;
     },
 
-    createEQUpdate(bandIdx, freq, gain, q) {
-        const buffer = new ArrayBuffer(8);
+    // 3. Create EQ Band Update (Now includes Enabled flag)
+    // Packet: [CMD(1) LEN(2) IDX(1) EN(1) FREQ(2) GAIN(1) Q(1)] = 9 bytes
+    createEQUpdate(bandIdx, enabled, freq, gain, q) {
+        const buffer = new ArrayBuffer(9); 
         const view = new DataView(buffer);
-        // Constraints
+
         const normGain = Math.max(-20, Math.min(20, Math.round(gain))); 
         const normQ = Math.max(0.1, Math.min(16.0, q));                 
         const scaledQ = Math.round(normQ * 10);                         
 
         view.setUint8(0, this.CMD.SET_EQ_BAND);
-        view.setUint16(1, 5, true);           
+        view.setUint16(1, 6, true);           // Payload Len = 6 bytes
+        
         view.setUint8(3, bandIdx);            
-        view.setUint16(4, Math.round(freq), true); 
-        view.setInt8(6, normGain);            
-        view.setUint8(7, scaledQ);            
+        view.setUint8(4, enabled ? 1 : 0);    // NEW: Enabled Flag
+        view.setUint16(5, Math.round(freq), true); 
+        view.setInt8(7, normGain);            
+        view.setUint8(8, scaledQ);            
+
         return buffer;
     },
 

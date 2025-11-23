@@ -1,5 +1,6 @@
 export class IIRDesigner {
     constructor(canvas, qKnob, onInteract = null, onDataChange = null) {
+        // ... (Constructor setup same as before) ...
         this.canvas = canvas;
         this.ctx = canvas.getContext('2d');
         this.width = canvas.width = canvas.offsetWidth;
@@ -7,7 +8,6 @@ export class IIRDesigner {
         this.qKnob = qKnob;
         this.onInteract = onInteract; 
         this.onDataChange = onDataChange; 
-        
         this.selectedIndex = null;
         this.dragging = null;
         this.hoverIndex = null;
@@ -22,26 +22,23 @@ export class IIRDesigner {
                 }
             };
             this.qKnob.onrelease = () => {
-                if (this.selectedIndex !== null) {
-                    console.log("[IIR] Q Knob Released -> Sending Data");
-                    this.triggerDataChange(this.selectedIndex);
-                }
+                if (this.selectedIndex !== null) this.triggerDataChange(this.selectedIndex);
             };
         }
 
         this.masterPoints = [
-            { freq: 30, gain: 0, enabled: true, type: 'hpf', color: '#0f0', q: 0.707 },
-            { freq: 60, gain: 0, enabled: true, type: 'peak', color: '#f00', q: 1.41 },
-            { freq: 120, gain: 0, enabled: true, type: 'peak', color: '#f00', q: 1.41 },
-            { freq: 250, gain: 0, enabled: true, type: 'peak', color: '#f00', q: 1.41 },
+            { freq: 80, gain: 0, enabled: true, type: 'hpf', color: '#0f0', q: 0.707 },
+            { freq: 160, gain: 0, enabled: true, type: 'peak', color: '#f00', q: 1.41 },
+            { freq: 240, gain: 0, enabled: true, type: 'peak', color: '#f00', q: 1.41 },
             { freq: 500, gain: 0, enabled: true, type: 'peak', color: '#f00', q: 1.41 },
+            { freq: 800, gain: 0, enabled: true, type: 'peak', color: '#f00', q: 1.41 },
             { freq: 1000, gain: 0, enabled: true, type: 'peak', color: '#f00', q: 1.41 },
-            { freq: 2000, gain: 0, enabled: true, type: 'peak', color: '#f00', q: 1.41 },
+            { freq: 1600, gain: 0, enabled: true, type: 'peak', color: '#f00', q: 1.41 },
+            { freq: 2400, gain: 0, enabled: true, type: 'peak', color: '#f00', q: 1.41 },
+            { freq: 3200, gain: 0, enabled: true, type: 'peak', color: '#f00', q: 1.41 },
             { freq: 4000, gain: 0, enabled: true, type: 'peak', color: '#f00', q: 1.41 },
-            { freq: 8000, gain: 0, enabled: true, type: 'peak', color: '#f00', q: 1.41 },
-            { freq: 12000, gain: 0, enabled: true, type: 'peak', color: '#f00', q: 1.41 },
-            { freq: 16000, gain: 0, enabled: true, type: 'peak', color: '#f00', q: 1.41 },
-            { freq: 18000, gain: 0, enabled: true, type: 'lpf', color: '#00f', q: 0.707 }
+            { freq: 6000, gain: 0, enabled: true, type: 'peak', color: '#f00', q: 1.41 },
+            { freq: 8000, gain: 0, enabled: true, type: 'lpf', color: '#00f', q: 0.707 }
         ];
         this.points = [...this.masterPoints];
 
@@ -49,13 +46,28 @@ export class IIRDesigner {
         requestAnimationFrame(() => this.draw());
     }
 
-    triggerDataChange(idx) {
-        if(idx !== null && this.points[idx] && this.onDataChange) {
-            const pt = this.points[idx];
-            console.log(`[IIR] Triggering Data Change for Band ${idx}: F=${Math.round(pt.freq)}, G=${pt.gain.toFixed(1)}, Q=${pt.q.toFixed(1)}`);
-            this.onDataChange(idx, pt.freq, pt.gain, pt.q);
-        } else {
-            console.warn("[IIR] Cannot send data: Missing index or callback");
+    triggerDataChange(idx, overridePt = null) {
+        if(this.onDataChange) {
+            // Find the point. 'idx' is the index in masterPoints (0-11) to keep ID consistent
+            // If we are iterating masterPoints, we pass overridePt.
+            // If interacting with UI 'this.points', we need to map back to master index if the arrays differ,
+            // BUT for simplicity, 'idx' here always refers to the point's ID.
+            
+            // However, the UI interactions pass the index in 'this.points'. 
+            // If 'this.points' is a subset, we must be careful.
+            // FORTUNATELY, 'setBiquadCount' creates a subset but they are references to masterPoints objects.
+            // We need to know the true index (0-11) for the Protocol.
+            
+            const pt = overridePt || this.points[idx];
+            if (!pt) return;
+            
+            // Find true index in master list for the Protocol
+            const trueIdx = this.masterPoints.indexOf(pt);
+            
+            if (trueIdx !== -1) {
+                console.log(`[IIR] Sending Band ${trueIdx}: En=${pt.enabled}, G=${pt.gain}`);
+                this.onDataChange(trueIdx, pt.enabled, pt.freq, pt.gain, pt.q);
+            }
         }
     }
 
@@ -73,14 +85,39 @@ export class IIRDesigner {
     }
 
     setBiquadCount(count) {
-        const newPoints = [];
-        newPoints.push(this.masterPoints[0]);
-        for (let i = 1; i <= count; i++) {
-            if (this.masterPoints[i]) newPoints.push(this.masterPoints[i]);
+        const newPoints = [this.masterPoints[0]]; // Always keep HPF
+        
+        // Iterate through all Peaking bands (Indices 1 to 10)
+        for (let i = 1; i <= 10; i++) {
+            const pt = this.masterPoints[i];
+            if (i <= count) {
+                // This band is active in the UI
+                newPoints.push(pt);
+            } else {
+                // This band is HIDDEN. Disable it on the DSP.
+                if (pt.enabled) {
+                    pt.enabled = false;
+                    // Force update to DSP to turn it off
+                    this.triggerDataChange(null, pt);
+                }
+            }
         }
-        newPoints.push(this.masterPoints[11]);
+        
+        newPoints.push(this.masterPoints[11]); // Always keep LPF
         this.points = newPoints;
         this.selectedIndex = null;
+        this.draw();
+    }
+	
+	// UPDATED: Logic to reset and sync all bands
+    reset() {
+        this.masterPoints.forEach((pt, i) => {
+            pt.gain = 0;
+            pt.enabled = true;
+            pt.q = (pt.type === 'peak') ? 1.41 : 0.707;
+            // Send update for EVERY point to ensure DSP is flat
+            this.triggerDataChange(null, pt);
+        });
         this.draw();
     }
 
@@ -88,35 +125,30 @@ export class IIRDesigner {
         const getPos = (e) => {
             const rect = this.canvas.getBoundingClientRect();
             if (rect.width === 0 || rect.height === 0) return { x: 0, y: 0 };
-            const clientX = e.type.includes('touch') ? e.touches[0].clientX : e.clientX;
-            const clientY = e.type.includes('touch') ? e.touches[0].clientY : e.clientY;
-            return { x: clientX - rect.left, y: clientY - rect.top };
+            return { x: (e.touches ? e.touches[0].clientX : e.clientX) - rect.left, y: (e.touches ? e.touches[0].clientY : e.clientY) - rect.top };
         };
 
         this.canvas.addEventListener('mousemove', (e) => {
             const pos = getPos(e);
-            const hoverIdx = this.findPoint(pos.x, pos.y);
             if (this.dragging !== null && this.points[this.dragging].enabled) {
                 this.updatePoint(this.dragging, pos.x, pos.y);
             } else {
-                this.hoverIndex = hoverIdx;
+                this.hoverIndex = this.findPoint(pos.x, pos.y);
             }
             this.draw();
         });
 
-        this.canvas.addEventListener('wheel', (e) => {
+       this.canvas.addEventListener('wheel', (e) => {
             if (this.hoverIndex !== null && this.points[this.hoverIndex].enabled) {
                 e.preventDefault();
                 const delta = e.deltaY > 0 ? -0.1 : 0.1;
                 let newQ = this.points[this.hoverIndex].q + delta;
                 newQ = Math.round(newQ * 10) / 10; 
                 this.points[this.hoverIndex].q = Math.max(0.1, Math.min(10, newQ));
-                
                 if (this.selectedIndex === this.hoverIndex && this.qKnob) {
                     this.qKnob.value = this.points[this.hoverIndex].q;
                     this.qKnob.draw();
                 }
-                
                 this.reportStatus(this.hoverIndex);
                 this.triggerDataChange(this.hoverIndex);
                 this.draw();
@@ -127,27 +159,17 @@ export class IIRDesigner {
             const pos = getPos(e);
             const idx = this.findPoint(pos.x, pos.y);
             const currentTime = Date.now();
-
             if (idx !== null) {
                 if (this.lastClickIndex === idx && (currentTime - this.lastClickTime) < 300) {
                     this.points[idx].enabled = !this.points[idx].enabled;
-                    this.lastClickTime = 0;
-                    this.lastClickIndex = null;
+                    this.lastClickTime = 0; this.lastClickIndex = null;
                     if(this.onInteract) this.onInteract(this.points[idx].enabled ? "Band Enabled" : "Band Disabled");
-                    console.log("[IIR] Double Click Toggle -> Sending Data");
-                    this.triggerDataChange(idx);
+                    this.triggerDataChange(idx); // Toggle Send
                 } else {
                     this.selectedIndex = idx;
-                    if (this.qKnob) {
-                        this.qKnob.value = this.points[idx].q;
-                        this.qKnob.draw();
-                    }
-                    if (this.points[idx].enabled) {
-                        this.dragging = idx;
-                        this.reportStatus(idx);
-                    }
-                    this.lastClickTime = currentTime;
-                    this.lastClickIndex = idx;
+                    if (this.qKnob) { this.qKnob.value = this.points[idx].q; this.qKnob.draw(); }
+                    if (this.points[idx].enabled) { this.dragging = idx; this.reportStatus(idx); }
+                    this.lastClickTime = currentTime; this.lastClickIndex = idx;
                 }
                 this.draw();
             }
@@ -155,16 +177,12 @@ export class IIRDesigner {
         };
 
         const onEnd = () => { 
-            if (this.dragging !== null) {
-                console.log("[IIR] Drag End -> Sending Data");
-                this.triggerDataChange(this.dragging);
-            }
+            if (this.dragging !== null) this.triggerDataChange(this.dragging);
             this.dragging = null; 
         };
 
         this.canvas.addEventListener('mousedown', onStart);
         this.canvas.addEventListener('touchstart', onStart, {passive: false});
-        
         this.canvas.addEventListener('touchmove', (e) => {
             if (this.dragging !== null && this.points[this.dragging].enabled) {
                 const pos = getPos(e);
@@ -172,7 +190,6 @@ export class IIRDesigner {
                 e.preventDefault();
             }
         }, {passive: false});
-
         this.canvas.addEventListener('mouseup', onEnd);
         this.canvas.addEventListener('touchend', onEnd);
         this.canvas.addEventListener('mouseleave', onEnd);
@@ -336,12 +353,5 @@ export class IIRDesigner {
         });
     }
 
-    reset() {
-        this.points.forEach(pt => {
-            pt.gain = 0;
-            pt.enabled = true;
-            pt.q = (pt.type === 'peak') ? 1.41 : 0.707;
-        });
-        this.draw();
-    }
+    
 }

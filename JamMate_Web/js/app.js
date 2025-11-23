@@ -4,38 +4,70 @@ import { Knob } from './ui/Knob.js';
 import { BLEService } from './services/BLEService.js';
 import { Protocol } from './services/Protocol.js';
 
+// =========================================================
+// DEVELOPMENT FLAG: Set to true when done tuning to lock Factory Banks
+const PRESETS_LOCKED = false; 
+// =========================================================
+
 const app = {
     config: APP_CONFIG,
     currentEffect: null,
     drumPattern: Array(9).fill(null).map(() => Array(16).fill(0)),
+    
+    // State Data
     effectStates: {},
     effectParams: {},
+    currentEQPoints: null, 
+    
+    utilState: {
+        noise: { enabled: false, level: 0 },
+        tone: { enabled: false, level: 0, freq: 670 }
+    },
+    
     audioData: null,
     sampleRate: null,
+    fullFFT: null,
     iirDesigner: null, 
+    
+    isUpdatingUI: false, 
 
     init() {
-        console.log("JamMate Visual Controller Starting...");
+        console.log("JamMate v3.0 Controller Starting...");
         
-        // Init Data
+        // 1. Init Data
         this.config.tabs.forEach((_, idx) => {
             this.effectParams[idx] = {};
             this.effectStates[idx] = { enabled: false, selected: false };
         });
 
-        // Init View
+        // 2. Init View
         View.init(this);
         
-        // BLE Callbacks
+        // 3. BLE Callbacks
         BLEService.onStatusChange = (status) => {
             View.updateConnectionStatus(status);
         };
+        
         BLEService.onDataReceived = (dataView) => {
-            console.log("[BLE RX] Bytes:", dataView.byteLength);
-            // TODO: Handle incoming state (0x31)
+            const cmd = dataView.getUint8(0);
+            // 0x31 (Initial State) OR 0x34 (Preset Data)
+            if (cmd === 0x31 || cmd === 0x34) {
+                console.log(`[BLE] Received Preset Data (Cmd: 0x${cmd.toString(16)})`);
+                const blob = dataView.buffer.slice(3);
+                this.loadStateFromBlob(blob);
+            } 
+			// NEW: Tuner Data (0x35)
+            if (cmd === 0x35) {
+                // Payload is Float32 (Little Endian) starting at byte 3
+                const freq = dataView.getFloat32(3, true); // true for Little Endian
+                View.updateTuner(freq);
+            }
+            else {
+                console.log(`[BLE] Unknown Cmd: 0x${cmd.toString(16)}, Len: ${dataView.byteLength}`);
+            }
         };
 
-        // Setup UI Components
+        // 4. Setup UI
         this.setupTabs();
         View.setupEffectsGrid(this.config);
         
@@ -45,14 +77,138 @@ const app = {
             View.updateDrumCell(cell, this.drumPattern[r][c]);
         });
 
-        this.setupStaticKnobs(); // <--- This was missing in previous partial snippet
+        this.setupStaticKnobs();
         this.setupFileUpload();
         this.setupGlobalListeners();
+        this.setupPresetListeners();
+    },
+
+    loadStateFromBlob(blob) {
+        this.isUpdatingUI = true; 
+        console.log("[APP] deserializing state...");
+
+        try {
+            const state = Protocol.deserializeState(blob);
+            
+            // 1. Restore Effects
+            Object.keys(state.effectStates).forEach(idx => {
+                const i = parseInt(idx);
+                this.effectStates[i].enabled = state.effectStates[i].enabled;
+                if (state.effectParams[i]) {
+                    this.effectParams[i] = { ...this.effectParams[i], ...state.effectParams[i] };
+                }
+            });
+
+            // 2. Restore EQ
+            if (state.eqPoints && state.eqPoints.length > 0) {
+                this.currentEQPoints = state.eqPoints;
+                if (this.iirDesigner) {
+                    this.iirDesigner.points.forEach((pt, i) => {
+                        if (state.eqPoints[i]) {
+                            pt.freq = state.eqPoints[i].freq;
+                            pt.gain = state.eqPoints[i].gain;
+                            pt.q = state.eqPoints[i].q;
+                            pt.enabled = true;
+                        }
+                    });
+                    this.iirDesigner.draw();
+                }
+            }
+
+            // 3. Update UI
+            View.updateEffectButtons(this.effectStates);
+            if (this.currentEffect !== null) {
+                this.selectEffect(this.currentEffect); 
+            }
+            
+            // 4. Update Globals
+            if (document.getElementById('bpmKnob') && document.getElementById('bpmKnob').knob) {
+                document.getElementById('bpmKnob').knob.value = state.bpm;
+                document.getElementById('bpmKnob').knob.draw();
+            }
+            if (document.getElementById('masterKnob') && document.getElementById('masterKnob').knob) {
+                document.getElementById('masterKnob').knob.value = state.master;
+                document.getElementById('masterKnob').knob.draw();
+            }
+            
+            View.updateStatus(`Loaded: ${state.name}`);
+            console.log(`[APP] Successfully loaded: ${state.name}`);
+
+        } catch (e) {
+            console.error("Load Failed:", e);
+            View.updateStatus("Load Failed (Data Error)");
+        }
+        
+        setTimeout(() => { this.isUpdatingUI = false; }, 100);
+    },
+
+    getCurrentState() {
+        let eqData = [];
+        if (this.iirDesigner) {
+            eqData = this.iirDesigner.points.map(pt => ({
+                freq: pt.freq, gain: pt.gain, q: pt.q
+            }));
+        } else if (this.currentEQPoints) {
+            eqData = this.currentEQPoints;
+        }
+
+        return {
+            bpm: document.getElementById('bpmKnob').knob.value,
+            master: document.getElementById('masterKnob').knob.value,
+            name: `User Preset`, 
+            effectStates: this.effectStates,
+            effectParams: this.effectParams,
+            eqPoints: eqData
+        };
+    },
+
+    setupPresetListeners() {
+        const onPresetSelect = () => {
+            const bankIndex = document.getElementById('presetBank').selectedIndex;
+            const slotIndex = document.getElementById('presetNum').selectedIndex;
+            
+            console.log(`[APP] Requesting Bank ${bankIndex} Slot ${slotIndex}`);
+            View.updateStatus(`Loading B${bankIndex}:P${slotIndex}...`);
+            BLEService.send(Protocol.createLoadReq(bankIndex, slotIndex));
+        };
+
+        document.getElementById('presetBank').addEventListener('change', onPresetSelect);
+        document.getElementById('presetNum').addEventListener('change', onPresetSelect);
+
+        // UPDATED SAVE LOGIC
+        document.getElementById('btnSavePreset').onclick = () => {
+            const bankIndex = document.getElementById('presetBank').selectedIndex;
+            const slotIndex = document.getElementById('presetNum').selectedIndex;
+            
+            // Lock Check
+            if (PRESETS_LOCKED && bankIndex < 5) {
+                View.updateStatus("Factory Banks Locked!");
+                return;
+            }
+
+            console.log(`[APP] Saving to Bank ${bankIndex} Slot ${slotIndex}`);
+            View.updateStatus("Saving...");
+            
+            const state = this.getCurrentState();
+            const packet = Protocol.createSavePreset(bankIndex, slotIndex, state);
+            BLEService.send(packet);
+        };
     },
 
     // =========================================================
-    // LOGIC & ACTIONS
+    // LIVE CONTROL LOGIC
     // =========================================================
+
+    sendUtilUpdate(type) {
+        if (this.isUpdatingUI) return;
+        let packet;
+        if (type === 0) { 
+            const s = this.utilState.noise; packet = Protocol.createUtilUpdate(0, s.enabled, s.level, 0);
+        } else { 
+            const s = this.utilState.tone; packet = Protocol.createUtilUpdate(1, s.enabled, s.level, s.freq);
+        }
+        BLEService.send(packet);
+    },
 
     selectEffect(idx) {
         this.currentEffect = idx;
@@ -61,57 +217,40 @@ const app = {
         });
         View.updateEffectButtons(this.effectStates);
         
-        // Pass Callbacks to View for Protocol v3
         View.showEffectControls(
-            this.config.tabs[idx], 
-            idx, 
-            this.effectParams[idx], 
-            this.effectStates,
-            
-            // 1. On Knob Change
-            (paramId, value) => {
-                this.effectParams[idx][`knob${paramId}`] = value;
-                const packet = Protocol.createParamUpdate(idx, paramId, value);
-                BLEService.send(packet);
+            this.config.tabs[idx], idx, this.effectParams[idx], this.effectStates,
+            (paramId, value) => { 
+                if(this.isUpdatingUI) return;
+                this.effectParams[idx][`knob${paramId}`] = value; 
+                BLEService.send(Protocol.createParamUpdate(idx, paramId, value)); 
             },
-
-            // 2. On Dropdown Change
-            (paramId, value) => {
-                const offsetId = 10 + paramId; // Dropdowns start at 10
-                this.effectParams[idx][`dropdown${paramId}`] = value;
-                const packet = Protocol.createParamUpdate(idx, offsetId, value);
-                BLEService.send(packet);
+            (paramId, value) => { 
+                if(this.isUpdatingUI) return; 
+                const offsetId = 10 + paramId; 
+                this.effectParams[idx][`dropdown${paramId}`] = value; 
+                BLEService.send(Protocol.createParamUpdate(idx, offsetId, value)); 
             },
-
-            // 3. On Toggle
-            (enabled) => {
-                this.effectStates[idx].enabled = enabled;
-                View.updateEffectButtons(this.effectStates);
-                const packet = Protocol.createToggleUpdate(idx, enabled);
-                BLEService.send(packet);
+            (en) => { 
+                if(this.isUpdatingUI) return;
+                this.effectStates[idx].enabled = en; 
+                View.updateEffectButtons(this.effectStates); 
+                BLEService.send(Protocol.createToggleUpdate(idx, en)); 
             },
-
-            // 4. On EQ Change
-            (bandIdx, freq, gain, q) => {
-                console.log(`[APP] EQ Change -> Band: ${bandIdx}, F: ${freq}, G: ${gain}, Q: ${q}`);
-                const packet = Protocol.createEQUpdate(bandIdx, freq, gain, q);
-                BLEService.send(packet);
+            (bandIdx, enabled, freq, gain, q) => { 
+                if(this.isUpdatingUI) return;
+                // console.log(`[APP] Sending EQ: Q=${q}`);
+                BLEService.send(Protocol.createEQUpdate(bandIdx, enabled, freq, gain, q)); 
             }
         );
     },
 
     toggleEffectEnabled(idx) {
+        if(this.isUpdatingUI) return;
         const newState = !this.effectStates[idx].enabled;
         this.effectStates[idx].enabled = newState;
         View.updateEffectButtons(this.effectStates);
-        
-        const packet = Protocol.createToggleUpdate(idx, newState);
-        BLEService.send(packet);
+        BLEService.send(Protocol.createToggleUpdate(idx, newState));
     },
-
-    // =========================================================
-    // SETUP HELPERS
-    // =========================================================
 
     setupTabs() {
         document.querySelectorAll('.tab').forEach(tab => {
@@ -126,19 +265,20 @@ const app = {
     },
 
     setupStaticKnobs() {
-        const createKnob = (id, name, max=100) => {
+        const createKnob = (id, name, max, initial, onChange) => {
             const el = document.getElementById(id);
             if(el) {
-                new Knob(el, 0, max, (max===255?120:0), (val) => View.updateStatus(`${name}: ${Math.round(val)}`));
+                new Knob(el, 0, max, initial, (val) => {
+                    View.updateStatus(`${name}: ${Math.round(val)}`);
+                }).onrelease = () => onChange(el.knob.value);
             }
         };
-
-        createKnob('whiteNoiseLevelKnob', 'White Noise');
-        createKnob('toneLevelKnob', 'Tone Level');
-        createKnob('masterKnob', 'Master Vol');
-        createKnob('bpmKnob', 'BPM', 255);
-        createKnob('blVolKnob', 'BT Vol');
-        createKnob('drumLevelKnob', 'Drum Level');
+        createKnob('whiteNoiseLevelKnob', 'Noise Level', 100, 0, (val) => { this.utilState.noise.level = val; this.sendUtilUpdate(0); });
+        createKnob('toneLevelKnob', 'Tone Level', 100, 0, (val) => { this.utilState.tone.level = val; this.sendUtilUpdate(1); });
+        createKnob('masterKnob', 'Master Vol', 100, 50, () => {});
+        createKnob('bpmKnob', 'BPM', 255, 120, () => {});
+        createKnob('blVolKnob', 'BT Vol', 100, 50, () => {});
+        createKnob('drumLevelKnob', 'Drum Level', 100, 50, () => {});
     },
 
     setupFileUpload() {
@@ -151,14 +291,18 @@ const app = {
             const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
             this.audioData = audioBuffer.getChannelData(0);
             this.sampleRate = audioBuffer.sampleRate;
+            const previewData = this.audioData.slice(0, 16384); 
+            this.fullFFT = View.computeFFT(previewData);
             View.drawWaveform(this.audioData, 'waveformCanvas');
-            View.drawSpectrum(this.audioData, this.sampleRate, 'spectrumCanvas');
+            View.drawSpectrum(this.audioData, this.sampleRate, 'spectrumCanvas', this.fullFFT);
             document.getElementById('btnSendIR').disabled = false;
         });
         const irPointsSelect = document.getElementById('irPoints');
         if(irPointsSelect) {
             irPointsSelect.addEventListener('change', () => {
-                if(this.audioData) View.drawSpectrum(this.audioData, this.sampleRate, 'spectrumCanvas');
+                if(this.audioData && this.fullFFT) {
+                    View.drawSpectrum(this.audioData, this.sampleRate, 'spectrumCanvas', this.fullFFT);
+                }
             });
         }
     },
@@ -168,34 +312,73 @@ const app = {
              document.body.classList.toggle('light-theme');
              if(this.iirDesigner) this.iirDesigner.draw();
         };
-        
         document.getElementById('btnFullscreen').onclick = () => {
             !document.fullscreenElement ? document.documentElement.requestFullscreen() : document.exitFullscreen();
         };
-        
-        document.getElementById('btnSavePreset').onclick = () => {
-            View.updateStatus('Preset Saved! (Simulation)');
-        };
-        
         document.getElementById('btnConnect').onclick = () => {
-            if(BLEService.isConnected) {
-                BLEService.disconnect();
-            } else {
-                BLEService.connect();
-            }
+            if(BLEService.isConnected) BLEService.disconnect(); else BLEService.connect();
         };
+		document.getElementById('tunerEnable').addEventListener('change', (e) => {
+            const enabled = e.target.checked;
+            // Send "Tune" command logic via UTIL or TOGGLE?
+            // Assuming Tuner is treated as a Utility (like Noise) or special state.
+            // Let's reuse the UTIL command (Type 2 for Tuner maybe?)
+            // OR create a specific Toggle for Tuner if it's an effect.
+            
+            // If Tuner is just another effect in your list (Tab 2), selectEffect logic handles it.
+            // BUT if it's a global mode, we send a special packet.
+            
+            // Protocol v3 doesn't have explicit Tuner cmd, but we can use SET_UTIL (0x23) with Type 2.
+            // Packet: [0x23][Len][Type=2][En][0][0]
+             const packet = Protocol.createUtilUpdate(2, enabled, 0, 0);
+             BLEService.send(packet);
+             
+             if(enabled) View.updateStatus("Tuner ON");
+             else View.updateStatus("Tuner OFF");
+        });
+
+        const setupDoubleClickHandler = (id, onToggle) => {
+            const btn = document.getElementById(id);
+            if(!btn) return;
+            let clickCount = 0; let clickTimeout = null;
+            btn.addEventListener('click', (e) => {
+                clickCount++;
+                if (clickCount === 1) { clickTimeout = setTimeout(() => { clickCount = 0; }, 250); }
+                else if (clickCount === 2) { clearTimeout(clickTimeout); clickCount = 0; onToggle(); }
+            });
+        };
+
+        setupDoubleClickHandler('whiteNoiseBtn', () => {
+            this.utilState.noise.enabled = !this.utilState.noise.enabled;
+            View.setButtonActive('whiteNoiseBtn', this.utilState.noise.enabled);
+            this.sendUtilUpdate(0);
+        });
+
+        setupDoubleClickHandler('toneBtn', () => {
+            this.utilState.tone.enabled = !this.utilState.tone.enabled;
+            View.setButtonActive('toneBtn', this.utilState.tone.enabled);
+            this.sendUtilUpdate(1);
+        });
+
+        const toneInput = document.getElementById('toneFreqInput');
+        if(toneInput) {
+            toneInput.addEventListener('change', (e) => {
+                let val = parseInt(e.target.value);
+                if(isNaN(val)) val = 670;
+                this.utilState.tone.freq = val;
+                this.sendUtilUpdate(1);
+            });
+        }
 
         window.soloEffectOpen = false;
         window.showSoloEffect = function(name, idx) {
             window.soloEffectOpen = true;
             const overlay = document.createElement('div'); overlay.className = 'solo-effect-overlay';
             const cont = document.createElement('div'); cont.className = 'solo-effect-container';
-            
             cont.innerHTML = `
                 <div class="solo-effect-title">${name}</div>
                 <button class="solo-effect-close-btn" onclick="window.closeSoloEffect()">X</button>
             `;
-            
             overlay.appendChild(cont); document.body.appendChild(overlay);
             const controls = document.getElementById('effectControls');
             cont.appendChild(controls);

@@ -9,14 +9,16 @@ export const View = {
         this.statusTimer = null; 
     },
 
+    // =========================================================
+    // HUD & STATUS
+    // =========================================================
+
     updateStatus(text) {
         if(this.statusEl) {
             this.statusEl.textContent = text;
             this.statusEl.style.opacity = '1'; 
             if (this.statusTimer) clearTimeout(this.statusTimer);
-            this.statusTimer = setTimeout(() => {
-                this.statusEl.style.opacity = '0';
-            }, 1500);
+            this.statusTimer = setTimeout(() => { this.statusEl.style.opacity = '0'; }, 1500);
         }
     },
 
@@ -25,23 +27,31 @@ export const View = {
         if (!this.ledEl) return;
         this.ledEl.classList.remove('connected', 'connecting', 'error');
         switch (status) {
-            case 'connected':
-                this.ledEl.classList.add('connected');
-                this.updateStatus("Connected to JamMate");
-                break;
-            case 'connecting':
-                this.ledEl.classList.add('connecting');
-                this.updateStatus("Connecting...");
-                break;
-            case 'disconnected':
-                this.updateStatus("Disconnected");
-                break;
-            case 'error':
-                this.ledEl.classList.add('error');
-                this.updateStatus("Connection Error");
-                break;
+            case 'connected': this.ledEl.classList.add('connected'); this.updateStatus("Connected to JamMate"); break;
+            case 'connecting': this.ledEl.classList.add('connecting'); this.updateStatus("Connecting..."); break;
+            case 'disconnected': this.updateStatus("Disconnected"); break;
+            case 'error': this.ledEl.classList.add('error'); this.updateStatus("Connection Error"); break;
         }
     },
+
+    setButtonActive(id, isActive) {
+        const btn = document.getElementById(id);
+        if (btn) {
+            if (isActive) {
+                btn.classList.add('active');
+                btn.style.borderColor = 'var(--color-enabled)';
+                btn.style.boxShadow = '0 0 10px rgba(0, 255, 0, 0.4)';
+            } else {
+                btn.classList.remove('active');
+                btn.style.borderColor = 'var(--color-border)';
+                btn.style.boxShadow = 'none';
+            }
+        }
+    },
+
+    // =========================================================
+    // EFFECTS GRID
+    // =========================================================
 
     setupEffectsGrid(config) {
         const grid = document.getElementById('effectsGrid');
@@ -74,7 +84,23 @@ export const View = {
         });
     },
 
-    // UPDATED: Accepts and Uses Callbacks
+    updateEffectButtons(effectStates) {
+        document.querySelectorAll('.effect-btn').forEach((btn, i) => {
+            const state = effectStates[i];
+            if (state) {
+                if (state.selected) btn.classList.add('selected'); else btn.classList.remove('selected');
+                if (state.enabled) btn.classList.add('enabled'); else btn.classList.remove('enabled');
+                
+                // Also update styles for the combined class if needed by CSS specificity
+                if (state.selected && state.enabled) btn.classList.add('enabled', 'selected');
+            }
+        });
+    },
+
+    // =========================================================
+    // CONTROLS GENERATION
+    // =========================================================
+
     showEffectControls(effect, idx, effectParams, effectStates, onKnobChange, onDropChange, onToggle, onEQChange) {
         const controls = document.getElementById('effectControls');
         
@@ -101,33 +127,25 @@ export const View = {
             
             // Level Knob
             const savedLevel = effectParams[`knob0`] !== undefined ? effectParams[`knob0`] : 50;
-            const levelKnob = new Knob(
-                document.getElementById('eqLevelKnob'), 0, 100, savedLevel,
-                (val) => this.updateStatus(`Level: ${Math.round(val)}`)
-            );
-            levelKnob.onrelease = () => { 
-                this.app.effectParams[idx][`knob0`] = levelKnob.value;
-                if(onKnobChange) onKnobChange(0, levelKnob.value); // Send BLE
-            };
+            const levelKnob = new Knob(document.getElementById('eqLevelKnob'), 0, 100, savedLevel, (val) => this.updateStatus(`Level: ${Math.round(val)}`));
+            levelKnob.onrelease = () => { if(onKnobChange) onKnobChange(0, levelKnob.value); };
 
             // Q Knob
-            const qKnob = new Knob(
-                document.getElementById('eqQKnob'), 0.1, 10, 1.41,
-                (val) => this.updateStatus(`Q Factor: ${val.toFixed(2)}`)
-            );
+            const qKnob = new Knob(document.getElementById('eqQKnob'), 0.1, 10, 1.41, (val) => this.updateStatus(`Q Factor: ${val.toFixed(2)}`));
             
             // IIR Designer
             this.app.iirDesigner = new IIRDesigner(
                 document.getElementById('iirCanvas'), 
                 qKnob, 
                 (txt) => this.updateStatus(txt),
-                (i, f, g, q) => { if(onEQChange) onEQChange(i, f, g, q); } // Send BLE
+                // FIXED: Now accepting 5 arguments (idx, en, f, g, q)
+                (idx, en, f, g, q) => { 
+                    if(onEQChange) onEQChange(idx, en, f, g, q); 
+                }
             );
             
             document.addEventListener('eq-reset', () => this.app.iirDesigner.reset(), { once: true });
-            document.getElementById('biquadCount').addEventListener('change', (e) => {
-                this.app.iirDesigner.setBiquadCount(parseInt(e.target.value));
-            });
+            document.getElementById('biquadCount').addEventListener('change', (e) => { this.app.iirDesigner.setBiquadCount(parseInt(e.target.value)); });
             return;
         }
 
@@ -137,30 +155,17 @@ export const View = {
                 <div class="effect-title">${effect.title}</div>
                 <div class="dropdowns-grid" id="generatedDropdowns"></div>
                 <div class="knobs-grid" id="generatedKnobs"></div>
-                <div style="margin-top:10px; text-align:center;">
-                     <label class="checkbox" style="justify-content:center">
-                        <input type="checkbox" id="effectEnable" ${effectStates[idx].enabled ? 'checked' : ''}>
-                        <span>Enable Effect</span>
-                    </label>
-                </div>
             </div>
         `;
-
-        // Enable Checkbox
-        document.getElementById('effectEnable').addEventListener('change', (e) => {
-            if(onToggle) onToggle(e.target.checked);
-        });
 
         // Dropdowns
         const dropdownContainer = document.getElementById('generatedDropdowns');
         const dropdownNames = effect.params.dropdowns || [];
-        
         dropdownNames.forEach((name, dIndex) => {
             const wrapper = document.createElement('div');
             const label = document.createElement('label');
             label.className = 'control-label';
             label.textContent = name.replace(/_/g, ' ');
-            
             const select = document.createElement('select');
             const options = this.app.config.dropdowns[name] || [];
             options.forEach((optText, optIdx) => {
@@ -168,16 +173,12 @@ export const View = {
                 option.text = optText; option.value = optIdx;
                 select.add(option);
             });
-            
-            const savedVal = effectParams[`dropdown${dIndex}`] || 0;
-            select.selectedIndex = savedVal;
+            select.selectedIndex = effectParams[`dropdown${dIndex}`] || 0;
             
             select.addEventListener('change', () => { 
-                this.app.effectParams[idx][`dropdown${dIndex}`] = select.selectedIndex;
                 this.updateStatus(`${name.replace(/_/g, ' ')}: ${options[select.selectedIndex]}`);
-                if(onDropChange) onDropChange(dIndex, select.selectedIndex); // Send BLE
+                if(onDropChange) onDropChange(dIndex, select.selectedIndex);
             });
-
             wrapper.appendChild(label); wrapper.appendChild(select);
             dropdownContainer.appendChild(wrapper);
         });
@@ -200,22 +201,15 @@ export const View = {
             );
             
             knob.onrelease = () => { 
-                this.app.effectParams[idx][`knob${kIndex}`] = knob.value;
-                if(onKnobChange) onKnobChange(kIndex, knob.value); // Send BLE
+                if(onKnobChange) onKnobChange(kIndex, knob.value);
             };
         });
     },
 
-    updateEffectButtons(effectStates) {
-        document.querySelectorAll('.effect-btn').forEach((btn, i) => {
-            const state = effectStates[i];
-            btn.classList.toggle('selected', state.selected);
-            btn.classList.toggle('enabled', state.enabled);
-        });
-    },
+    // =========================================================
+    // VISUALIZERS (Drum, Waveform, Spectrum)
+    // =========================================================
 
-    // ... (Drum, File Loader, etc. remain unchanged from previous complete versions) ...
-    // (Assuming you have the drum/file code from previous steps, I can paste it again if needed but to save space I will stop here unless requested)
     setupDrumGrid(drumPattern, updateCallback) {
         const grid = document.getElementById('drumGrid');
         grid.innerHTML = ''; 
@@ -271,7 +265,7 @@ export const View = {
         ctx.stroke();
     },
 
-    drawSpectrum(audioData, sampleRate, canvasId) {
+    drawSpectrum(audioData, sampleRate, canvasId, cachedFullFFT = null) {
         const canvas = document.getElementById(canvasId);
         if (!canvas) return;
         const ctx = canvas.getContext('2d');
@@ -283,9 +277,7 @@ export const View = {
         
         if (!audioData || !sampleRate) return;
         
-        const fftSize = 2048;
-        const data = audioData.slice(0, fftSize);
-        const fft = this.computeFFT(data);
+        const fft = cachedFullFFT || this.computeFFT(audioData.slice(0, 2048));
         
         const maxMag = Math.max(...fft);
         const maxDb = 20 * Math.log10(maxMag + 1e-10);
@@ -296,17 +288,22 @@ export const View = {
         ctx.strokeStyle = '#333'; ctx.lineWidth = 1;
         [20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000].forEach(freq => {
             if (freq <= maxFreq) {
-                const t = Math.log10(freq / 20) / Math.log10(maxFreq / 20);
+                const t = Math.log10(freq / minFreq) / Math.log10(maxFreq / minFreq);
                 const x = t * width;
                 ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, height); ctx.stroke();
+                ctx.fillStyle = '#888'; ctx.font = '11px monospace';
+                if ([20, 100, 1000, 10000].includes(freq)) {
+                    const label = freq >= 1000 ? `${freq/1000}k` : `${freq}`;
+                    ctx.fillText(label, x - 15, height - 5);
+                }
             }
         });
         
         ctx.strokeStyle = '#0a0'; ctx.lineWidth = 1.5; ctx.beginPath();
         for (let i = 0; i < width; i++) {
             const t = i / width;
-            const freq = 20 * Math.pow(maxFreq / 20, t);
-            const bin = Math.floor(freq / (sampleRate / 2) * fft.length);
+            const freq = minFreq * Math.pow(maxFreq / minFreq, t);
+            const bin = Math.floor(freq / (sampleRate/2) * fft.length);
             if (bin < fft.length) {
                 const db = 20 * Math.log10(fft[bin] + 1e-10);
                 const dbNorm = Math.max(0, Math.min(1, (db - minDb) / (maxDb - minDb)));
@@ -315,20 +312,92 @@ export const View = {
             }
         }
         ctx.stroke();
+
+        const irPointsSelect = document.getElementById('irPoints');
+        const selectedPoints = irPointsSelect ? parseInt(irPointsSelect.value) : 512;
+        if (selectedPoints <= fft.length) {
+            ctx.strokeStyle = '#0ff'; ctx.lineWidth = 2; ctx.beginPath();
+            const truncatedAudio = audioData.slice(0, selectedPoints);
+            const overlayFFT = this.computeFFT(truncatedAudio);
+            
+            for (let i = 0; i < width; i++) {
+                const t = i / width;
+                const freq = minFreq * Math.pow(maxFreq / minFreq, t);
+                const bin = Math.floor(freq / (sampleRate/2) * overlayFFT.length);
+                
+                if (bin < overlayFFT.length) {
+                    const db = 20 * Math.log10(overlayFFT[bin] + 1e-10);
+                    const dbNorm = Math.max(0, Math.min(1, (db - minDb) / (maxDb - minDb)));
+                    const y = height - (dbNorm * height);
+                    if (i === 0) ctx.moveTo(i, y); else ctx.lineTo(i, y);
+                }
+            }
+            ctx.stroke();
+            ctx.fillStyle = '#0a0'; ctx.fillRect(width - 120, 10, 15, 10);
+            ctx.fillStyle = '#888'; ctx.fillText('Full FFT', width - 100, 20);
+            ctx.fillStyle = '#0ff'; ctx.fillRect(width - 120, 25, 15, 10);
+            ctx.fillStyle = '#888'; ctx.fillText(`${selectedPoints} pts`, width - 100, 35);
+        }
     },
 
     computeFFT(data) {
-        const N = data.length;
-        const magnitude = new Array(N / 2).fill(0);
+        const maxInput = 4096;
+        let inputData = data;
+        if (data.length > maxInput) {
+            const step = Math.floor(data.length / maxInput);
+            inputData = new Float32Array(maxInput);
+            for(let i=0; i<maxInput; i++) inputData[i] = data[i*step];
+        }
+        const N = inputData.length;
+        const magnitude = new Array(Math.floor(N / 2)).fill(0);
         for (let k = 0; k < N / 2; k++) {
             let real = 0, imag = 0;
             for (let n = 0; n < N; n++) {
                 const angle = -2 * Math.PI * k * n / N;
-                real += data[n] * Math.cos(angle);
-                imag += data[n] * Math.sin(angle);
+                real += inputData[n] * Math.cos(angle);
+                imag += inputData[n] * Math.sin(angle);
             }
             magnitude[k] = Math.sqrt(real * real + imag * imag) / N;
         }
         return magnitude;
+    },
+	
+	updateTuner(freq) {
+        const noteStrings = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+        const freqEl = document.getElementById('freqDisplay');
+        const stringEl = document.getElementById('stringDisplay');
+        const needleEl = document.getElementById('tunerNeedle');
+        const centsEl = document.getElementById('centsDisplay');
+        const targetEl = document.getElementById('targetFreq');
+
+        if (!freqEl || !stringEl) return;
+
+        if (freq < 20) {
+            freqEl.textContent = "-- Hz"; stringEl.textContent = "--"; centsEl.textContent = "-- cents";
+            needleEl.style.transform = "translateX(-50%) rotate(0deg)";
+            return;
+        }
+
+        const noteNum = 12 * Math.log2(freq / 440) + 69;
+        const roundedNote = Math.round(noteNum);
+        const diff = noteNum - roundedNote; 
+        const cents = diff * 100;
+        const noteIndex = roundedNote % 12;
+        const noteName = noteStrings[noteIndex < 0 ? noteIndex + 12 : noteIndex]; 
+        const targetFreq = 440 * Math.pow(2, (roundedNote - 69) / 12);
+
+        freqEl.textContent = `${freq.toFixed(1)} Hz`;
+        stringEl.textContent = noteName;
+        targetEl.textContent = `${targetFreq.toFixed(1)} Hz`;
+        centsEl.textContent = `${cents > 0 ? '+' : ''}${cents.toFixed(0)} cents`;
+        
+        const rotation = Math.max(-45, Math.min(45, cents));
+        needleEl.style.transform = `translateX(-50%) rotate(${rotation}deg)`;
+        
+        if (Math.abs(cents) < 5) {
+            stringEl.style.color = "#0f0"; needleEl.style.backgroundColor = "#0f0";
+        } else {
+            stringEl.style.color = "var(--color-accent)"; needleEl.style.backgroundColor = "#f00";
+        }
     }
 };

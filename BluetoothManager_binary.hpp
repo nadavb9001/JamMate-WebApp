@@ -42,7 +42,6 @@ public:
     bleDataCallback = callback;
   }
 
-  // ✓ NEW: Set pointer to current preset
   void setCurrentPreset(Preset* preset) {
     pCurrentPreset = preset;
   }
@@ -72,6 +71,27 @@ public:
   bool isBLEConnected() const {
     return bleControlConnected;
   }
+  
+  // New method to force advertising start if disconnected
+  void startAdvertising() {
+      if (pAdvertising && !bleControlConnected) {
+          pAdvertising->start();
+          Serial.println("[BLE] Advertising started manually");
+      }
+  }
+  
+  // New method to stop advertising/disconnect
+  void stopAdvertising() {
+      if (pServer) {
+          // If connected, this might require more logic depending on library version
+          // but stopping advertising prevents new connections.
+           if (pAdvertising) pAdvertising->stop();
+           // Ideally we'd disconnect any active client here too if we want a "hard" off
+           // pServer->disconnect(0); // Disconnect client ID 0 (usually the first)
+           Serial.println("[BLE] Advertising stopped");
+      }
+  }
+
 
   void sendBLEAck() {
     if (pControlChar && bleControlConnected) {
@@ -114,7 +134,7 @@ private:
   bool a2dpEnabled;
   BluetoothA2DPSink a2dp_sink;
   BLEDataCallback bleDataCallback;
-  Preset* pCurrentPreset;  // ✓ Pointer to current preset
+  Preset* pCurrentPreset; 
 
   void setupBLEGATT() {
     Serial.println("[BLE-GATT] Setting up server...");
@@ -141,6 +161,8 @@ private:
     pAdvertising->setMinPreferred(0x06);
     pAdvertising->setMaxPreferred(0x12);
     pAdvertising->setAppearance(0);
+    
+    // Start advertising by default
     BLEDevice::startAdvertising();
 
     Serial.println("[BLE-GATT] ✓ Advertising started");
@@ -169,6 +191,7 @@ private:
       manager->bleControlConnected = false;
       Serial.println("[BLE-CTRL] ✗ Client disconnected - restarting advertising");
       delay(100);
+      // Restart advertising so we can reconnect
       manager->pAdvertising->start();
     }
 
@@ -176,136 +199,6 @@ private:
     BluetoothManager* manager;
   };
 
-  /*class CharacteristicCallbacks : public BLECharacteristicCallbacks {
-  public:
-    CharacteristicCallbacks(BluetoothManager* mgr)
-      : manager(mgr) {}
-
-    void onWrite(BLECharacteristic* pCharacteristic) override {
-      std::string value = pCharacteristic->getValue();
-      uint8_t* pData = (uint8_t*)value.data();
-      size_t len = value.length();
-
-      if (len == 0) return;
-
-      // ✓ Check if preset pointer is set
-      if (!manager->pCurrentPreset) {
-        Serial.println("[BLE-RX] ✗ Current preset not initialized");
-        return;
-      }
-
-      uint8_t cmd = pData[0];
-      Serial.printf("[BLE-RX] Command 0x%02X, Length %d\n", cmd, len);
-
-      switch(cmd) {
-        case 0x13: { // SAVE_CUSTOM_PRESET
-          Serial.println("[BLE-CMD] CMD_SAVE_CUSTOM_PRESET (0x13)");
-          if (len < 298) {
-            Serial.printf("[BLE-CMD] ✗ Invalid length: %d (need 298)\n", len);
-            break;
-          }
-
-          uint8_t* presetData = &pData[1];
-          
-          // ✓ Use pointer to current preset
-          if (!PresetBinaryCodec::convertFromBinary(*(PresetBinary*)presetData, *(manager->pCurrentPreset))) {
-            Serial.println("[BLE-CMD] ✗ Invalid preset data");
-            break;
-          }
-
-          Serial.println("[BLE-CMD] ✓ Preset valid, saving to SPIFFS...");
-          
-          // Send ACK
-          uint8_t ack = 0xAA;
-          pCharacteristic->setValue(&ack, 1);
-          pCharacteristic->notify();
-          Serial.println("[BLE-TX] ✓ ACK sent");
-          break;
-        }
-
-        case 0x14: { // EFFECT_UPDATE - Single effect change
-          Serial.println("[BLE-CMD] CMD_EFFECT_UPDATE (0x14)");
-          if (len < 17) {
-            Serial.printf("[BLE-CMD] ✗ Invalid length: %d (need 17)\n", len);
-            break;
-          }
-
-          uint8_t effectIdx = pData[1];
-          if (effectIdx >= 17) {
-            Serial.printf("[BLE-CMD] ✗ Invalid effect index: %d\n", effectIdx);
-            break;
-          }
-
-          uint8_t enabled = pData[2];
-          uint8_t knobs[10];
-          uint8_t drops[4];
-          memcpy(knobs, &pData[3], 10);  // Bytes 3-12: knobs
-          memcpy(drops, &pData[13], 4);  // Bytes 13-16: dropdowns
-
-          // ✓ Update current preset using pointer
-          manager->pCurrentPreset->effects[effectIdx].enabled = (enabled != 0);
-          memcpy(manager->pCurrentPreset->effects[effectIdx].knobs, knobs, 10);
-          memcpy(manager->pCurrentPreset->effects[effectIdx].dropdowns, drops, 4);
-
-          Serial.printf("[BLE-CMD] ✓ Effect %d updated: en=%d\n", effectIdx, enabled);
-
-          // Send ACK
-          uint8_t ack = 0xAA;
-          pCharacteristic->setValue(&ack, 1);
-          pCharacteristic->notify();
-          break;
-        }
-
-        case 0x12: { // LOAD_PRESET
-          Serial.println("[BLE-CMD] CMD_LOAD_PRESET (0x12)");
-          if (len < 3) {
-            Serial.printf("[BLE-CMD] ✗ Invalid length: %d (need 3)\n", len);
-            break;
-          }
-
-          uint8_t bank = pData[1];
-          uint8_t number = pData[2];
-          if (bank > 6 || number > 4) {
-            Serial.printf("[BLE-CMD] ✗ Invalid bank/number: %d/%d\n", bank, number);
-            break;
-          }
-
-          Serial.printf("[BLE-CMD] Loading Bank %d, Preset %d\n", bank, number);
-          
-          // Load preset from SPIFFS or factory
-          // This should be handled by the main application
-          // For now, send current preset as response
-          
-          PresetBinary binary;
-          PresetBinaryCodec::convertToBinary(*(manager->pCurrentPreset), binary);
-          pCharacteristic->setValue((uint8_t*)&binary, sizeof(PresetBinary));
-          pCharacteristic->notify();
-          Serial.printf("[BLE-TX] ✓ Sent preset: Bank %d, Preset %d (%d bytes)\n",
-                        bank, number, sizeof(PresetBinary));
-          break;
-        }
-
-        case 0x10: { // GET_CURRENT_STATE
-          Serial.println("[BLE-CMD] CMD_GET_CURRENT_STATE (0x10)");
-          
-          // ✓ Send current preset as binary using pointer
-          PresetBinary binary;
-          PresetBinaryCodec::convertToBinary(*(manager->pCurrentPreset), binary);
-          pCharacteristic->setValue((uint8_t*)&binary, sizeof(PresetBinary));
-          pCharacteristic->notify();
-          Serial.printf("[BLE-TX] ✓ Sent current state (%d bytes)\n", sizeof(PresetBinary));
-          break;
-        }
-
-        default:
-          Serial.printf("[BLE-CMD] Unknown command: 0x%02X\n", cmd);
-          break;
-      }
-    }
-
-  private:
-    BluetoothManager* manager;
-  };*/
   class CharacteristicCallbacks : public BLECharacteristicCallbacks {
   public:
     CharacteristicCallbacks(BluetoothManager* mgr)

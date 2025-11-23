@@ -1,17 +1,15 @@
 // ===================================================================
-// JamMate Multi-Effect Controller - Firmware v3.0
-// Protocol: Command-Based (v3) over BLE
-// Storage: SPIFFS (Legacy Struct v2)
+// JamMate Multi-Effect Controller - Firmware v3.3 (LittleFS)
+// Protocol: Command-Based (v3) + Binary Stream Blobs
+// Storage: Hybrid (Factory=Structs, Custom=Blobs on LittleFS)
 // ===================================================================
 
-#include "PresetBinary_v2.hpp"
+#include "PresetBinary_v2.hpp" // Keep for struct definition
 #include "BluetoothManager_binary.hpp"
 #include "MyRotaryEncoder.h"
-#include <SPIFFS.h>
+#include <LittleFS.h> // CHANGED: Replaced SPIFFS with LittleFS
 
-// ===================================================================
 // Pin Definitions
-// ===================================================================
 #define ENCODER1_PIN_A 19
 #define ENCODER1_PIN_B 18
 #define ENCODER1_BTN 5
@@ -25,22 +23,23 @@
 #define DSP_TX_PIN 33
 #define DSP_RX_PIN 25
 
-// ===================================================================
-// Configuration Constants
-// ===================================================================
-#define SAVE_INTERVAL 5000  // Auto-save every 5 seconds
+// Config
+#define SAVE_INTERVAL 5000
+#define MAX_BLOB_SIZE 1024 // Max preset size
 
 // ===================================================================
-// Global Objects
+// DEVELOPMENT MODE
 // ===================================================================
+// Set to TRUE to protect factory presets (Banks 0-4)
+// Set to FALSE to allow saving to any bank (Tuning Mode)
+bool presetsLocked = false; 
+
+// Globals
 BluetoothManager btManager;
 RotaryEncoder encoder1(ENCODER1_PIN_A, ENCODER1_PIN_B, ENCODER1_BTN);
 RotaryEncoder encoder2(ENCODER2_PIN_A, ENCODER2_PIN_B, ENCODER2_BTN);
 HardwareSerial dspSerial(2);
 
-// ===================================================================
-// State Variables
-// ===================================================================
 struct SystemState {
   uint8_t currentBank;
   uint8_t currentPresetNum;
@@ -49,366 +48,489 @@ struct SystemState {
   bool switchStates[4];
 } state;
 
-// Current active preset
 Preset currentPreset;
+uint8_t txBuffer[17];
+// Buffer for building/receiving blobs
+uint8_t blobBuffer[MAX_BLOB_SIZE]; 
 
-// 17-byte legacy DSP protocol buffer
-uint8_t txBuffer[17] = { 0 };
-// BLE binary transmission buffer
-uint8_t bleTxBuffer[sizeof(PresetBinary)] = { 0 };
-
-// Encoder state tracking
+// Variables
 int lastEncoder1Pos = 0;
 int lastEncoder2Pos = 0;
 unsigned long lastEncoder1BtnTime = 0;
 unsigned long lastEncoder2BtnTime = 0;
-const unsigned long DEBOUNCE_TIME = 200;
+const unsigned long DEBOUNCE_TIME = 200; 
 unsigned long lastSaveTime = 0;
 
-// ===================================================================
-// Debug Macros
-// ===================================================================
-#define LOG_PRESET_LOAD(p) Serial.printf("[PRESET-LOAD] %s (Bank %d, Num %d, Ver %d)\n", \
-  (p).name, (p).bank, (p).number, PRESET_PROTOCOL_VERSION)
-#define LOG_PRESET_SAVE(p) Serial.printf("[PRESET-SAVE] %s (Bank %d, Num %d)\n", \
-  (p).name, (p).bank, (p).number)
+// Forward Declarations
+void sendToDSP(const char cmd[4], uint8_t* payload, size_t len);
+void sendEffectChangeToDSP(uint8_t idx, uint8_t en, const uint8_t* k, const uint8_t* d);
+void sendEQBandToDSP(uint8_t b, uint16_t f, int8_t g, uint8_t q);
+void updateDSPFromPreset();
 
 // ===================================================================
-// DSP Communication Wrappers
+// BLOB SERIALIZATION (Struct <-> Binary Stream)
 // ===================================================================
-void sendToDSP(const char cmd[4], uint8_t* payload, size_t payloadLen) {
-  memset(txBuffer, 0, 17);
-  txBuffer[0] = cmd[0];
-  txBuffer[1] = cmd[1];
-  txBuffer[2] = cmd[2];
-  txBuffer[3] = cmd[3];
-  if (payload && payloadLen > 0) {
-    // Safety copy to prevent overflow
-    memcpy(txBuffer + 4, payload, min(payloadLen, (size_t)13));
+
+// Convert Internal Struct -> Protocol v3 Blob
+size_t serializeStructToBlob(const Preset& p, uint8_t* buf) {
+  size_t offset = 0;
+  
+  // 1. Header
+  buf[offset++] = 0x03; // Version
+  buf[offset++] = p.bpm;
+  buf[offset++] = p.masterVolume;
+  
+  size_t nameLen = strlen(p.name);
+  buf[offset++] = nameLen;
+  memcpy(&buf[offset], p.name, nameLen);
+  offset += nameLen;
+
+  // 2. Effects Loop
+  for (int i = 0; i < MAX_EFFECTS; i++) {
+    buf[offset++] = i; // ID
+    buf[offset++] = p.effects[i].enabled ? 1 : 0;
+    
+    buf[offset++] = 10; // Knob Count (Fixed internal)
+    memcpy(&buf[offset], p.effects[i].knobs, 10);
+    offset += 10;
+    
+    buf[offset++] = 4; // Drop Count
+    memcpy(&buf[offset], p.effects[i].dropdowns, 4);
+    offset += 4;
   }
-  dspSerial.write(txBuffer, 17);
+  
+  return offset;
 }
 
-// ===================================================================
-// Send Single Effect Change to DSP (Legacy 17-Byte Protocol)
-// ===================================================================
-void sendEffectChangeToDSP(uint8_t effectIdx, uint8_t enabled,
-                           const uint8_t* knobs, const uint8_t* dropdowns) {
+// Parse Protocol v3 Blob -> Internal Struct (Best Effort)
+void parseBlobToStruct(const uint8_t* buf, size_t len, Preset& p) {
+  if (len < 4) return;
+  size_t offset = 0;
   
-  if (effectIdx >= MAX_EFFECTS) return;
-
-  // 1. Get the Legacy Header (4 chars) from the definition file
-  // e.g., "Gate", "Comp", "FIR "
-  const char* shortName = EFFECT_NAMES[effectIdx]; 
-
-  // 2. Prepare Fixed 17-Byte Buffer
-  uint8_t buffer[17];
-  memset(buffer, 0, 17); // Fill with zeros (padding)
-
-  // [0-3] Header
-  memcpy(buffer, shortName, 4);
-
-  // [4] Enabled
-  buffer[4] = enabled ? 1 : 0;
-
-  // 3. Special Mapping: Amp/Cab (FIR )
-  // The FIR effect has fewer knobs, so we pack dropdowns earlier to fit 4 of them.
-  if (strncmp(shortName, "FIR ", 4) == 0) {
-    // [5-11] Knobs 0-6 (7 Knobs)
-    if (knobs) memcpy(&buffer[5], knobs, 7);
-
-    // [12-15] Dropdowns 0-3 (Packed into "Knob" slots 7-9 + Drop 0)
-    if (dropdowns) {
-      buffer[12] = dropdowns[0]; // Amp Type
-      buffer[13] = dropdowns[1]; // Tone Type
-      buffer[14] = dropdowns[2]; // IR Points
-      buffer[15] = dropdowns[3]; // IR Type
-    }
-  } 
-  // 4. Standard Mapping: All other effects
-  else {
-    // [5-14] Knobs 0-9 (10 Knobs)
-    if (knobs) memcpy(&buffer[5], knobs, 10);
-
-    // [15-16] Dropdowns 0-1 (Standard 2 Dropdowns)
-    if (dropdowns) {
-      buffer[15] = dropdowns[0];
-      buffer[16] = dropdowns[1];
-    }
+  // 1. Header
+  uint8_t ver = buf[offset++];
+  p.bpm = buf[offset++];
+  p.masterVolume = buf[offset++];
+  
+  uint8_t nameLen = buf[offset++];
+  if (offset + nameLen <= len) {
+    memset(p.name, 0, 32);
+    memcpy(p.name, &buf[offset], min((size_t)nameLen, (size_t)31));
+    offset += nameLen;
   }
 
-  // 5. Send to DSP
-  dspSerial.write(buffer, 17);
-  
-  // Debug Output
-  Serial.printf("[DSP-TX] Legacy: %s En:%d K0:%d K1:%d ...\n", 
-    shortName, buffer[4], buffer[5], buffer[6]);
+  // 2. Parse Blocks
+  while (offset < len) {
+    uint8_t id = buf[offset++];
+    
+    // EQ Tag
+    if (id == 0xFE) {
+      if (offset >= len) break;
+      uint8_t count = buf[offset++];
+      offset += (count * 4); // Skip EQ data (4 bytes per band)
+      continue;
+    }
+
+    // Effect Block
+    if (offset + 2 > len) break;
+    uint8_t enabled = buf[offset++];
+    uint8_t kCount = buf[offset++];
+    
+    if (id < MAX_EFFECTS) {
+      p.effects[id].enabled = (enabled != 0);
+      
+      // Read Knobs
+      for (int k = 0; k < kCount; k++) {
+        if (offset < len) {
+          uint8_t val = buf[offset++];
+          if (k < 10) p.effects[id].knobs[k] = val;
+        }
+      }
+      
+      // Read Drops
+      if (offset < len) {
+        uint8_t dCount = buf[offset++];
+        for (int d = 0; d < dCount; d++) {
+          if (offset < len) {
+            uint8_t val = buf[offset++];
+            if (d < 4) p.effects[id].dropdowns[d] = val;
+          }
+        }
+      }
+    } else {
+      // Unknown Effect (Skip it)
+      offset += kCount;
+      if(offset < len) {
+         uint8_t dCount = buf[offset++];
+         offset += dCount;
+      }
+    }
+  }
 }
 
 // ===================================================================
-// Helper: Send EQ Band to DSP (Protocol v3 Implementation)
+// DSP Comm Handler
 // ===================================================================
-void sendEQBandToDSP(uint8_t bandIdx, uint16_t freq, int8_t gain, uint8_t q) {
-  // Header construction: "EQ01", "EQHP", etc.
-  char header[5];
-  if (bandIdx == 0) snprintf(header, 5, "EQHP");       // Band 0 = HPF
-  else if (bandIdx == 11) snprintf(header, 5, "EQLP"); // Band 11 = LPF
-  else snprintf(header, 5, "EQ%02d", bandIdx);         // Bands 1-10
-  
-  uint8_t payload[5];
-  payload[0] = 1; // Enable (Always 1 for live updates)
-  
-  // Freq (Big Endian for DSP)
-  payload[1] = (freq >> 8) & 0xFF;
-  payload[2] = freq & 0xFF;
-  
-  payload[3] = (uint8_t)gain; // Cast int8 to uint8 (2's complement)
-  payload[4] = q;
-  
-  // Send 4-byte header + 5-byte payload
-  sendToDSP(header, payload, 5); 
-  
-  Serial.printf("[DSP-TX] %s F:%d G:%d Q:%d\n", header, freq, gain, q);
+
+// Global Parser State
+enum DSPState { WAIT_HEADER, WAIT_LEN, READ_PAYLOAD };
+DSPState dspState = WAIT_HEADER;
+char dspHeader[5];       // 4 chars + null
+uint32_t dspPayloadLen = 0;
+uint32_t dspBytesRead = 0;
+uint8_t* dspBuffer = nullptr; // Dynamic buffer for large payloads
+
+void checkDSPIncoming() {
+    while (dspSerial.available()) {
+        
+        switch (dspState) {
+            case WAIT_HEADER:
+                if (dspSerial.available() >= 4) {
+                    dspSerial.readBytes(dspHeader, 4);
+                    dspHeader[4] = 0; // Null terminate
+                    dspState = WAIT_LEN;
+                }
+                break;
+
+            case WAIT_LEN:
+                if (dspSerial.available() >= 4) {
+                    dspSerial.readBytes((char*)&dspPayloadLen, 4); // Read uint32
+                    
+                    // Sanity Check (Max 10KB)
+                    if (dspPayloadLen > 10240) { 
+                        Serial.printf("[DSP] Error: Payload too huge (%d)\n", dspPayloadLen);
+                        dspState = WAIT_HEADER; // Reset
+                        break;
+                    }
+                    
+                    // Allocate buffer if needed (or use static if small)
+                    if (dspBuffer) free(dspBuffer);
+                    dspBuffer = (uint8_t*)malloc(dspPayloadLen);
+                    
+                    dspBytesRead = 0;
+                    dspState = READ_PAYLOAD;
+                }
+                break;
+
+            case READ_PAYLOAD:
+                // Read in chunks
+                while (dspSerial.available() && dspBytesRead < dspPayloadLen) {
+                    dspBuffer[dspBytesRead++] = dspSerial.read();
+                }
+
+                if (dspBytesRead >= dspPayloadLen) {
+                    // Packet Complete! Process it.
+                    processDSPPacket(dspHeader, dspBuffer, dspPayloadLen);
+                    
+                    // Cleanup
+                    free(dspBuffer);
+                    dspBuffer = nullptr;
+                    dspState = WAIT_HEADER;
+                }
+                break;
+        }
+    }
+}
+
+void processDSPPacket(const char* header, uint8_t* data, uint32_t len) {
+    // 1. Tuner Data
+    if (strcmp(header, "TUNE") == 0) {
+        if (len == 4) {
+             // Forward to Web: [0x35] + [4] + [0] + [Float bytes]
+             uint8_t packet[7];
+             packet[0] = 0x35; // CMD_TUNER
+             packet[1] = 4; packet[2] = 0;
+             memcpy(&packet[3], data, 4);
+             btManager.sendBLEData(packet, 7);
+        }
+    }
+    // 2. CPU Load
+    else if (strcmp(header, "LOAD") == 0) {
+        float load;
+        memcpy(&load, data, 4);
+        Serial.printf("[DSP] CPU Load: %.1f%%\n", load * 100.0f);
+        // Optional: Send to Web (Cmd 0x36?)
+    }
+    // 3. Spectral Data (Future)
+    else if (strcmp(header, "SPEC") == 0) {
+        // Forward Chunked to Web (Cmd 0x41)
+        // btManager.sendBLEDataChunked(data, len);
+    }
 }
 
 // ===================================================================
-// BLE Data Handler - Protocol v3 (Command + Length + Payload)
+// BLE Handler
 // ===================================================================
 void onBLEDataReceived(uint8_t* data, size_t len) {
-  // 1. Validate Header Size (Cmd + Len_L + Len_H = 3 bytes)
   if (len < 3) return;
-
   uint8_t cmd = data[0];
-  uint16_t payloadLen = data[1] | (data[2] << 8); // Little Endian Length
-
-  // 2. Validate Payload Integrity
-  if (len < payloadLen + 3) {
-    Serial.printf("[BLE] ✗ Fragmented packet? Expected %d, Got %d\n", payloadLen + 3, len);
-    return;
-  }
-
+  uint16_t payloadLen = data[1] | (data[2] << 8);
+  if (len < payloadLen + 3) return;
   uint8_t* payload = &data[3];
 
   switch (cmd) {
-    
-    // ============================================================
-    // 0x20: SET_PARAM (Knob or Dropdown)
-    // Payload: [FxID, ParamID, Value]
-    // ============================================================
-    case 0x20: { 
-      uint8_t fxId = payload[0];
-      uint8_t paramId = payload[1];
-      uint8_t value = payload[2];
-
-      if (fxId >= MAX_EFFECTS) break;
-
-      // Update Internal State
-      if (paramId < 10) {
-        // It's a Knob (0-9)
-        currentPreset.effects[fxId].knobs[paramId] = value;
-        Serial.printf("[BLE] Set Knob: Fx %d, Knob %d -> %d\n", fxId, paramId, value);
+    // --- LIVE CONTROLS ---
+    case 0x20: { // Param
+      uint8_t fx = payload[0]; uint8_t pid = payload[1]; uint8_t val = payload[2];
+      if (fx < MAX_EFFECTS) {
+        if (pid < 10) currentPreset.effects[fx].knobs[pid] = val;
+        else currentPreset.effects[fx].dropdowns[pid-10] = val;
+        sendEffectChangeToDSP(fx, currentPreset.effects[fx].enabled, 
+          currentPreset.effects[fx].knobs, currentPreset.effects[fx].dropdowns);
       } else {
-        // It's a Dropdown (10-13 mapped to 0-3)
-        uint8_t dropIdx = paramId - 10;
-        if (dropIdx < MAX_EFFECT_DROPDOWNS) {
-          currentPreset.effects[fxId].dropdowns[dropIdx] = value;
-          Serial.printf("[BLE] Set Drop: Fx %d, Drop %d -> %d\n", fxId, dropIdx, value);
-        }
+         Serial.printf("[BLE] Passthrough Fx %d\n", fx);
+         uint8_t dummyKnobs[10] = {0};
+         uint8_t dummyDrops[4] = {0};
+         if (pid < 10) dummyKnobs[pid] = val;
+         else dummyDrops[pid-10] = val;
+         sendEffectChangeToDSP(fx, true, dummyKnobs, dummyDrops);
       }
-
-      // Forward FULL effect state to DSP
-      sendEffectChangeToDSP(
-        fxId, 
-        currentPreset.effects[fxId].enabled,
-        currentPreset.effects[fxId].knobs,
-        currentPreset.effects[fxId].dropdowns
-      );
       break;
     }
-
-    // ============================================================
-    // 0x21: SET_TOGGLE (Enable/Disable Effect)
-    // Payload: [FxID, Enabled]
-    // ============================================================
-    case 0x21: {
-      uint8_t fxId = payload[0];
-      uint8_t enabled = payload[1];
-
-      if (fxId >= MAX_EFFECTS) break;
-
-      currentPreset.effects[fxId].enabled = (enabled != 0);
-      Serial.printf("[BLE] Toggle Fx %d -> %s\n", fxId, enabled ? "ON" : "OFF");
-
-      // Forward to DSP
-      sendEffectChangeToDSP(
-        fxId, 
-        currentPreset.effects[fxId].enabled,
-        currentPreset.effects[fxId].knobs,
-        currentPreset.effects[fxId].dropdowns
-      );
+    case 0x21: { // Toggle
+      uint8_t fx = payload[0]; uint8_t en = payload[1];
+      if (fx < MAX_EFFECTS) {
+        currentPreset.effects[fx].enabled = (en != 0);
+        sendEffectChangeToDSP(fx, en, currentPreset.effects[fx].knobs, currentPreset.effects[fx].dropdowns);
+      } else {
+          Serial.printf("[BLE] Passthrough Toggle Fx %d -> %d\n", fx, en);
+          sendEffectChangeToDSP(fx, en, NULL, NULL);
+      }
       break;
     }
-
     // ============================================================
     // 0x22: SET_EQ_BAND (IIR Update)
-    // Payload: [BandIdx(1), Freq(2), Gain(1), Q(1)]
+    // Payload: [BandIdx(1), En(1), Freq(2), Gain(1), Q(1)] = 6 bytes
     // ============================================================
     case 0x22: {
       uint8_t bandIdx = payload[0];
-      uint16_t freq = payload[1] | (payload[2] << 8); // Little Endian
-      int8_t gain = (int8_t)payload[3];
-      uint8_t q = payload[4];
+      uint8_t enabled = payload[1];          // NEW: Read Enabled Byte
+      uint16_t freq = payload[2] | (payload[3] << 8); 
+      int8_t gain = (int8_t)payload[4];
+      uint8_t q = payload[5];
 
-      // Forward directly to DSP (Ghost Data)
-      sendEQBandToDSP(bandIdx, freq, gain, q);
+      sendEQBandToDSP(bandIdx, enabled, freq, gain, q); // Pass Enabled
+      break;
+    }
+    case 0x23: { // Util
+      uint8_t t = payload[0]; uint8_t en = payload[1]; 
+      uint8_t lv = payload[2]; uint16_t f = payload[3]|(payload[4]<<8);
+      uint8_t p[5] = {t, en, lv, (uint8_t)(f>>8), (uint8_t)(f&0xFF)};
+      sendToDSP("UTIL", p, 5);
       break;
     }
 
-    // ============================================================
-    // 0x30: GET_STATE (Handshake)
-    // Payload: None
-    // Response: 0x31 + Len + BinaryStruct
-    // ============================================================
-    case 0x30: {
-      Serial.println("[BLE] Handshake Request (0x30)");
-      
-      uint8_t responseHead[3];
-      responseHead[0] = 0x31; // STATE_DATA
-      uint16_t size = sizeof(PresetBinary);
-      responseHead[1] = size & 0xFF;
-      responseHead[2] = (size >> 8) & 0xFF;
-
-      // Send Header
-      btManager.sendBLEData(responseHead, 3);
-      
-      // Send Body (The PresetBinary struct)
-      PresetBinary binary;
-      PresetBinaryCodec::convertToBinary(currentPreset, binary);
-      btManager.sendBLEData((uint8_t*)&binary, sizeof(PresetBinary));
-      
-      Serial.println("[BLE] Sent Full State");
+    // --- PRESET MANAGEMENT ---
+    case 0x30: { // Handshake
+      size_t size = serializeStructToBlob(currentPreset, blobBuffer);
+      uint8_t head[3] = {0x31, (uint8_t)(size&0xFF), (uint8_t)(size>>8)};
+      btManager.sendBLEData(head, 3);
+      btManager.sendBLEDataChunked(blobBuffer, size);
+      Serial.println("[BLE] Sent Handshake State");
       break;
     }
-    
-    // ============================================================
-    // 0xFF: Legacy Wrapper (Backward Compatibility)
-    // ============================================================
-    case 0xFF:
-       if (len >= 20) { 
-         // Skip 3 bytes header, forward 17 bytes
-         dspSerial.write(&data[3], 17); 
-       }
-       break;
 
-    default:
-      Serial.printf("[BLE] Unknown OpCode: 0x%02X\n", cmd);
+    case 0x32: { // SAVE_PRESET
+      uint8_t bank = payload[0];
+      uint8_t num = payload[1];
+      uint8_t* blob = &payload[2];
+      size_t blobSize = payloadLen - 2;
+
+      if (presetsLocked && bank < 5) {
+        Serial.printf("[BLE] ✗ Cannot save to Bank %d (Locked)\n", bank);
+        break;
+      }
+
+      char fname[32];
+      if (bank < 5) snprintf(fname, 32, "/presets/f_%d_%d.bin", bank, num);
+      else snprintf(fname, 32, "/presets/c_%d_%d.bin", bank-5, num);
+
+      // CHANGED: Use LittleFS
+      File f = LittleFS.open(fname, "w");
+      if (f) {
+        f.write(blob, blobSize);
+        f.close();
+        Serial.printf("[BLE] Saved %s (%d bytes)\n", fname, blobSize);
+        
+        parseBlobToStruct(blob, blobSize, currentPreset);
+        currentPreset.bank = bank; currentPreset.number = num;
+        updateDSPFromPreset();
+      }
       break;
+    }
+
+    case 0x33: { // LOAD_REQ
+      uint8_t bank = payload[0];
+      uint8_t num = payload[1];
+      char fname[32];
+      
+      if (bank < 5) snprintf(fname, 32, "/presets/f_%d_%d.bin", bank, num); 
+      else snprintf(fname, 32, "/presets/c_%d_%d.bin", bank-5, num);
+
+      // CHANGED: Use LittleFS
+      if (LittleFS.exists(fname)) {
+        File f = LittleFS.open(fname, "r");
+        if (f) {
+          size_t size = f.read(blobBuffer, MAX_BLOB_SIZE);
+          f.close();
+          
+          uint8_t head[3] = {0x34, (uint8_t)(size&0xFF), (uint8_t)(size>>8)};
+          btManager.sendBLEData(head, 3);
+          btManager.sendBLEDataChunked(blobBuffer, size);
+          
+          parseBlobToStruct(blobBuffer, size, currentPreset);
+          currentPreset.bank = bank; currentPreset.number = num;
+          updateDSPFromPreset();
+          Serial.printf("[BLE] Loaded %s\n", fname);
+        }
+      } else {
+         // Fallback to Legacy if needed, or just error
+         Serial.printf("[BLE] File not found: %s\n", fname);
+      }
+      break;
+    }
   }
 }
 
 // ===================================================================
-// SPIFFS & Persistence (Legacy v2 Logic)
+// DSP Helpers
+// ===================================================================
+void sendToDSP(const char cmd[4], uint8_t* payload, size_t len) {
+  uint8_t buf[17] = {0};
+  memcpy(buf, cmd, 4);
+  if(payload && len>0) memcpy(buf+4, payload, min(len, (size_t)13));
+  dspSerial.write(buf, 17);
+}
+
+void sendEffectChangeToDSP(uint8_t idx, uint8_t en, const uint8_t* k, const uint8_t* d) {
+  const char* name;
+  if(idx < MAX_EFFECTS) name = EFFECT_NAMES[idx];
+  else name = "GEN ";
+  
+  uint8_t buf[17] = {0};
+  memcpy(buf, name, 4);
+  buf[4] = en ? 1 : 0;
+  
+  if(strncmp(name, "FIR ", 4)==0) {
+    if(k) memcpy(&buf[5], k, 7);
+    if(d) { buf[12]=d[0]; buf[13]=d[1]; buf[14]=d[2]; buf[15]=d[3]; }
+  } else {
+    if(k) memcpy(&buf[5], k, 10);
+    if(d) { buf[15]=d[0]; buf[16]=d[1]; }
+  }
+  dspSerial.write(buf, 17);
+  Serial.printf("[DSP-TX] %s En:%d Idx:%d\n", name, buf[4], idx);
+}
+
+// Helper Update: accept 'enabled'
+void sendEQBandToDSP(uint8_t b, uint8_t enabled, uint16_t f, int8_t g, uint8_t q) {
+  char h[5];
+  if(b==0) strcpy(h,"EQHP"); else if(b==11) strcpy(h,"EQLP"); else snprintf(h,5,"EQ%02d",b);
+  
+  // Byte 0 is now the actual enabled state (0 or 1), not hardcoded 1.
+  uint8_t p[5] = {enabled, (uint8_t)(f>>8), (uint8_t)(f&0xFF), (uint8_t)g, q};
+  
+  sendToDSP(h, p, 5);
+  Serial.printf("[DSP-TX] %s En:%d F:%d G:%d Q:%d\n", h, enabled, f, g, q);
+}
+
+void updateDSPFromPreset() {
+  uint8_t p[13]={currentPreset.bank, currentPreset.number, currentPreset.masterVolume, currentPreset.bpm};
+  sendToDSP("PRES", p, 13);
+  
+  for(int i=0; i<MAX_EFFECTS; i++) {
+    sendEffectChangeToDSP(i, currentPreset.effects[i].enabled,
+      currentPreset.effects[i].knobs, currentPreset.effects[i].dropdowns);
+    delay(5); // Prevent overflow
+  }
+}
+
+// ===================================================================
+// LittleFS & Persistence
 // ===================================================================
 void initializeFactoryPresets() {
-  if (SPIFFS.exists("/presets/factory_v2.flag")) {
-    Serial.println("[PRESETS] Factory presets v2 already initialized");
+  if (LittleFS.exists("/presets/factory_v3.flag")) {
+    Serial.println("[PRESETS] Factory presets already up to date.");
     return;
   }
 
-  Serial.println("[PRESETS] Initializing factory presets...");
-  SPIFFS.mkdir("/presets");
+  Serial.println("[PRESETS] Generating new Factory Presets...");
+  if (!LittleFS.exists("/presets")) LittleFS.mkdir("/presets");
+
   const char* bankNames[] = { "Clean", "Crunch", "Overdrive", "Distortion", "Modulated", "Custom1", "Custom2" };
 
-  // Factory Presets (0-4)
   for (int bank = 0; bank < 5; bank++) {
     for (int num = 0; num < 5; num++) {
       Preset p;
       memset(&p, 0, sizeof(Preset));
-      snprintf(p.name, sizeof(p.name), "%s-%d", bankNames[bank], num + 1);
-      p.bank = bank; p.number = num; p.masterVolume = 127; p.bpm = 120;
-      
-      for (int i = 0; i < MAX_EFFECTS; i++) {
-        p.effects[i].enabled = (i < 3);
-        for (int k = 0; k < MAX_EFFECT_KNOBS; k++) p.effects[i].knobs[k] = 50;
-        for (int d = 0; d < MAX_EFFECT_DROPDOWNS; d++) p.effects[i].dropdowns[d] = 0;
+      snprintf(p.name, 32, "%s %d", bankNames[bank], num + 1);
+      p.bank = bank; p.number = num; p.masterVolume = 100; p.bpm = 120;
+
+      // --- DEFINE PRESETS HERE ---
+      if (bank == 0) { // CLEAN
+        p.effects[13].enabled = true; p.effects[13].knobs[6] = 30; p.effects[13].dropdowns[0] = 1;
+        p.effects[16].enabled = true; p.effects[16].knobs[0] = 40;
+        p.effects[1].enabled = true; p.effects[1].knobs[0] = 60;
+      } 
+      else if (bank == 1) { // CRUNCH
+        p.effects[3].enabled = true; p.effects[3].knobs[1] = 70;
+        p.effects[13].enabled = true; p.effects[13].dropdowns[0] = 3;
       }
-      
-      char filename[64];
-      snprintf(filename, sizeof(filename), "/presets/f_%d_%d.dat", bank, num);
-      File file = SPIFFS.open(filename, "w");
+      else if (bank == 3) { // DISTORTION
+        p.effects[0].enabled = true;
+        p.effects[4].enabled = true; p.effects[4].knobs[1] = 90; p.effects[4].dropdowns[0] = 2;
+        p.effects[14].enabled = true;
+      }
+
+      // Use new binary format for factory? Or convert struct.
+      // For simplicity, we use the blob converter to write standard .bin files directly.
+      char filename[32];
+      snprintf(filename, 32, "/presets/f_%d_%d.bin", bank, num);
+      File file = LittleFS.open(filename, "w");
       if (file) {
-        file.write((uint8_t*)&p, sizeof(Preset));
+        size_t size = serializeStructToBlob(p, blobBuffer);
+        file.write(blobBuffer, size);
         file.close();
       }
     }
   }
-  
-  // Custom Presets (5-6)
-  for (int bank = 5; bank < 7; bank++) {
-    for (int num = 0; num < 5; num++) {
-      Preset p;
-      memset(&p, 0, sizeof(Preset));
-      snprintf(p.name, sizeof(p.name), "%s-%d", bankNames[bank], num + 1);
-      p.bank = bank; p.number = num; p.masterVolume = 127; p.bpm = 120;
-      
-      for (int i = 0; i < MAX_EFFECTS; i++) {
-        p.effects[i].enabled = false;
-        for (int k = 0; k < MAX_EFFECT_KNOBS; k++) p.effects[i].knobs[k] = 50;
-        for (int d = 0; d < MAX_EFFECT_DROPDOWNS; d++) p.effects[i].dropdowns[d] = 0;
-      }
-      
-      char filename[64];
-      snprintf(filename, sizeof(filename), "/presets/c_%d_%d.dat", bank - 5, num);
-      File file = SPIFFS.open(filename, "w");
-      if (file) {
-        file.write((uint8_t*)&p, sizeof(Preset));
-        file.close();
-      }
-    }
-  }
-  
-  File flagFile = SPIFFS.open("/presets/factory_v2.flag", "w");
-  if (flagFile) { flagFile.print("v2_initialized"); flagFile.close(); }
-  Serial.println("[PRESETS] ✓ Factory initialization complete");
+
+  File flagFile = LittleFS.open("/presets/factory_v3.flag", "w");
+  if (flagFile) { flagFile.print("done"); flagFile.close(); }
+  Serial.println("[PRESETS] ✓ Generation Complete.");
 }
 
 bool loadPreset(uint8_t bank, uint8_t number, Preset& preset) {
   if (bank > 6 || number > 4) return false;
   char filename[64];
-  if (bank < 5) snprintf(filename, sizeof(filename), "/presets/f_%d_%d.dat", bank, number);
-  else snprintf(filename, sizeof(filename), "/presets/c_%d_%d.dat", bank - 5, number);
+  if (bank < 5) snprintf(filename, sizeof(filename), "/presets/f_%d_%d.bin", bank, number);
+  else snprintf(filename, sizeof(filename), "/presets/c_%d_%d.bin", bank - 5, number); 
 
-  File file = SPIFFS.open(filename, "r");
+  // CHANGED: Load from LittleFS .bin and parse
+  File file = LittleFS.open(filename, "r");
   if (!file) return false;
-  size_t bytesRead = file.read((uint8_t*)&preset, sizeof(Preset));
+  
+  size_t size = file.read(blobBuffer, MAX_BLOB_SIZE);
   file.close();
-  return (bytesRead == sizeof(Preset) && PresetBinaryCodec::validatePreset(preset));
+  
+  parseBlobToStruct(blobBuffer, size, preset);
+  return true;
 }
 
-bool savePreset(const Preset& preset) {
-  if (preset.bank < 5) return false;
-  if (!PresetBinaryCodec::validatePreset(preset)) return false;
-  
-  char filename[64];
-  snprintf(filename, sizeof(filename), "/presets/c_%d_%d.dat", preset.bank - 5, preset.number);
-  File file = SPIFFS.open(filename, "w");
-  if (!file) return false;
-  size_t written = file.write((uint8_t*)&preset, sizeof(Preset));
-  file.close();
-  return (written == sizeof(Preset));
+void saveSystemState() {
+  File file = LittleFS.open("/state.dat", "w");
+  if (file) {
+    file.write((uint8_t*)&state, sizeof(SystemState));
+    file.close();
+  }
 }
 
 void loadSystemState() {
-  File file = SPIFFS.open("/state.dat", "r");
+  File file = LittleFS.open("/state.dat", "r");
   if (file) {
-    if (file.read((uint8_t*)&state, sizeof(SystemState)) == sizeof(SystemState)) {
-      Serial.println("[SPIFFS] ✓ System state loaded");
-    } else {
-      goto use_defaults;
-    }
+    file.read((uint8_t*)&state, sizeof(SystemState));
     file.close();
   } else {
-    use_defaults:
     state.currentBank = 0; state.currentPresetNum = 0;
     state.volume = 127; state.a2dpEnabled = true;
     for (int i = 0; i < 4; i++) state.switchStates[i] = false;
@@ -419,24 +541,12 @@ void loadSystemState() {
   }
 }
 
-void saveSystemState() {
-  File file = SPIFFS.open("/state.dat", "w");
-  if (file) {
-    file.write((uint8_t*)&state, sizeof(SystemState));
-    file.close();
-  }
-}
-
 // ===================================================================
-// Standard Helpers
+// Hardware
 // ===================================================================
-void sendPresetChangeToDSP() {
-  uint8_t payload[13] = { 0 };
-  payload[0] = currentPreset.bank;
-  payload[1] = currentPreset.number;
-  payload[2] = currentPreset.masterVolume;
-  payload[3] = currentPreset.bpm;
-  sendToDSP("PRES", payload, 13);
+void setupSwitches() {
+  const int switchPins[4] = { SWITCH1_PIN, SWITCH2_PIN, SWITCH3_PIN, SWITCH4_PIN };
+  for (int i = 0; i < 4; i++) pinMode(switchPins[i], INPUT_PULLUP);
 }
 
 void sendSwitchStateToDSP(int switchIndex, bool switchState) {
@@ -446,15 +556,9 @@ void sendSwitchStateToDSP(int switchIndex, bool switchState) {
   sendToDSP("SWCH", payload, 2);
 }
 
-void setupSwitches() {
-  const int switchPins[4] = { SWITCH1_PIN, SWITCH2_PIN, SWITCH3_PIN, SWITCH4_PIN };
-  for (int i = 0; i < 4; i++) pinMode(switchPins[i], INPUT_PULLUP);
-}
-
 void handleSwitches() {
   static bool switchLastState[4] = { false };
   const int switchPins[4] = { SWITCH1_PIN, SWITCH2_PIN, SWITCH3_PIN, SWITCH4_PIN };
-  
   for (int i = 0; i < 4; i++) {
     bool currentState = digitalRead(switchPins[i]) == LOW;
     if (currentState != switchLastState[i]) {
@@ -466,7 +570,6 @@ void handleSwitches() {
 }
 
 void handleEncoders() {
-  // (Simplified encoder logic similar to original)
   int enc1Pos = encoder1.getPosition();
   if (enc1Pos != lastEncoder1Pos) {
     state.currentBank = constrain(state.currentBank + (enc1Pos - lastEncoder1Pos), 0, 6);
@@ -476,8 +579,12 @@ void handleEncoders() {
 
   if (encoder1.isButtonPressed() && (millis() - lastEncoder1BtnTime > DEBOUNCE_TIME)) {
     if (loadPreset(state.currentBank, state.currentPresetNum, currentPreset)) {
-      // Sync UI via BLE if connected (Todo: Add reverse sync logic)
-      sendPresetChangeToDSP();
+      updateDSPFromPreset();
+      // Sync Web: Send Handshake (0x30) logic
+      size_t size = serializeStructToBlob(currentPreset, blobBuffer);
+      uint8_t head[3] = {0x31, (uint8_t)(size&0xFF), (uint8_t)(size>>8)};
+      btManager.sendBLEData(head, 3);
+      btManager.sendBLEDataChunked(blobBuffer, size);
     }
     lastEncoder1BtnTime = millis();
   }
@@ -496,13 +603,15 @@ void handleEncoders() {
   }
 }
 
-// ===================================================================
-// Setup & Loop
-// ===================================================================
 void setup() {
   Serial.begin(115200);
+  // CHANGED: LittleFS Init
+  if(!LittleFS.begin(true)) { 
+    Serial.println("[FS] Mount Failed, formatting...");
+    // If true param didn't format, try manual? 
+    // begin(true) usually handles formatting on fail.
+  }
   
-  if (!SPIFFS.begin(true)) Serial.println("[SPIFFS] Mount Failed");
   initializeFactoryPresets();
   loadSystemState();
 
@@ -510,35 +619,27 @@ void setup() {
   encoder2.begin();
   setupSwitches();
   
-  dspSerial.begin(38400, SERIAL_8N1, DSP_RX_PIN, DSP_TX_PIN);
+  dspSerial.begin(115200, SERIAL_8N1, DSP_RX_PIN, DSP_TX_PIN);
   
-  i2s_pin_config_t i2s_pins = {
-    .mck_io_num = I2S_PIN_NO_CHANGE,
-    .bck_io_num = 14,
-    .ws_io_num = 13,
-    .data_out_num = 12,
-    .data_in_num = 35
-  };
-  btManager.setA2DPPinConfig(i2s_pins);
-
+  i2s_pin_config_t pins = {.mck_io_num=0, .bck_io_num=14, .ws_io_num=13, .data_out_num=12, .data_in_num=35};
+  btManager.setA2DPPinConfig(pins);
   btManager.begin("JamMate", state.a2dpEnabled);
   btManager.setBLEDataCallback(onBLEDataReceived);
   btManager.setCurrentPreset(&currentPreset);
-
-  Serial.println("[JamMate] v3.0 Ready");
-  sendPresetChangeToDSP();
+  
+  Serial.println("[JamMate] v3.3 (LittleFS) Ready");
+  updateDSPFromPreset();
   lastSaveTime = millis();
 }
 
 void loop() {
-  encoder1.update();
-  encoder2.update();
+  encoder1.update(); encoder2.update();
   handleEncoders();
   handleSwitches();
-  
-  if (millis() - lastSaveTime > SAVE_INTERVAL) {
-    saveSystemState();
-    lastSaveTime = millis();
-  }
+
+  checkDSPIncoming(); // <--- NEW: Check for  Data
+
+
+  if (millis() - lastSaveTime > SAVE_INTERVAL) { saveSystemState(); lastSaveTime = millis(); }
   delay(1);
 }

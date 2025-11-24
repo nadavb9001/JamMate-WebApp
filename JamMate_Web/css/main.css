@@ -315,3 +315,13 @@ body.light-theme #statusMessage {
 .solo-effect-close-btn:hover {
     color: var(--color-error) !important;
 }
+
+/* Override for the Save Modal to ensure it starts hidden */
+#saveModal {
+    display: none !important;
+}
+
+/* When we want to show it, we add a class or toggle this style via JS */
+#saveModal.active {
+    display: flex !important;
+}

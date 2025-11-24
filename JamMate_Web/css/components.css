@@ -19,7 +19,6 @@
 .knob-container { 
     display: inline-block; 
     text-align: center; 
-    /* UPDATED: Fixed width to ensure identical spacing everywhere */
     width: 100px; 
     margin: 5px; 
 }
@@ -32,7 +31,6 @@
 .effect-controls { background: var(--color-bg-elevated); padding: 10px; border-radius: 10px; margin-top: 10px; }
 .effect-title { font-size: 18px; font-weight: bold; color: var(--color-accent); margin-bottom: 10px; text-align: center; }
 
-/* UPDATED: Increased gap to 15px to match EQ/Flex spacing */
 .knobs-grid { 
     display: grid; 
     grid-template-columns: repeat(4, 1fr); 
@@ -112,15 +110,17 @@ button:disabled { background: var(--color-border); cursor: not-allowed; }
     z-index: 9999 !important; max-width: 95vw !important; max-height: 90vh !important; 
     overflow-y: auto !important; box-shadow: 0 12px 40px rgba(0, 0, 0, 0.9) !important; 
     position: relative !important; 
+    display: flex; flex-direction: column;
+	grid-template-columns: repeat(3, 1fr) !important;
 }
 
 .solo-effect-title { 
     font-size: 18px !important; font-weight: bold !important; 
     color: var(--color-accent) !important; margin-bottom: 15px !important; 
     text-align: center !important; 
+    flex-shrink: 0;
 }
 
-/* UPDATED: Simple "X" Button Style */
 .solo-effect-close-btn { 
     position: absolute !important; top: 10px !important; right: 10px !important; 
     background: transparent !important; 
@@ -136,11 +136,34 @@ button:disabled { background: var(--color-border); cursor: not-allowed; }
 .solo-effect-close-btn:hover {
     color: var(--color-error) !important;
 }
+
 #effects-tab.easy-mode .preset-controls { display: block !important; }
 #effects-tab.easy-mode #effectControls { display: none !important; }
-#effects-tab.easy-mode .effects-scroll { display: flex !important; flex-direction: column !important; width: 100% !important; flex: 1 !important; padding: 0 !important; overflow: auto !important; }
-#effects-tab.easy-mode .effects-grid { display: grid !important; grid-template-columns: repeat(3, 1fr) !important; gap: 12px !important; padding: 15px !important; width: 100% !important; align-content: start !important; }
-#effects-tab.easy-mode .effect-btn { height: 50px !important; }
+
+/* UPDATED: Responsive Grid for Easy Mode */
+#effects-tab.easy-mode .effects-scroll { 
+    display: flex !important; 
+    flex-direction: column !important; 
+    width: 100% !important; 
+    flex: 1 !important; 
+    padding: 0 !important; 
+    overflow: auto !important; 
+}
+
+#effects-tab.easy-mode .effects-grid { 
+    display: grid !important; 
+    /* Scale columns to fill screen: Min 110px width */
+    grid-template-columns: repeat(auto-fill, minmax(90px, 1fr)) !important; 
+    gap: 5px !important; 
+    padding: 1px !important; 
+    width: 100% !important; 
+    align-content: start !important; 
+}
+
+#effects-tab.easy-mode .effect-btn { 
+    height: 80px !important; /* Bigger buttons for touch */
+    font-size: 14px !important;
+}
 
 /* Media Queries */
 @media (max-width: 768px) {

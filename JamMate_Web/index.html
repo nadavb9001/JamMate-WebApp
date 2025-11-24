@@ -159,6 +159,42 @@
     
     <div id="status-bar"><span id="statusMessage">Ready</span></div>
 
+    <!-- SAVE PRESET MODAL -->
+    <div id="saveModal" class="solo-effect-overlay" style="display: none;">
+        <div class="solo-effect-container" style="width: 300px; height: auto;">
+            <div class="solo-effect-title">Save Preset To...</div>
+            
+            <div style="margin-bottom: 15px;">
+                <label class="control-label">Bank</label>
+                <select id="saveBankSelect" style="width: 100%; margin-top: 5px; padding: 10px;">
+                    <option value="0">Clean</option>
+                    <option value="1">Crunch</option>
+                    <option value="2">Overdrive</option>
+                    <option value="3">Distortion</option>
+                    <option value="4">Modulated</option>
+                    <option value="5">Custom1</option>
+                    <option value="6">Custom2</option>
+                </select>
+            </div>
+
+            <div style="margin-bottom: 20px;">
+                <label class="control-label">Slot</label>
+                <select id="saveNumSelect" style="width: 100%; margin-top: 5px; padding: 10px;">
+                    <option value="0">1</option>
+                    <option value="1">2</option>
+                    <option value="2">3</option>
+                    <option value="3">4</option>
+                    <option value="4">5</option>
+                </select>
+            </div>
+
+            <div style="display: flex; gap: 10px;">
+                <button id="btnConfirmSave" style="flex: 1; background: var(--color-enabled); padding: 10px;">Save</button>
+                <button id="btnCancelSave" style="flex: 1; background: var(--color-error); padding: 10px;">Cancel</button>
+            </div>
+        </div>
+    </div>
+
     <script type="module" src="./js/app.js"></script>
 </body>
 </html>

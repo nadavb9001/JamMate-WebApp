@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>JamMate BLE Controller</title>
+    <link rel="stylesheet" href="./css/main.css">
+    <link rel="stylesheet" href="./css/components.css">
+</head>
+<body>
+    <div id="header">
+        <div class="header-content">
+            <div class="device-info">
+                <div class="status-led" id="statusLed"></div>
+                <div class="device-name">JamMate_BL</div>
+            </div>
+            <div style="display: flex; gap: 10px; align-items: center;">
+                <button class="btn-fullscreen" id="btnSavePreset" title="Save Preset">💾</button>
+                
+                <button class="btn-fullscreen" id="btnConnect" title="Connect BLE" aria-label="Connect BLE">
+                    <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+                        <path fill="currentColor" d="M17.71 7.71L12 2h-1v7.59L6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 11 14.41V22h1l5.71-5.71-4.3-4.29 4.3-4.29zM13 5.83l1.88 1.88L13 9.59V5.83zm1.88 10.46L13 18.17v-3.76l1.88 1.88z"/>
+                    </svg>
+                </button>
+            </div>
+        </div>
+    </div>
+    
+    <div class="tabs" id="tabs">
+        <div class="tab active" data-tab="effects">Effects</div>
+        <div class="tab" data-tab="drum">Drum</div>
+        <div class="tab" data-tab="tuner">Tuner</div>
+        <div class="tab" data-tab="setup">Setup</div>
+        <div class="tab" data-tab="loader">Files</div>
+    </div>
+    
+    <div class="tab-content active" id="effects-tab">
+        <div class="preset-controls">
+          <div style="display:grid; grid-template-columns:1fr 1fr auto auto; gap:6px; align-items:center;">
+            <div style="display:flex;flex-direction:column;">
+              <label class="control-label">Bank</label>
+              <select id="presetBank">
+                <option>Clean</option><option>Crunch</option><option>Overdrive</option><option>Distortion</option><option>Modulated</option><option>Custom1</option><option>Custom2</option>
+              </select>
+            </div>
+            <div style="display:flex;flex-direction:column;">
+              <label class="control-label">Number</label>
+              <select id="presetNum">
+                <option>1</option><option>2</option><option>3</option><option>4</option><option>5</option>
+              </select>
+            </div>
+            <div class="knob-container"><div class="knob" id="masterKnob"></div><div class="knob-label">Master</div></div>
+            <div class="knob-container"><div class="knob" id="bpmKnob"></div><div class="knob-label">BPM</div></div>
+          </div>
+        </div>
+        <div class="effects-scroll"><div class="effects-grid" id="effectsGrid"></div></div>
+        <div id="effectControls"></div>
+    </div>
+    
+    <div class="tab-content" id="drum-tab">
+        <div class="preset-controls">
+            <div class="knobs-grid">
+                <div class="knob-container"><div class="knob" id="drumLevelKnob"></div><div class="knob-label">Level</div></div>
+            </div>
+            <div class="control-group">
+                <label class="checkbox"><input type="checkbox" id="drumEnable" checked><span>Enable Drum</span></label>
+            </div>
+            <div class="preset-row">
+                <div>
+                    <label class="control-label">Style</label>
+                    <select id="drumStyle" style="width: fit-content;">
+                        <option>Rock</option><option>Blues</option><option>Jazz</option><option>Shuffle</option><option>Pop</option><option>Metal</option><option>Latin</option><option>R&amp;B</option><option>Country</option><option>Funk</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="control-label">Fill</label>
+                    <select id="drumFill" style="width: fit-content;">
+                        <option>None</option><option>x1</option><option>x4</option><option>x12</option><option>x16</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+        <div class="drum-grid" id="drumGrid"></div>
+    </div>
+    
+    <div class="tab-content" id="tuner-tab">
+        <div class="tuner-display">
+            <label class="checkbox" style="justify-content: center; margin-bottom: 20px;">
+                <input type="checkbox" id="tunerEnable"><span>Enable Tuner</span>
+            </label>
+            <div class="string-display" id="stringDisplay">--</div>
+            <div style="color: #888;">Target: <span id="targetFreq">-- Hz</span></div>
+            <div class="tuner-gauge"><div class="tuner-center"></div><div class="tuner-needle" id="tunerNeedle"></div></div>
+            <div class="freq-display" id="freqDisplay">-- Hz</div>
+            <div style="color: #888; font-size: 18px;" id="centsDisplay">-- cents</div>
+        </div>
+    </div>
+    
+    <div class="tab-content" id="setup-tab">
+        
+        <div class="preset-controls" style="border-bottom: 2px solid var(--color-border); padding-bottom: 15px; margin-bottom: 15px;">
+            <h2 style="text-align: center; color: var(--color-accent); margin-bottom: 15px;">Interface</h2>
+            <div style="display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;">
+                <button class="btn-fullscreen" id="btnTheme" title="Toggle Theme" style="width: auto; padding: 0 20px; height: 50px; font-size: 16px;">🎨 Theme</button>
+                <button class="btn-fullscreen" id="btnEasyMode" title="Toggle Easy Mode" style="width: auto; padding: 0 20px; height: 50px; font-size: 16px;">📱 Easy Mode</button>
+                <button class="btn-fullscreen" id="btnFullscreen" title="Toggle Fullscreen" style="width: auto; padding: 0 20px; height: 50px; font-size: 16px;">⛶ Fullscreen</button>
+            </div>
+        </div>
+
+        <div class="preset-controls">
+            <h2 style="text-align: center; color: var(--color-accent); margin-bottom: 20px;">Daisy Control</h2>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 20px;">
+                <button style="background: #f44; height: 60px;">Reset Daisy</button>
+                <button style="background: #f80; height: 60px;">Flash Daisy</button>
+            </div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr auto; gap: 15px; align-items: center;">
+                <label class="checkbox"><input type="checkbox" id="btEnable"><span>Enable Bluetooth</span></label>
+                <label class="checkbox"><input type="checkbox" id="bleEnable"><span>Enable BLE</span></label>
+                <div class="knob-container"><div class="knob" id="blVolKnob"></div><div class="knob-label">BT Vol</div></div>
+            </div>
+        </div>
+        
+        <div class="preset-controls">
+            <h2 style="text-align: center; color: var(--color-accent); margin-bottom: 20px;">Utilities</h2>
+            <div style="display: flex; gap: 15px; align-items: flex-start; justify-content: center; margin-bottom: 15px;">
+                <button id="whiteNoiseBtn" class="util-toggle-btn">White<br>Noise</button>
+                <div class="knob-container"><div class="knob" id="whiteNoiseLevelKnob"></div><div class="knob-label">Level</div></div>
+            </div>
+            <div style="display: flex; gap: 15px; align-items: flex-start; justify-content: center;">
+                <button id="toneBtn" class="util-toggle-btn">Tone</button>
+                <div class="knob-container"><div class="knob" id="toneLevelKnob"></div><div class="knob-label">Level</div></div>
+                <div class="knob-container" style="display: flex; flex-direction: column; align-items: center;">
+                    <label style="color: var(--color-text-secondary); font-size: 12px; margin-bottom: 5px;">Freq</label>
+                    <input type="number" id="toneFreqInput" value="670" min="20" max="20000" style="width: 60px; padding: 5px; border: 1px solid var(--color-border); background: var(--color-bg-surface); color: var(--color-text-primary); border-radius: 4px; text-align: center;">
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="tab-content" id="loader-tab">
+        <div class="preset-controls">
+            <div class="file-upload-btn">
+                <input type="file" id="fileInput" accept=".wav,audio/wav">
+                <button onclick="document.getElementById('fileInput').click()">📁 Load WAV File</button>
+            </div>
+        </div>
+        <canvas class="waveform-canvas" id="waveformCanvas"></canvas>
+        <canvas class="spectrum-canvas" id="spectrumCanvas"></canvas>
+        <div class="preset-controls">
+            <div>
+                <label class="control-label">Points to Send</label>
+                <select id="irPoints" style="width: fit-content;">
+                    <option>128</option><option>256</option><option selected>512</option><option>1024</option><option>2048</option><option>4096</option><option>8192</option>
+                </select>
+            </div>
+            <button id="btnSendIR" disabled>Send IR to Device</button>
+        </div>
+    </div>
+    
+    <div id="status-bar"><span id="statusMessage">Ready</span></div>
+
+    <!-- SAVE PRESET MODAL -->
+    <div id="saveModal" class="solo-effect-overlay" style="display: none;">
+        <div class="solo-effect-container" style="width: 300px; height: auto;">
+            <div class="solo-effect-title">Save Preset To...</div>
+            
+            <div style="margin-bottom: 15px;">
+                <label class="control-label">Bank</label>
+                <select id="saveBankSelect" style="width: 100%; margin-top: 5px; padding: 10px;">
+                    <option value="0">Clean</option>
+                    <option value="1">Crunch</option>
+                    <option value="2">Overdrive</option>
+                    <option value="3">Distortion</option>
+                    <option value="4">Modulated</option>
+                    <option value="5">Custom1</option>
+                    <option value="6">Custom2</option>
+                </select>
+            </div>
+
+            <div style="margin-bottom: 20px;">
+                <label class="control-label">Slot</label>
+                <select id="saveNumSelect" style="width: 100%; margin-top: 5px; padding: 10px;">
+                    <option value="0">1</option>
+                    <option value="1">2</option>
+                    <option value="2">3</option>
+                    <option value="3">4</option>
+                    <option value="4">5</option>
+                </select>
+            </div>
+
+            <div style="display: flex; gap: 10px;">
+                <button id="btnConfirmSave" style="flex: 1; background: var(--color-enabled); padding: 10px;">Save</button>
+                <button id="btnCancelSave" style="flex: 1; background: var(--color-error); padding: 10px;">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <script type="module" src="./js/app.js"></script>
+</body>
+</html>

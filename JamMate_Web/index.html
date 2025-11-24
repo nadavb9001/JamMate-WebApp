@@ -196,5 +196,116 @@
     </div>
 
     <script type="module" src="./js/app.js"></script>
+    <!-- ================================================================= -->
+<!-- JAMMATE DEBUGGER (Paste this before </body> in index.html) -->
+<!-- ================================================================= -->
+
+<div id="debug-console" style="
+    position: fixed; 
+    bottom: 0; 
+    left: 0; 
+    width: 100%; 
+    height: 35%; 
+    background: rgba(0,0,0,0.9); 
+    color: #0f0; 
+    font-family: monospace; 
+    font-size: 12px; 
+    overflow-y: scroll; 
+    z-index: 10000; 
+    padding: 10px; 
+    border-top: 2px solid #0f0;
+    pointer-events: none; /* Lets you click buttons behind it */
+">
+    <div style="border-bottom: 1px solid #444; margin-bottom: 5px; font-weight:bold;">DEBUG CONSOLE</div>
+</div>
+
+<script>
+(function() {
+    const consoleDiv = document.getElementById('debug-console');
+    
+    // 1. Override standard logging to print to screen
+    function logToScreen(msg, color = '#0f0') {
+        const line = document.createElement('div');
+        line.style.color = color;
+        line.style.marginBottom = '2px';
+        line.innerText = `> ${msg}`;
+        consoleDiv.appendChild(line);
+        consoleDiv.scrollTop = consoleDiv.scrollHeight;
+    }
+
+    // Capture standard logs
+    const originalLog = console.log;
+    const originalError = console.error;
+    const originalWarn = console.warn;
+
+    console.log = function(...args) {
+        originalLog.apply(console, args);
+        logToScreen(args.join(' '));
+    };
+
+    console.error = function(...args) {
+        originalError.apply(console, args);
+        logToScreen("ERROR: " + args.join(' '), '#ff3333');
+    };
+    
+    console.warn = function(...args) {
+        originalWarn.apply(console, args);
+        logToScreen("WARN: " + args.join(' '), '#ffff33');
+    };
+
+    // Capture Unhandled Errors (Code crashes)
+    window.onerror = function(msg, url, lineNo, columnNo, error) {
+        logToScreen(`CRASH: ${msg} (Line: ${lineNo})`, '#ff0000');
+        return false;
+    };
+
+    // Capture Unhandled Promise Rejections (Async/BLE errors)
+    window.onunhandledrejection = function(event) {
+        logToScreen(`PROMISE FAIL: ${event.reason}`, '#ff0000');
+    };
+
+    // ==========================================
+    // 2. RUN SYSTEM CHECKS
+    // ==========================================
+    setTimeout(() => {
+        logToScreen("--- SYSTEM DIAGNOSTICS ---", '#fff');
+        
+        // CHECK 1: HTTPS
+        if (window.isSecureContext) {
+            logToScreen("✔ HTTPS Secure Context: Active");
+        } else {
+            logToScreen("✘ HTTPS MISSING! BLE will not work.", '#ff0000');
+            logToScreen("  (Are you using http://? Use https://)", '#ff0000');
+        }
+
+        // CHECK 2: Bluetooth API Existence
+        if (navigator.bluetooth) {
+            logToScreen("✔ Web Bluetooth API: Available");
+        } else {
+            logToScreen("✘ Web Bluetooth API: MISSING", '#ff0000');
+            const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+            if (isIOS) {
+                logToScreen("  (iOS Detected: You MUST use 'Bluefy' app)", '#ffff33');
+                logToScreen("  (Safari/Chrome on iOS do NOT support BLE)", '#ffff33');
+            } else {
+                logToScreen("  (Check chrome://flags or update browser)", '#ffff33');
+            }
+        }
+
+        // CHECK 3: App Loading
+        const grid = document.getElementById('effectsGrid');
+        if (grid && grid.children.length > 0) {
+            logToScreen("✔ App.js seems to have loaded (Grid populated)");
+        } else {
+            logToScreen("✘ App.js failed to populate grid.", '#ff0000');
+            logToScreen("  (Likely a folder structure/import 404 error)", '#ff0000');
+        }
+
+        logToScreen("--- READY TO CONNECT ---", '#fff');
+    }, 1000);
+
+})();
+</script>
 </body>
+
 </html>

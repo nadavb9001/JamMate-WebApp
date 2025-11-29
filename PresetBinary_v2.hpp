@@ -16,9 +16,9 @@
 #define PRESET_NAME_LENGTH      32
 
 const char* EFFECT_NAMES[MAX_EFFECTS] = {
-    "Gate", "Comp", "Awah", "Ovrd", "Dist", "Equl", "Harm",
-    "Vibr", "Chor", "Octv", "Flng", "Phas", "Trem", "FIR ",
-    "Dely", "NAM ", "Rvrb"
+    "GATET", "COMP", "AWAH", "OVRD", "DIST", "EQUL", "HARM",
+    "VIBR", "CHOR", "OCTV", "FLNG", "PHAS", "TREM", "FIR ",
+    "DELY", "NAM ", "RVRB"
 };
 
 struct EffectParams {
@@ -27,12 +27,20 @@ struct EffectParams {
     uint8_t dropdowns[MAX_EFFECT_DROPDOWNS];
 };
 
+struct EQPoint {
+    uint16_t freq;
+    int8_t gain;
+    uint8_t q;     // Stored as integer (x10), e.g., 1.41 -> 14
+    bool enabled;  // Tracks if this band is active
+};
+
 struct Preset {
     char name[PRESET_NAME_LENGTH];
     uint8_t bank;
     uint8_t number;
     uint8_t masterVolume;
     uint8_t bpm;
+    EQPoint eqPoints[12];
     EffectParams effects[MAX_EFFECTS];
 };
 

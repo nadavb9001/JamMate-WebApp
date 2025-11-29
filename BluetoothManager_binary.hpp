@@ -52,6 +52,14 @@ public:
       a2dp_sink.start("JamMate_Audio");
       a2dpEnabled = true;
       Serial.println("[A2DP] ✓ Enabled");
+      
+    }
+  }
+
+  void setA2DPvolume(uint8_t volume) {
+    if (a2dpEnabled) {
+      
+      a2dp_sink.set_volume( volume);
     }
   }
 

@@ -1,0 +1,179 @@
+/* Effects */
+.effects-scroll { overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch; margin-bottom: 20px; padding: 10px 0; }
+.effects-grid { display: flex; gap: 10px; padding: 5px; }
+.effect-btn { 
+    min-width: 60px; width: 80px; height: 40px; 
+    background: var(--color-bg-surface); border: 2px solid var(--color-border); 
+    border-radius: 8px; color: var(--color-text-primary); 
+    font-size: 13px; cursor: pointer; 
+    display: flex; align-items: center; justify-content: center; 
+    text-align: center; padding: 5px; transition: all 0.2s; 
+    word-wrap: break-word; flex-shrink: 0; user-select: none; 
+}
+.effect-btn.selected { background: var(--color-accent); color: #000; border-color: var(--color-accent); }
+.effect-btn.enabled { background: var(--color-bg-surface); border-color: var(--color-enabled); box-shadow: 0 0 20px rgba(0, 255, 0, 0.6), inset 0 0 10px rgba(0, 255, 0, 0.2); }
+.effect-btn.enabled.selected { background: var(--color-enabled-selected); border-color: var(--color-enabled-selected); }
+.effect-btn:active { transform: scale(0.95); }
+
+/* Knobs */
+.knob-container { 
+    display: inline-block; 
+    text-align: center; 
+    width: 100px; 
+    margin: 5px; 
+}
+
+.knob { width: 90px; height: 90px; position: relative; cursor: pointer; touch-action: none; margin: 0 auto; }
+.knob-canvas { width: 100%; height: 100%; }
+.knob-label { margin-top: 5px; font-size: 18px; color: var(--color-text-secondary); }
+
+/* Effect Controls */
+.effect-controls { background: var(--color-bg-elevated); padding: 10px; border-radius: 10px; margin-top: 10px; }
+.effect-title { font-size: 18px; font-weight: bold; color: var(--color-accent); margin-bottom: 10px; text-align: center; }
+
+.knobs-grid { 
+    display: grid; 
+    grid-template-columns: repeat(4, 1fr); 
+    gap: 15px; 
+    justify-items: center; 
+    margin-bottom: 2px; 
+}
+.control-group { margin: 8px 0; }
+.dropdowns-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px; }
+.control-label { font-weight: bold; margin-bottom: 5px; color: var(--color-text-secondary); }
+
+.checkbox { display: flex; align-items: center; gap: 10px; font-size: 16px; cursor: pointer; user-select: none; padding: 10px; background: var(--color-bg-surface); border-radius: 5px; }
+.checkbox input { width: 24px; height: 24px; cursor: pointer; }
+
+select { width: fit-content; min-width: 100%; padding: 10px; background: var(--color-bg-surface); color: var(--color-text-primary); border: 2px solid var(--color-border); border-radius: 5px; font-size: 16px; cursor: pointer; -webkit-appearance: none; -moz-appearance: none; appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath fill='%2300b0b0' d='M0 0l6 8 6-8z'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 10px center; padding-right: 35px; }
+select:focus { border-color: var(--color-accent); outline: none; }
+
+/* IIR Designer */
+.iir-designer { background: var(--color-bg-elevated); padding: 20px; border-radius: 10px; margin-top: 20px; }
+.iir-canvas { width: 100%; height: 400px; max-height: 60vh; background: #000; border-radius: 10px; border: 2px solid var(--color-border); cursor: crosshair; touch-action: none; }
+.iir-controls { display: flex; gap: 10px; margin-top: 15px; flex-wrap: wrap; }
+.iir-controls-row { display: flex; gap: 10px; align-items: center; justify-content: center; flex-wrap: wrap; padding: 10px 0; width: 100%; }
+.biquad-dropdown { background: var(--color-bg-surface); color: var(--color-text-primary); border: 1px solid var(--color-border); padding: 8px 12px; border-radius: 4px; font-size: 14px; cursor: pointer; min-width: 100px; }
+
+/* Drum */
+.drum-grid { overflow-x: auto; -webkit-overflow-scrolling: touch; padding: 10px 0; }
+.drum-row { display: flex; gap: 3px; margin-bottom: 5px; align-items: center; }
+.drum-label { min-width: 70px; font-weight: bold; font-size: 12px; background: var(--color-border); padding: 5px; border-radius: 3px; }
+.drum-cell { width: 40px; height: 40px; background: var(--color-bg-surface); border: 2px solid var(--color-border); border-radius: 5px; cursor: pointer; transition: all 0.2s; position: relative; flex-shrink: 0; }
+.drum-cell.active { background: var(--color-enabled); border-color: var(--color-enabled); }
+.drum-cell:active { transform: scale(0.9); }
+.velocity-bar { position: absolute; bottom: 0; left: 0; right: 0; background: rgba(0, 255, 0, 0.3); transition: height 0.1s; border-radius: 0 0 3px 3px; }
+
+/* Tuner */
+.tuner-display { text-align: center; padding: 30px 20px; }
+.string-display { font-size: 48px; font-weight: bold; color: var(--color-accent); margin-bottom: 10px; }
+.freq-display { font-size: 32px; color: var(--color-enabled); font-family: 'Courier New', monospace; margin: 20px 0; }
+.tuner-gauge { width: 100%; max-width: 400px; height: 80px; margin: 20px auto; position: relative; background: var(--color-bg-elevated); border-radius: 10px; border: 2px solid var(--color-border); }
+.tuner-needle { position: absolute; width: 4px; height: 60px; background: #f00; left: 50%; top: 10px; transform: translateX(-50%); transition: all 0.3s; }
+.tuner-center { position: absolute; width: 3px; height: 80px; background: #fff; left: 50%; top: 0; transform: translateX(-50%); }
+
+/* File Loader */
+.file-upload-btn { display: inline-block; }
+.file-upload-btn input { display: none; }
+.waveform-canvas { width: 100%; height: 200px; background: var(--color-bg-elevated); border-radius: 10px; margin: 20px 0; border: 2px solid var(--color-border); }
+.spectrum-canvas { width: 100%; height: 300px; background: #000; border-radius: 10px; margin: 20px 0; border: 2px solid var(--color-border); }
+
+/* Utility & Shared */
+.preset-controls { background: var(--color-bg-elevated); padding: 10px; border-radius: 10px; margin-bottom: 10px; }
+.preset-row { display: flex; gap: 8px; margin-bottom: 8px; }
+.preset-row > * { flex: 1; }
+
+button { padding: 12px 20px; background: var(--color-accent); border: none; border-radius: 5px; color: #000; font-weight: bold; font-size: 14px; cursor: pointer; transition: background 0.3s; }
+button:active { background: var(--color-accent-hover); }
+button:disabled { background: var(--color-border); cursor: not-allowed; }
+
+.btn-reset-small { padding: 6px; width: 32px; height: 32px; background: var(--color-bg-surface); border: 1px solid var(--color-border); border-radius: 4px; color: var(--color-text-primary); cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s; }
+.btn-reset-small:hover { background: var(--color-accent); border-color: var(--color-accent); color: #000; }
+.btn-reset-small:active { transform: scale(0.9); }
+
+.util-toggle-btn { width: 70px; height: 70px; border: 2px solid var(--color-border); background: var(--color-bg-surface); color: var(--color-text-primary); border-radius: 8px; cursor: pointer; font-weight: bold; font-size: 12px; line-height: 1.2; padding: 5px; transition: all 0.2s; }
+.util-toggle-btn:hover { background: var(--color-accent); color: #000; }
+.util-toggle-btn.active { background: var(--color-accent); color: #000; border-color: var(--color-accent-hover); }
+
+/* Easy Mode / Solo Effect Overlays */
+.solo-effect-overlay { 
+    position: fixed !important; top: 0 !important; left: 0 !important; right: 0 !important; bottom: 0 !important; 
+    background: rgba(0, 0, 0, 0.7) !important; z-index: 9998 !important; 
+    display: flex !important; align-items: center !important; justify-content: center !important; 
+    padding: 20px !important; 
+}
+
+.solo-effect-container { 
+    background: var(--color-bg-elevated) !important; 
+    border: 3px solid var(--color-accent) !important; 
+    border-radius: 12px !important; padding: 20px 15px !important; 
+    z-index: 9999 !important; max-width: 95vw !important; max-height: 90vh !important; 
+    overflow-y: auto !important; box-shadow: 0 12px 40px rgba(0, 0, 0, 0.9) !important; 
+    position: relative !important; 
+    display: flex; flex-direction: column;
+	grid-template-columns: repeat(3, 1fr) !important;
+}
+
+.solo-effect-title { 
+    font-size: 18px !important; font-weight: bold !important; 
+    color: var(--color-accent) !important; margin-bottom: 15px !important; 
+    text-align: center !important; 
+    flex-shrink: 0;
+}
+
+.solo-effect-close-btn { 
+    position: absolute !important; top: 10px !important; right: 10px !important; 
+    background: transparent !important; 
+    border: none !important; 
+    color: var(--color-text-secondary) !important; 
+    font-size: 24px !important; 
+    font-weight: bold !important;
+    cursor: pointer !important; 
+    z-index: 10000 !important; 
+    padding: 0 !important;
+    line-height: 1 !important;
+}
+.solo-effect-close-btn:hover {
+    color: var(--color-error) !important;
+}
+
+#effects-tab.easy-mode .preset-controls { display: block !important; }
+#effects-tab.easy-mode #effectControls { display: none !important; }
+
+/* UPDATED: Responsive Grid for Easy Mode */
+#effects-tab.easy-mode .effects-scroll { 
+    display: flex !important; 
+    flex-direction: column !important; 
+    width: 100% !important; 
+    flex: 1 !important; 
+    padding: 0 !important; 
+    overflow: auto !important; 
+}
+
+#effects-tab.easy-mode .effects-grid { 
+    display: grid !important; 
+    /* Scale columns to fill screen: Min 110px width */
+    grid-template-columns: repeat(auto-fill, minmax(90px, 1fr)) !important; 
+    gap: 5px !important; 
+    padding: 1px !important; 
+    width: 100% !important; 
+    align-content: start !important; 
+}
+
+#effects-tab.easy-mode .effect-btn { 
+    height: 80px !important; /* Bigger buttons for touch */
+    font-size: 14px !important;
+}
+
+/* Media Queries */
+@media (max-width: 768px) {
+    .knobs-grid { grid-template-columns: repeat(4, 1fr); }
+    .knob { width: 80px; height: 80px; }
+    .drum-cell { width: 35px; height: 35px; }
+    .iir-canvas { height: 300px; max-height: 50vh; }
+}
+@media (orientation: landscape) and (max-height: 600px) {
+    .iir-canvas { height: 250px; max-height: 40vh; }
+    .effect-controls { padding: 10px; }
+    .knobs-grid { gap: 3px; }
+}

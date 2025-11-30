@@ -69,13 +69,26 @@
                 <div>
                     <label class="control-label">Style</label>
                     <select id="drumStyle" style="width: fit-content;">
-                        <option>Rock</option><option>Blues</option><option>Jazz</option><option>Shuffle</option><option>Pop</option><option>Metal</option><option>Latin</option><option>R&amp;B</option><option>Country</option><option>Funk</option>
+                        <option value="0">Rock</option>
+						<option value="1">Blues</option>
+						<option value="2">Jazz</option>
+						<option value="3">Shuffle</option>
+						<option value="4">Pop</option>
+						<option value="5">Metal</option>
+						<option value="6">Latin</option>
+						<option value="7">R&amp;B</option>
+						<option value="8">Country</option>
+						<option value="9">Funk</option>
                     </select>
                 </div>
                 <div>
                     <label class="control-label">Fill</label>
                     <select id="drumFill" style="width: fit-content;">
-                        <option>None</option><option>x1</option><option>x4</option><option>x12</option><option>x16</option>
+                        <option value="0">None</option>
+						<option value="1">x1</option>
+						<option value="2">x4</option>
+						<option value="3">x12</option>
+						<option value="4">x16</option>
                     </select>
                 </div>
             </div>
@@ -195,6 +208,11 @@
         </div>
     </div>
 
-    <script type="module" src="./js/app.js"></script>
+    <script type="module">
+	  import { app } from './js/app.js';
+	  document.addEventListener('DOMContentLoaded', () => {
+		app.init();
+	  });
+	</script>
 </body>
 </html>

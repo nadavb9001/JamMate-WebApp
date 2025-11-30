@@ -218,6 +218,32 @@ export const View = {
                 if(onKnobChange) onKnobChange(kIndex, knob.value);
             };
         });
+		// Enable checkbox
+		const drumEnable = document.getElementById('drumEnable');
+		drumEnable.addEventListener('change', (e) => {
+		this.app.onDrumToggle(e.target.checked);
+		});
+
+		// Style dropdown
+		const drumStyle = document.getElementById('drumStyle');
+		drumStyle.addEventListener('change', (e) => {
+		this.app.onDrumStyle(parseInt(e.target.value));
+		});
+
+		// Fill dropdown  
+		const drumFill = document.getElementById('drumFill');
+		drumFill.addEventListener('change', (e) => {
+		this.app.onDrumFill(parseInt(e.target.value));
+		});
+
+		// Level knob (if you have one)
+		const drumLevelKnobEl = document.getElementById('drumLevelKnob');
+		if (drumLevelKnobEl) {
+		const drumLevelKnob = new Knob(drumLevelKnobEl, 0, 100, 50, (val) => {
+		  this.app.onDrumLevel(val);
+		});
+		}		
+		
     },
 
     // =========================================================
@@ -355,7 +381,7 @@ export const View = {
     },
 
     computeFFT(data) {
-        const maxInput = 4096;
+        const maxInput = 65536;
         let inputData = data;
         if (data.length > maxInput) {
             const step = Math.floor(data.length / maxInput);

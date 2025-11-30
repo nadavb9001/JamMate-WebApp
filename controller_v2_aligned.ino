@@ -7,7 +7,7 @@
 #include "PresetBinary_v2.hpp"  // Updated struct definition with EQPoints
 #include "BluetoothManager_binary.hpp"
 #include "MyRotaryEncoder.h"
-#include <LittleFS.h> 
+#include <LittleFS.h>
 
 // Pin Definitions
 #define ENCODER1_PIN_A 19
@@ -37,6 +37,12 @@ BluetoothManager btManager;
 RotaryEncoder encoder1(ENCODER1_PIN_A, ENCODER1_PIN_B, ENCODER1_BTN);
 RotaryEncoder encoder2(ENCODER2_PIN_A, ENCODER2_PIN_B, ENCODER2_BTN);
 HardwareSerial dspSerial(2);
+
+#define MAX_DSP_PAYLOAD 10240
+uint8_t dspBuffer_static[MAX_DSP_PAYLOAD];  // ← Pre-allocated
+uint32_t dspBytesRead = 0;
+//uint32_t dspPayloadLen = 0;
+uint32_t dspTimeout = 0;
 
 struct SystemState {
   uint8_t currentBank;
@@ -69,133 +75,134 @@ void updateDSPFromPreset();
 
 // Convert Internal Struct -> Protocol v3 Blob
 size_t serializeStructToBlob(const Preset& p, uint8_t* buf) {
-    size_t offset = 0;
+  size_t offset = 0;
 
-    // 1. Header
-    buf[offset++] = 0x03; // Version
-    buf[offset++] = p.bpm;
-    buf[offset++] = p.masterVolume;
+  // 1. Header
+  buf[offset++] = 0x03;  // Version
+  buf[offset++] = p.bpm;
+  buf[offset++] = p.masterVolume;
 
-    size_t nameLen = strlen(p.name);
-    buf[offset++] = nameLen;
-    memcpy(&buf[offset], p.name, nameLen);
-    offset += nameLen;
+  size_t nameLen = strlen(p.name);
+  buf[offset++] = nameLen;
+  memcpy(&buf[offset], p.name, nameLen);
+  offset += nameLen;
 
-    // 2. Effects Loop
-    for (int i = 0; i < MAX_EFFECTS; i++) {
-        buf[offset++] = i; // ID
-        buf[offset++] = p.effects[i].enabled ? 1 : 0;
+  // 2. Effects Loop
+  for (int i = 0; i < MAX_EFFECTS; i++) {
+    buf[offset++] = i;  // ID
+    buf[offset++] = p.effects[i].enabled ? 1 : 0;
 
-        buf[offset++] = 10; // Knob Count
-        memcpy(&buf[offset], p.effects[i].knobs, 10);
-        offset += 10;
+    buf[offset++] = 10;  // Knob Count
+    memcpy(&buf[offset], p.effects[i].knobs, 10);
+    offset += 10;
 
-        buf[offset++] = 4; // Drop Count
-        memcpy(&buf[offset], p.effects[i].dropdowns, 4);
-        offset += 4;
-    }
+    buf[offset++] = 4;  // Drop Count
+    memcpy(&buf[offset], p.effects[i].dropdowns, 4);
+    offset += 4;
+  }
 
-    // --- FIX: Save EQ Data ---
-    // Tag 0xFE indicates EQ block start in Protocol v3
-    buf[offset++] = 0xFE; 
-    buf[offset++] = 12; // Count (Always 12 bands)
-    
-    for(int i=0; i<12; i++) {
-        // Write 4 bytes per band: [FreqL, FreqH, Gain, Q]
-        buf[offset++] = (uint8_t)(p.eqPoints[i].freq & 0xFF);
-        buf[offset++] = (uint8_t)(p.eqPoints[i].freq >> 8);
-        buf[offset++] = (uint8_t)p.eqPoints[i].gain;
-        buf[offset++] = p.eqPoints[i].q;
-        // Note: 'enabled' state is assumed true if present in blob for simplicity,
-        // or could be encoded if you modify protocol further.
-    }
+  // --- FIX: Save EQ Data ---
+  // Tag 0xFE indicates EQ block start in Protocol v3
+  buf[offset++] = 0xFE;
+  buf[offset++] = 12;  // Count (Always 12 bands)
 
-    return offset;
+  for (int i = 0; i < 12; i++) {
+    // Write 4 bytes per band: [FreqL, FreqH, Gain, Q]
+    buf[offset++] = (uint8_t)(p.eqPoints[i].freq & 0xFF);
+    buf[offset++] = (uint8_t)(p.eqPoints[i].freq >> 8);
+    buf[offset++] = (uint8_t)p.eqPoints[i].gain;
+    buf[offset++] = p.eqPoints[i].q;
+    // Note: 'enabled' state is assumed true if present in blob for simplicity,
+    // or could be encoded if you modify protocol further.
+  }
+
+  return offset;
 }
 
 // Parse Protocol v3 Blob -> Internal Struct
 void parseBlobToStruct(const uint8_t* buf, size_t len, Preset& p) {
-    if (len < 4) return;
-    size_t offset = 0;
+  if (len < 4) return;
+  size_t offset = 0;
 
-    // 1. Header
-    uint8_t ver = buf[offset++];
-    p.bpm = buf[offset++];
-    p.masterVolume = buf[offset++];
+  // 1. Header
+  uint8_t ver = buf[offset++];
+  p.bpm = buf[offset++];
+  p.masterVolume = buf[offset++];
 
-    uint8_t nameLen = buf[offset++];
-    if (offset + nameLen <= len) {
-        memset(p.name, 0, 32);
-        memcpy(p.name, &buf[offset], min((size_t)nameLen, (size_t)31));
-        offset += nameLen;
-    }
+  uint8_t nameLen = buf[offset++];
+  if (offset + nameLen <= len) {
+    memset(p.name, 0, 32);
+    memcpy(p.name, &buf[offset], min((size_t)nameLen, (size_t)31));
+    offset += nameLen;
+  }
 
-    // --- FIX: Initialize EQ Defaults ---
-    // Essential to prevent garbage data if the loaded preset lacks EQ block
-    for(int i=0; i<12; i++) {
-        p.eqPoints[i].freq = (i==0) ? 80 : (i==11) ? 8000 : (100 * (i+1));
-        p.eqPoints[i].gain = 0;
-        p.eqPoints[i].q = 14; // 1.4
+  // --- FIX: Initialize EQ Defaults ---
+  // Essential to prevent garbage data if the loaded preset lacks EQ block
+  for (int i = 0; i < 12; i++) {
+    p.eqPoints[i].freq = (i == 0) ? 80 : (i == 11) ? 8000
+                                                   : (100 * (i + 1));
+    p.eqPoints[i].gain = 0;
+    p.eqPoints[i].q = 14;  // 1.4
+    p.eqPoints[i].enabled = true;
+  }
+
+  // 2. Parse Blocks
+  while (offset < len) {
+    uint8_t id = buf[offset++];
+
+    // --- FIX: Parse EQ Tag ---
+    if (id == 0xFE) {
+      if (offset >= len) break;
+      uint8_t count = buf[offset++];
+
+      for (int i = 0; i < count && i < 12; i++) {
+        if (offset + 4 > len) break;
+
+        uint16_t freq = buf[offset] | (buf[offset + 1] << 8);
+        int8_t gain = (int8_t)buf[offset + 2];
+        uint8_t q = buf[offset + 3];
+        uint8_t enabled = buf[offset + 4];
+        p.eqPoints[i].freq = freq;
+        p.eqPoints[i].gain = gain;
+        p.eqPoints[i].q = q;
         p.eqPoints[i].enabled = true;
+        p.eqPoints[i].enabled = (enabled != 0);
+        offset += 5;  // ← MUST increment by 5
+      }
+      continue;
     }
 
-    // 2. Parse Blocks
-    while (offset < len) {
-        uint8_t id = buf[offset++];
+    // Standard Effects
+    if (offset + 2 > len) break;
+    uint8_t enabled = buf[offset++];
+    uint8_t kCount = buf[offset++];
 
-        // --- FIX: Parse EQ Tag ---
-        if (id == 0xFE) {
-            if (offset >= len) break;
-            uint8_t count = buf[offset++];
-            
-            for(int i=0; i<count && i<12; i++) {
-                if (offset + 4 > len) break;
-                
-                uint16_t freq = buf[offset] | (buf[offset+1] << 8);
-                int8_t gain = (int8_t)buf[offset+2];
-                uint8_t q = buf[offset+3];
-                
-                p.eqPoints[i].freq = freq;
-                p.eqPoints[i].gain = gain;
-                p.eqPoints[i].q = q;
-                p.eqPoints[i].enabled = true; 
-                
-                offset += 4;
-            }
-            continue;
+    if (id < MAX_EFFECTS) {
+      p.effects[id].enabled = (enabled != 0);
+      for (int k = 0; k < kCount; k++) {
+        if (offset < len) {
+          uint8_t val = buf[offset++];
+          if (k < 10) p.effects[id].knobs[k] = val;
         }
-
-        // Standard Effects
-        if (offset + 2 > len) break;
-        uint8_t enabled = buf[offset++];
-        uint8_t kCount = buf[offset++];
-
-        if (id < MAX_EFFECTS) {
-            p.effects[id].enabled = (enabled != 0);
-            for (int k = 0; k < kCount; k++) {
-                if (offset < len) {
-                    uint8_t val = buf[offset++];
-                    if (k < 10) p.effects[id].knobs[k] = val;
-                }
-            }
-            if (offset < len) {
-                uint8_t dCount = buf[offset++];
-                for (int d = 0; d < dCount; d++) {
-                    if (offset < len) {
-                        uint8_t val = buf[offset++];
-                        if (d < 4) p.effects[id].dropdowns[d] = val;
-                    }
-                }
-            }
-        } else {
-            // Unknown Effect (Skip)
-            offset += kCount;
-            if (offset < len) {
-                uint8_t dCount = buf[offset++];
-                offset += dCount;
-            }
+      }
+      if (offset < len) {
+        uint8_t dCount = buf[offset++];
+        for (int d = 0; d < dCount; d++) {
+          if (offset < len) {
+            uint8_t val = buf[offset++];
+            if (d < 4) p.effects[id].dropdowns[d] = val;
+          }
         }
+      }
+    } else {
+      // Unknown Effect (Skip)
+      offset += kCount;
+      if (offset < len) {
+        uint8_t dCount = buf[offset++];
+        offset += dCount;
+      }
     }
+  }
 }
 
 // ===================================================================
@@ -203,29 +210,34 @@ void parseBlobToStruct(const uint8_t* buf, size_t len, Preset& p) {
 // ===================================================================
 
 // Global Parser State
-enum DSPState { WAIT_HEADER, WAIT_LEN, READ_PAYLOAD };
+enum DSPState { WAIT_HEADER,
+                WAIT_LEN,
+                READ_PAYLOAD };
 DSPState dspState = WAIT_HEADER;
-char dspHeader[5]; 
+char dspHeader[5];
 uint32_t dspPayloadLen = 0;
-uint32_t dspBytesRead = 0;
-uint8_t* dspBuffer = nullptr; 
+//uint32_t dspBytesRead = 0;
+uint8_t* dspBuffer = nullptr;
 
 void checkDSPIncoming() {
+  const uint32_t MAX_WAIT_MS = 2000;  // 2-second timeout
   while (dspSerial.available()) {
     switch (dspState) {
       case WAIT_HEADER:
         if (dspSerial.available() >= 4) {
           dspSerial.readBytes(dspHeader, 4);
-          dspHeader[4] = 0; 
+          dspHeader[4] = 0;
           dspState = WAIT_LEN;
         }
+        dspTimeout = millis();  // Reset timeout
         break;
+
       case WAIT_LEN:
         if (dspSerial.available() >= 4) {
-          dspSerial.readBytes((char*)&dspPayloadLen, 4); 
+          dspSerial.readBytes((char*)&dspPayloadLen, 4);
           if (dspPayloadLen > 10240) {
             Serial.printf("[DSP] Error: Payload too huge (%d)\n", dspPayloadLen);
-            dspState = WAIT_HEADER; 
+            dspState = WAIT_HEADER;
             break;
           }
           if (dspBuffer) free(dspBuffer);
@@ -235,14 +247,21 @@ void checkDSPIncoming() {
         }
         break;
       case READ_PAYLOAD:
-        while (dspSerial.available() && dspBytesRead < dspPayloadLen) {
-          dspBuffer[dspBytesRead++] = dspSerial.read();
-        }
-        if (dspBytesRead >= dspPayloadLen) {
-          processDSPPacket(dspHeader, dspBuffer, dspPayloadLen);
-          free(dspBuffer);
-          dspBuffer = nullptr;
+        if (millis() - dspTimeout > MAX_WAIT_MS) {
+          Serial.println("[DSP] ✗ Timeout waiting for payload");
           dspState = WAIT_HEADER;
+          dspBytesRead = 0;
+          break;
+        }
+
+        if (dspBytesRead < dspPayloadLen) {
+          dspBuffer_static[dspBytesRead++] = dspSerial.read();
+        }
+
+        if (dspBytesRead >= dspPayloadLen) {
+          processDSPPacket(dspHeader, dspBuffer_static, dspPayloadLen);
+          dspState = WAIT_HEADER;
+          dspBytesRead = 0;
         }
         break;
     }
@@ -251,14 +270,13 @@ void checkDSPIncoming() {
 
 void processDSPPacket(const char* header, uint8_t* data, uint32_t len) {
   if (strcmp(header, "TUNE") == 0 && len == 4) {
-      uint8_t packet[7];
-      packet[0] = 0x35; 
-      packet[1] = 4;
-      packet[2] = 0;
-      memcpy(&packet[3], data, 4);
-      btManager.sendBLEData(packet, 7);
-  }
-  else if (strcmp(header, "LOAD") == 0) {
+    uint8_t packet[7];
+    packet[0] = 0x35;
+    packet[1] = 4;
+    packet[2] = 0;
+    memcpy(&packet[3], data, 4);
+    btManager.sendBLEData(packet, 7);
+  } else if (strcmp(header, "LOAD") == 0) {
     float load;
     memcpy(&load, data, 4);
     Serial.printf("[DSP] CPU Load: %.1f%%\n", load * 100.0f);
@@ -274,10 +292,11 @@ void onBLEDataReceived(uint8_t* data, size_t len) {
   uint16_t payloadLen = data[1] | (data[2] << 8);
   if (len < payloadLen + 3) return;
   uint8_t* payload = &data[3];
-
+  Serial.println(cmd);
   switch (cmd) {
     // --- LIVE CONTROLS ---
-    case 0x20: { // Param
+    case 0x20:
+      {  // Param
         uint8_t fx = payload[0];
         uint8_t pid = payload[1];
         uint8_t val = payload[2];
@@ -289,7 +308,8 @@ void onBLEDataReceived(uint8_t* data, size_t len) {
         }
         break;
       }
-    case 0x21: { // Toggle
+    case 0x21:
+      {  // Toggle
         uint8_t fx = payload[0];
         uint8_t en = payload[1];
         if (fx < MAX_EFFECTS) {
@@ -302,7 +322,8 @@ void onBLEDataReceived(uint8_t* data, size_t len) {
     // 0x22: SET_EQ_BAND (IIR Update)
     // Payload: [BandIdx(1), En(1), Freq(2), Gain(1), Q(1)]
     // ============================================================
-    case 0x22: {
+    case 0x22:
+      {
         uint8_t bandIdx = payload[0];
         uint8_t enabled = payload[1];
         uint16_t freq = payload[2] | (payload[3] << 8);
@@ -310,18 +331,19 @@ void onBLEDataReceived(uint8_t* data, size_t len) {
         uint8_t q = payload[5];
 
         // --- FIX: Update Internal RAM so we don't lose this change if we save later ---
-        if(bandIdx < 12) {
-            currentPreset.eqPoints[bandIdx].freq = freq;
-            currentPreset.eqPoints[bandIdx].gain = gain;
-            currentPreset.eqPoints[bandIdx].q = q;
-            currentPreset.eqPoints[bandIdx].enabled = (enabled != 0);
+        if (bandIdx < 12) {
+          currentPreset.eqPoints[bandIdx].freq = freq;
+          currentPreset.eqPoints[bandIdx].gain = gain;
+          currentPreset.eqPoints[bandIdx].q = q;
+          currentPreset.eqPoints[bandIdx].enabled = (enabled != 0);
         }
         delay(10);
         sendEQBandToDSP(bandIdx, enabled, freq, gain, q);
-        
+
         break;
-    }
-    case 0x23: { // Util
+      }
+    case 0x23:
+      {  // Util
         uint8_t t = payload[0];
         uint8_t en = payload[1];
         uint8_t lv = payload[2];
@@ -331,7 +353,8 @@ void onBLEDataReceived(uint8_t* data, size_t len) {
         sendToDSP("UTIL", p, 5);
         break;
       }
-    case 0x25: { // Global
+    case 0x25:
+      {  // Global
         if (payloadLen < 4) break;
         uint8_t master = payload[0];
         uint8_t btVol = payload[1];
@@ -349,13 +372,17 @@ void onBLEDataReceived(uint8_t* data, size_t len) {
         }
 
         uint8_t dspPayload[13] = { 0 };
-        dspPayload[0] = master; dspPayload[1] = btVol; dspPayload[2] = bpm; dspPayload[3] = flags;
+        dspPayload[0] = master;
+        dspPayload[1] = btVol;
+        dspPayload[2] = bpm;
+        dspPayload[3] = flags;
         btManager.setA2DPvolume(btVol);
         delay(10);
         sendToDSP("GEN ", dspPayload, 4);
         break;
       }
-    case 0x30: { // Handshake
+    case 0x30:
+      {  // Handshake
         size_t size = serializeStructToBlob(currentPreset, blobBuffer);
         uint8_t head[3] = { 0x31, (uint8_t)(size & 0xFF), (uint8_t)(size >> 8) };
         btManager.sendBLEData(head, 3);
@@ -363,7 +390,8 @@ void onBLEDataReceived(uint8_t* data, size_t len) {
         Serial.println("[BLE] Sent Handshake State");
         break;
       }
-    case 0x32: { // SAVE_PRESET
+    case 0x32:
+      {  // SAVE_PRESET
         uint8_t bank = payload[0];
         uint8_t num = payload[1];
         uint8_t* blob = &payload[2];
@@ -388,7 +416,8 @@ void onBLEDataReceived(uint8_t* data, size_t len) {
         }
         break;
       }
-    case 0x33: { // LOAD_REQ
+    case 0x33:
+      {  // LOAD_REQ
         uint8_t bank = payload[0];
         uint8_t num = payload[1];
         char fname[32];
@@ -415,6 +444,44 @@ void onBLEDataReceived(uint8_t* data, size_t len) {
         }
         break;
       }
+    case 0x41: {  // SET_DRUM_UPDATE
+      if (payloadLen < 14) {
+        Serial.println("[BLE] ✗ Drum packet too short");
+        break;
+      }
+      
+      if (payload[0] != 0x44 || payload[1] != 0x52 || 
+          payload[2] != 0x55 || payload[3] != 0x4D) {
+        Serial.printf("[BLE] ✗ Invalid drum header\n");
+        break;
+      }
+      
+      uint8_t drumEnable = payload[4];
+      uint8_t drumLevel  = payload[5];
+      uint8_t drumBpmDiv = payload[6];
+      uint8_t drumFill   = payload[13];
+      uint8_t drumStyle  = payload[14];
+      
+      Serial.printf("[BLE] ✓ Drum: En=%d Lvl=%d BPM=%d Fill=%d Style=%d\n", 
+                    drumEnable, drumLevel, drumBpmDiv * 10, drumFill, drumStyle);
+      
+      uint8_t dspPacket[17];
+      dspPacket[0] = 0x44; dspPacket[1] = 0x52; 
+      dspPacket[2] = 0x55; dspPacket[3] = 0x4D;
+      dspPacket[4] = drumEnable;
+      dspPacket[5] = drumLevel;
+      dspPacket[6] = drumBpmDiv;
+      dspPacket[7] = dspPacket[8] = dspPacket[9] = 0;
+      dspPacket[10] = dspPacket[11] = dspPacket[12] = 0;
+      dspPacket[13] = drumFill;
+      dspPacket[14] = drumStyle;
+      dspPacket[15] = dspPacket[16] = 0;
+      
+      dspSerial.write(dspPacket, 17);
+      Serial.println("[DSP] ✓ Drum packet forwarded (17 bytes)");
+      
+      break;
+    }
   }
 }
 
@@ -439,10 +506,18 @@ void sendEffectChangeToDSP(uint8_t idx, uint8_t en, const uint8_t* k, const uint
 
   if (strncmp(name, "FIR ", 4) == 0) {
     if (k) memcpy(&buf[5], k, 7);
-    if (d) { buf[12]=d[0]; buf[13]=d[1]; buf[14]=d[2]; buf[15]=d[3]; }
+    if (d) {
+      buf[12] = d[0];
+      buf[13] = d[1];
+      buf[14] = d[2];
+      buf[15] = d[3];
+    }
   } else {
     if (k) memcpy(&buf[5], k, 10);
-    if (d) { buf[15]=d[0]; buf[16]=d[1]; }
+    if (d) {
+      buf[15] = d[0];
+      buf[16] = d[1];
+    }
   }
   delay(10);
   dspSerial.write(buf, 17);
@@ -465,19 +540,18 @@ void updateDSPFromPreset() {
   for (int i = 0; i < MAX_EFFECTS; i++) {
     sendEffectChangeToDSP(i, currentPreset.effects[i].enabled,
                           currentPreset.effects[i].knobs, currentPreset.effects[i].dropdowns);
-    delay(5); 
+    delay(5);
   }
 
   // --- FIX: Update EQ Bands on DSP ---
   // Iterate 12 bands and send updates to the DSP
   for (int i = 0; i < 12; i++) {
-     sendEQBandToDSP(i, 
-        currentPreset.eqPoints[i].enabled ? 1 : 0, 
-        currentPreset.eqPoints[i].freq, 
-        currentPreset.eqPoints[i].gain, 
-        currentPreset.eqPoints[i].q
-     );
-     delay(10); // Short delay to prevent buffer overflow
+    sendEQBandToDSP(i,
+                    currentPreset.eqPoints[i].enabled ? 1 : 0,
+                    currentPreset.eqPoints[i].freq,
+                    currentPreset.eqPoints[i].gain,
+                    currentPreset.eqPoints[i].q);
+    delay(10);  // Short delay to prevent buffer overflow
   }
 }
 
@@ -507,10 +581,11 @@ void initializeFactoryPresets() {
 
       // --- FIX: Initialize EQ Defaults ---
       // Initialize sensible EQ defaults for factory presets
-      for(int i=0; i<12; i++) {
-        p.eqPoints[i].freq = (i==0) ? 80 : (i==11) ? 8000 : (100 * (i+1));
+      for (int i = 0; i < 12; i++) {
+        p.eqPoints[i].freq = (i == 0) ? 80 : (i == 11) ? 8000
+                                                       : (100 * (i + 1));
         p.eqPoints[i].gain = 0;
-        p.eqPoints[i].q = 14; 
+        p.eqPoints[i].q = 14;
         p.eqPoints[i].enabled = true;
       }
 
@@ -690,7 +765,7 @@ void loop() {
   encoder2.update();
   handleEncoders();
   handleSwitches();
-  checkDSPIncoming(); 
+  checkDSPIncoming();
 
   if (millis() - lastSaveTime > SAVE_INTERVAL) {
     saveSystemState();

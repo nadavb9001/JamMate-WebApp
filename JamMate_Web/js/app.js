@@ -443,7 +443,9 @@ export const app = {
       if (bpmEl && bpmEl.knob) {
         this.bpm = bpmEl.knob.value;
       }
-      this.sendDrumUpdate(); 
+      if (this.drumEnabled) {
+		  this.sendDrumUpdate();  // only when drum is enabled
+		}
 	  this.sendGlobalUpdate();
       
     });
@@ -541,89 +543,141 @@ export const app = {
   // ========================================================
   // Setup Global Listeners
   // ========================================================
-  setupGlobalListeners() {
-    const btnTheme = document.getElementById('btnTheme');
-    if (btnTheme) {
-      btnTheme.onclick = () => {
-        document.body.classList.toggle('light-theme');
-        if (this.iirDesigner) this.iirDesigner.draw();
-      };
-    }
+	setupGlobalListeners() {
+		const appRef = this; // capture for use in globals
 
-    const btnFullscreen = document.getElementById('btnFullscreen');
-    if (btnFullscreen) {
-      btnFullscreen.onclick = () => {
-        if (!document.fullscreenElement) {
-          document.documentElement.requestFullscreen();
-        } else {
-          document.exitFullscreen();
-        }
-      };
-    }
+		const btnTheme = document.getElementById('btnTheme');
+		if (btnTheme) {
+			btnTheme.onclick = () => {
+				document.body.classList.toggle('light-theme');
+				if (this.iirDesigner) this.iirDesigner.draw();
+			};
+		}
 
-    const btnConnect = document.getElementById('btnConnect');
-    if (btnConnect) {
-      btnConnect.onclick = () => {
-        if (BLEService.isConnected) {
-          BLEService.disconnect();
-        } else {
-          BLEService.connect();
-        }
-      };
-    }
+		const btnFullscreen = document.getElementById('btnFullscreen');
+		if (btnFullscreen) {
+			btnFullscreen.onclick = () => {
+				if (!document.fullscreenElement) {
+					document.documentElement.requestFullscreen();
+				} else {
+					document.exitFullscreen();
+				}
+			};
+		}
 
-    // Double-click handlers for toggles
-    const setupDoubleClickHandler = (id, onToggle) => {
-      const btn = document.getElementById(id);
-      if (!btn) return;
+		const btnConnect = document.getElementById('btnConnect');
+		if (btnConnect) {
+			btnConnect.onclick = () => {
+				if (BLEService.isConnected) {
+					BLEService.disconnect();
+				} else {
+					BLEService.connect();
+				}
+			};
+		}
 
-      let clickCount = 0;
-      let clickTimeout = null;
+		const setupDoubleClickHandler = (id, onToggle) => {
+			const btn = document.getElementById(id);
+			if (!btn) return;
+			let clickCount = 0;
+			let clickTimeout = null;
 
-      btn.addEventListener('click', (e) => {
-        clickCount++;
-        if (clickCount === 1) {
-          clickTimeout = setTimeout(() => {
-            clickCount = 0;
-          }, 250);
-        } else if (clickCount === 2) {
-          clearTimeout(clickTimeout);
-          clickCount = 0;
-          onToggle();
-        }
-      });
-    };
+			btn.addEventListener('click', () => {
+				clickCount++;
+				if (clickCount === 1) {
+					clickTimeout = setTimeout(() => {
+						clickCount = 0;
+					}, 250);
+				} else if (clickCount === 2) {
+					clearTimeout(clickTimeout);
+					clickCount = 0;
+					onToggle();
+				}
+			});
+		};
 
-    setupDoubleClickHandler('whiteNoiseBtn', () => {
-      this.utilState.noise.enabled = !this.utilState.noise.enabled;
-      View.setButtonActive('whiteNoiseBtn', this.utilState.noise.enabled);
-      this.sendUtilUpdate(0);
-    });
+		setupDoubleClickHandler('whiteNoiseBtn', () => {
+			this.utilState.noise.enabled = !this.utilState.noise.enabled;
+			View.setButtonActive('whiteNoiseBtn', this.utilState.noise.enabled);
+			this.sendUtilUpdate(0);
+		});
 
-    setupDoubleClickHandler('toneBtn', () => {
-      this.utilState.tone.enabled = !this.utilState.tone.enabled;
-      View.setButtonActive('toneBtn', this.utilState.tone.enabled);
-      this.sendUtilUpdate(1);
-    });
+		setupDoubleClickHandler('toneBtn', () => {
+			this.utilState.tone.enabled = !this.utilState.tone.enabled;
+			View.setButtonActive('toneBtn', this.utilState.tone.enabled);
+			this.sendUtilUpdate(1);
+		});
 
-    const toneInput = document.getElementById('toneFreqInput');
-    if (toneInput) {
-      toneInput.addEventListener('change', (e) => {
-        let val = parseInt(e.target.value);
-        if (isNaN(val)) val = 670;
-        this.utilState.tone.freq = val;
-        this.sendUtilUpdate(1);
-      });
-    }
+		const toneInput = document.getElementById('toneFreqInput');
+		if (toneInput) {
+			toneInput.addEventListener('change', (e) => {
+				let val = parseInt(e.target.value);
+				if (isNaN(val)) val = 670;
+				this.utilState.tone.freq = val;
+				this.sendUtilUpdate(1);
+			});
+		}
 
-    // Solo effect handler
-    window.soloEffectOpen = false;
-    window.showSoloEffect = function(name, idx) {
-      // Implementation would go here
-    };
+		// === Easy Mode / Solo Effect overlay ===
+		window.soloEffectOpen = false;
 
-    window.closeSoloEffect = function() {
-      window.soloEffectOpen = false;
-    };
-  }
+		window.showSoloEffect = (name, idx) => {
+			window.soloEffectOpen = true;
+
+			const overlay = document.createElement('div');
+			overlay.className = 'solo-effect-overlay';
+
+			const cont = document.createElement('div');
+			cont.className = 'solo-effect-container';
+			cont.innerHTML =
+				`<div class="solo-effect-title">${name}</div>` +
+				`<button class="solo-effect-close-btn" onclick="window.closeSoloEffect()">X</button>`;
+
+			overlay.appendChild(cont);
+			document.body.appendChild(overlay);
+
+			const controls = document.getElementById('effectControls');
+			cont.appendChild(controls);
+
+			// Redraw EQ designer if present
+			if (appRef.iirDesigner) {
+				requestAnimationFrame(() => appRef.iirDesigner.draw());
+			}
+		};
+
+		window.closeSoloEffect = () => {
+			const ov = document.querySelector('.solo-effect-overlay');
+			if (ov) {
+				const controls = document.getElementById('effectControls');
+				const effectsTab = document.getElementById('effects-tab');
+				if (effectsTab && controls) {
+					effectsTab.appendChild(controls);
+				}
+				ov.remove();
+			}
+			window.soloEffectOpen = false;
+		};
+
+		const btnEasyMode = document.getElementById('btnEasyMode');
+		if (btnEasyMode) {
+			btnEasyMode.onclick = (e) => {
+				const tab = document.getElementById('effects-tab');
+				if (!tab) return;
+
+				tab.classList.toggle('easy-mode');
+				const isActive = tab.classList.contains('easy-mode');
+
+				e.target.style.background = isActive
+					? 'var(--color-accent)'
+					: 'var(--color-bg-surface)';
+				e.target.style.color = isActive
+					? '#000'
+					: 'var(--color-text-primary)';
+
+				window.soloEffectOpen = false;
+				View.updateStatus(isActive ? 'Easy Mode Enabled' : 'Easy Mode Disabled');
+			};
+		}
+	}
+
 };

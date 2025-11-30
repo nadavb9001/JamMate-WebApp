@@ -136,29 +136,20 @@ export const BLEService = {
     },
 
     _finalizePacket() {
-        // Reconstruct the full "Virtual" packet for app.js to parse
-        // Format: [CMD, LEN_L, LEN_H, ...PAYLOAD...]
-        const totalLen = 3 + this.rxBuffer.length;
-        const fullPacket = new Uint8Array(totalLen);
-        
-        fullPacket[0] = this.rxCmd;
-        fullPacket[1] = this.rxExpectedLen & 0xFF;
-        fullPacket[2] = (this.rxExpectedLen >> 8) & 0xFF;
-        fullPacket.set(this.rxBuffer, 3);
-
-        console.log(`[BLE] Reassembled ${this.rxBuffer.length} bytes. Passing to App.`);
-
-        if (this.onDataReceived) {
-            this.onDataReceived(new DataView(fullPacket.buffer));
-        }
-
-        // Reset State
-        this.rxBuffer = null;
-        this.rxExpectedLen = 0;
-        this.rxCmd = 0;
-    }
-
-    ,
+		const finalPayloadView = new DataView(this.rxBuffer.buffer.slice(0, this.rxExpectedLen));
+		console.log(`[BLE] Reassembled ${this.rxExpectedLen} bytes. Passing to App.`);
+		
+		if (this.onDataReceived) {
+			// Passing the CMD ID and the assembled DataView to the handler
+			this.onDataReceived({ cmd: this.rxCmd, dataView: finalPayloadView });
+		}
+		
+		// Reset State
+		this.rxExpectedLen = 0;
+		this.rxCmd = 0;
+		this.rxBuffer = null;
+		this.rxBufferOffset = 0;
+	},
     _setStatus(status) {
         if (this.onStatusChange) this.onStatusChange(status);
     }

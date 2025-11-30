@@ -9,6 +9,9 @@ import { Protocol } from './services/Protocol.js';
 const PRESETS_LOCKED = false; 
 // =========================================================
 
+// FX ID for the Drum Machine (Virtual Effect)
+const DRUM_FX_ID = 17;
+
 const app = {
     config: APP_CONFIG,
     currentEffect: null,
@@ -32,24 +35,76 @@ const app = {
         
         BLEService.onStatusChange = (status) => { View.updateConnectionStatus(status); };
         
-        BLEService.onDataReceived = (dataView) => {
-            const cmd = dataView.getUint8(0);
-            if (cmd === 0x31 || cmd === 0x34) {
-                console.log(`[BLE] Received Preset Data`);
-                this.loadStateFromBlob(dataView.buffer.slice(3));
-            } else if (cmd === 0x35) { 
-                const freq = dataView.getFloat32(3, true);
-                View.updateTuner(freq);
+        BLEService.onDataReceived = (packet) => {
+            // Check if this is a multi-packet command (object with cmd and dataView)
+            if (packet && typeof packet === 'object' && packet.cmd !== undefined) {
+                const cmd = packet.cmd;
+                const dataView = packet.dataView;
+
+                if (cmd === 0x31 || cmd === 0x34) {
+                    console.log(`[BLE] Received Preset Data (cmd: 0x${cmd.toString(16)})`);
+                    this.loadStateFromBlob(dataView.buffer);
+                } else if (cmd === 0x35) { 
+                    const freq = dataView.getFloat32(0, true);
+                    View.updateTuner(freq);
+                }
+            } 
+            // Handle single-packet commands (direct DataView)
+            else if (packet instanceof DataView) {
+                const cmd = packet.getUint8(0);
+                if (cmd === 0x35) { 
+                    const freq = packet.getFloat32(3, true);
+                    View.updateTuner(freq);
+                }
             }
         };
 
         this.setupTabs();
         View.setupEffectsGrid(this.config);
-        View.setupDrumGrid(this.drumPattern, (cell, r, c) => { /* ... */ });
+        
+        // Setup Drum Grid and Pattern Sender
+        View.setupDrumGrid(this.drumPattern, (cell, row, col) => { 
+            // 1. Toggle UI
+            const currentVal = this.drumPattern[row][col];
+            const newVal = currentVal > 0 ? 0 : 100; // Toggle 0 or 100 velocity
+            this.drumPattern[row][col] = newVal;
+            View.updateDrumCell(cell, newVal);
+
+            // 2. Send Packet to Device
+            console.log("Sending Drum Pattern...");
+            const packet = Protocol.createDrumPatternPacket(this.drumPattern);
+            BLEService.send(packet);
+        });
+
         this.setupStaticKnobs();
         this.setupFileUpload();
         this.setupGlobalListeners();
         this.setupPresetListeners();
+        this.setupDrumControls(); // NEW
+    },
+
+    setupDrumControls() {
+        // Enable Checkbox
+        document.getElementById('drumEnable').addEventListener('change', (e) => {
+            const enabled = e.target.checked;
+            // Send as Toggle for FX ID 17
+            BLEService.send(Protocol.createToggleUpdate(DRUM_FX_ID, enabled));
+            View.updateStatus(enabled ? "Drum ON" : "Drum OFF");
+        });
+
+        // Style Dropdown (Param 1)
+        document.getElementById('drumStyle').addEventListener('change', (e) => {
+            const val = e.target.selectedIndex;
+            BLEService.send(Protocol.createParamUpdate(DRUM_FX_ID, 1, val));
+            View.updateStatus(`Drum Style: ${val}`);
+        });
+
+        // Fill Dropdown (Param 2)
+        document.getElementById('drumFill').addEventListener('change', (e) => {
+            const val = e.target.selectedIndex;
+            BLEService.send(Protocol.createParamUpdate(DRUM_FX_ID, 2, val));
+            View.updateStatus(`Drum Fill: ${val}`);
+        });
     },
 
     loadStateFromBlob(blob) {
@@ -87,6 +142,8 @@ const app = {
         }
         setTimeout(() => { this.isUpdatingUI = false; }, 100);
     },
+	
+
 
     getCurrentState() {
         let eqData = [];
@@ -106,7 +163,6 @@ const app = {
     },
 
     setupPresetListeners() {
-        // 1. Load Logic (Main Dropdowns)
         const onPresetSelect = () => {
             const bankIndex = document.getElementById('presetBank').selectedIndex;
             const slotIndex = document.getElementById('presetNum').selectedIndex;
@@ -116,15 +172,14 @@ const app = {
         document.getElementById('presetBank').addEventListener('change', onPresetSelect);
         document.getElementById('presetNum').addEventListener('change', onPresetSelect);
 
-        // 2. Save Logic (Modal)
         const modal = document.getElementById('saveModal');
         
         document.getElementById('btnSavePreset').onclick = () => {
-            modal.classList.add('active'); // CHANGED
+            modal.classList.add('active'); 
         };
         
         document.getElementById('btnCancelSave').onclick = () => {
-            modal.classList.remove('active'); // CHANGED
+            modal.classList.remove('active'); 
         };
 
         document.getElementById('btnConfirmSave').onclick = () => {
@@ -143,43 +198,50 @@ const app = {
             const packet = Protocol.createSavePreset(bankIndex, slotIndex, state);
             BLEService.send(packet);
             
-            modal.classList.remove('active'); // CHANGED
+            modal.classList.remove('active'); 
         };
     },
 
-    // ... (selectEffect, toggle, etc. - Same as previous) ...
-    selectEffect(idx) {
-        this.currentEffect = idx;
-        Object.keys(this.effectStates).forEach(i => { this.effectStates[i].selected = (parseInt(i) === idx); });
-        View.updateEffectButtons(this.effectStates);
-        
-        View.showEffectControls(
-            this.config.tabs[idx], idx, this.effectParams[idx], this.effectStates,
-            (pid, val) => { 
-                if(this.isUpdatingUI) return;
-                this.effectParams[idx][`knob${pid}`] = val; 
-                BLEService.send(Protocol.createParamUpdate(idx, pid, val)); 
-            },
-            (pid, val) => { 
-                if(this.isUpdatingUI) return; 
-                const offsetId = 10 + pid; 
-                this.effectParams[idx][`dropdown${pid}`] = val; 
-                BLEService.send(Protocol.createParamUpdate(idx, offsetId, value)); 
-            },
-            (en) => { 
-                if(this.isUpdatingUI) return;
-                this.effectStates[idx].enabled = en; 
-                View.updateEffectButtons(this.effectStates); 
-                BLEService.send(Protocol.createToggleUpdate(idx, en)); 
-            },
-            (b, en, f, g, q) => { 
-                if(this.isUpdatingUI) return;
-                BLEService.send(Protocol.createEQUpdate(b, en, f, g, q)); 
-            }
-        );
-    },
+    // In app.js
+		
+	selectEffect(idx) {
+		this.currentEffect = idx;
+		Object.keys(this.effectStates).forEach(i => { this.effectStates[i].selected = (parseInt(i) === idx); });
+		View.updateEffectButtons(this.effectStates);
+		
+		View.showEffectControls(
+			this.config.tabs[idx], idx, this.effectParams[idx], this.effectStates,
+			// Knob Callback (Correct)
+			(pid, val) => { 
+				if(this.isUpdatingUI) return;
+				this.effectParams[idx][`knob${pid}`] = val; 
+				BLEService.send(Protocol.createParamUpdate(idx, pid, val)); 
+			},
+			// Dropdown Callback (ERROR IS HERE)
+			(pid, val) => { 
+				if(this.isUpdatingUI) return; 
+				const offsetId = 10 + pid; 
+				this.effectParams[idx][`dropdown${pid}`] = val; 
+				
+				// CHANGE 'value' TO 'val'
+				// BLEService.send(Protocol.createParamUpdate(idx, offsetId, value)); // <--- ERROR
+				BLEService.send(Protocol.createParamUpdate(idx, offsetId, val));      // <--- FIXED
+			},
+			// Toggle Callback (Correct)
+			(en) => { 
+				if(this.isUpdatingUI) return;
+				this.effectStates[idx].enabled = en; 
+				View.updateEffectButtons(this.effectStates); 
+				BLEService.send(Protocol.createToggleUpdate(idx, en)); 
+			},
+			// EQ Callback (Correct)
+			(b, en, f, g, q) => { 
+				if(this.isUpdatingUI) return;
+				BLEService.send(Protocol.createEQUpdate(b, en, f, g, q)); 
+			}
+		);
+	},
 
-    // ... (toggleEffectEnabled, setupTabs, etc. - Standard) ...
     toggleEffectEnabled(idx) {
         if(this.isUpdatingUI) return;
         const newState = !this.effectStates[idx].enabled;
@@ -187,6 +249,7 @@ const app = {
         View.updateEffectButtons(this.effectStates);
         BLEService.send(Protocol.createToggleUpdate(idx, newState));
     },
+
     setupTabs() {
         document.querySelectorAll('.tab').forEach(tab => {
             tab.addEventListener('click', () => {
@@ -198,6 +261,7 @@ const app = {
             });
         });
     },
+
     setupStaticKnobs() {
         const createKnob = (id, name, max, initial, onChange) => {
             const el = document.getElementById(id);
@@ -209,11 +273,24 @@ const app = {
         };
         createKnob('whiteNoiseLevelKnob', 'Noise Level', 100, 0, (val) => { this.utilState.noise.level = val; this.sendUtilUpdate(0); });
         createKnob('toneLevelKnob', 'Tone Level', 100, 0, (val) => { this.utilState.tone.level = val; this.sendUtilUpdate(1); });
-        createKnob('masterKnob', 'Master Vol', 100, 50, () => {});
-        createKnob('bpmKnob', 'BPM', 255, 120, () => {});
-        createKnob('blVolKnob', 'BT Vol', 100, 50, () => {});
-        createKnob('drumLevelKnob', 'Drum Level', 100, 50, () => {});
+        // UPDATE: Master Knob now triggers Global Update
+        createKnob('masterKnob', 'Master Vol', 100, 50, () => this.sendGlobalUpdate());
+
+        // UPDATE: BPM Knob now triggers Global Update
+        createKnob('bpmKnob', 'BPM', 255, 120, () => this.sendGlobalUpdate());
+
+        // UPDATE: BT Volume Knob now triggers Global Update
+        createKnob('blVolKnob', 'BT Vol', 100, 50, () => this.sendGlobalUpdate());
+        
+
+        
+        
+        // Drum Level (Param 0 of Virtual Effect)
+        createKnob('drumLevelKnob', 'Drum Level', 100, 50, (val) => {
+            BLEService.send(Protocol.createParamUpdate(DRUM_FX_ID, 0, val));
+        });
     },
+
     sendUtilUpdate(type) {
         if (this.isUpdatingUI) return;
         let packet;
@@ -224,6 +301,7 @@ const app = {
         }
         BLEService.send(packet);
     },
+
     setupFileUpload() {
         const input = document.getElementById('fileInput');
         input.addEventListener('change', async (e) => {
@@ -249,6 +327,27 @@ const app = {
             });
         }
     },
+	
+	sendGlobalUpdate(flash = false, reset = false) {
+        if(this.isUpdatingUI) return;
+
+        const master = document.getElementById('masterKnob').knob.value;
+        const btVol = document.getElementById('blVolKnob').knob.value;
+        const bpm = document.getElementById('bpmKnob').knob.value;
+        
+        // Assuming you have checkboxes with these IDs (based on your prompt)
+        // If they don't exist in DOM yet, ensure they are created in HTML
+        const btEnable = document.getElementById('btEnableCheck') ? document.getElementById('btEnableCheck').checked : true;
+        const bleEnable = document.getElementById('bleEnableCheck') ? document.getElementById('bleEnableCheck').checked : true;
+
+        // Send Packet
+        const packet = Protocol.createGlobalUpdate(master, btVol, bpm, btEnable, bleEnable, flash, reset);
+        BLEService.send(packet);
+        
+        if(flash) View.updateStatus("Sending Flash Command...");
+        if(reset) View.updateStatus("Sending Reset Command...");
+    },
+
     setupGlobalListeners() {
         document.getElementById('btnTheme').onclick = () => {
              document.body.classList.toggle('light-theme');
@@ -318,7 +417,6 @@ const app = {
             View.updateStatus(isActive ? "Easy Mode Enabled" : "Easy Mode Disabled");
         };
         
-        // TUNER TOGGLE (Send 0x23 Type 2)
         const tunerCheck = document.getElementById('tunerEnable');
         if(tunerCheck) {
             tunerCheck.addEventListener('change', (e) => {
@@ -328,6 +426,22 @@ const app = {
                 View.updateStatus(enabled ? "Tuner ON" : "Tuner OFF");
             });
         }
+		const bindChange = (id) => {
+            const el = document.getElementById(id);
+            if(el) el.addEventListener('change', () => this.sendGlobalUpdate());
+        };
+        
+        bindChange('btEnableCheck');  // Enable A2DP/BT
+        bindChange('bleEnableCheck'); // Enable BLE
+
+        const bindClick = (id, isFlash, isReset) => {
+            const el = document.getElementById(id);
+            if(el) el.addEventListener('click', () => this.sendGlobalUpdate(isFlash, isReset));
+        };
+
+        bindClick('btnFlashDaisy', true, false);
+        bindClick('btnResetDaisy', false, true);
+    
     }
 };
 

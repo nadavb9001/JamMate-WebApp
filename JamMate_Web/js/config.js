@@ -114,7 +114,7 @@ export const APP_CONFIG = {
       "params": { 
         "checkbox": "enable", 
         "knobs": ["level", "depth", "rate","midFreq"], 
-        "dropdowns": ["tremolo_mode"] 
+        "dropdowns": ["tremolo_mode","waveform"] 
       } 
     },
     { 
@@ -136,11 +136,11 @@ export const APP_CONFIG = {
       } 
     },
     { 
-      "title": "NAM", 
+      "title": "_NAM", 
       "short_name": "_NAM", 
       "params": { 
         "checkbox": "enable", 
-        "knobs": ["level"], 
+        "knobs": ["level","pre_att"], 
         "dropdowns": ["NAM_Model"] 
       } 
     },
@@ -164,7 +164,7 @@ export const APP_CONFIG = {
     }
   ],
   "dropdowns": {
-    "NAM_Model": ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"],
+    "NAM_Model": ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10","11","12","13","14","15","16","17","18","19","20","21","22","23","24","25",],
     "amp_type": ["None", "Fender 65", "Twin Reverb", "Marshall", "Orange", "Mesa", "EVH", "Friedman", "VOX", "Bassman", "Custom"],
     "tone_type": ["None", "Fender", "Marshall"],
     "ir_points": ["256", "512", "1024", "2048", "4096", "8192"],
@@ -186,6 +186,7 @@ export const APP_CONFIG = {
 	"shift_semitone": ["detune","1", "2", "3", "4", "5", "6", "7", "8", "9", "11","12"],
 	"phaser_poles": ["1", "2", "3", "4"],
 	"tremolo_mode": ["vintage","harmonic"],
+	"waveform": ["Sine","Triangle","Saw","Square"],
 	"delay-multi": ["1", "2", "3"]
 	
   }

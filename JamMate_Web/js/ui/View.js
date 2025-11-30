@@ -143,6 +143,20 @@ export const View = {
                     if(onEQChange) onEQChange(idx, en, f, g, q); 
                 }
             );
+			// --- ADD THIS BLOCK ---
+            // Check if we have loaded points waiting in the app state
+            if (this.app.currentEQPoints && this.app.currentEQPoints.length > 0) {
+                this.app.currentEQPoints.forEach((ptData, i) => {
+                    if (this.app.iirDesigner.points[i]) {
+                        this.app.iirDesigner.points[i].freq = ptData.freq;
+                        this.app.iirDesigner.points[i].gain = ptData.gain;
+                        this.app.iirDesigner.points[i].q = ptData.q;
+                        this.app.iirDesigner.points[i].enabled = true; // Assume enabled if saved
+                    }
+                });
+                this.app.iirDesigner.draw(); // Force redraw
+            }
+            // ----------------------
             
             document.addEventListener('eq-reset', () => this.app.iirDesigner.reset(), { once: true });
             document.getElementById('biquadCount').addEventListener('change', (e) => { this.app.iirDesigner.setBiquadCount(parseInt(e.target.value)); });

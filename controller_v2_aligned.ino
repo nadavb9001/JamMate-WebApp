@@ -220,48 +220,63 @@ uint32_t dspPayloadLen = 0;
 uint8_t* dspBuffer = nullptr;
 
 void checkDSPIncoming() {
-  const uint32_t MAX_WAIT_MS = 2000;  // 2-second timeout
+  const uint32_t MAX_WAIT_MS = 2000;
+  
   while (dspSerial.available()) {
     switch (dspState) {
       case WAIT_HEADER:
+        // We need at least 4 bytes to check for a header
         if (dspSerial.available() >= 4) {
-          dspSerial.readBytes(dspHeader, 4);
-          dspHeader[4] = 0;
-          dspState = WAIT_LEN;
+            // PEEK at the first byte. If it's not a known header start char, discard it.
+            // Known headers start with: 'T' (TUNE), 'L' (LOAD, LOOP), 'D' (DRUM), 'S' (SWCH), 'P' (PRES), 'G' (GEN), 'U' (UTIL)
+            char c = dspSerial.peek();
+            if (c != 'T' && c != 'L' && c != 'D' && c != 'S' && c != 'P' && c != 'G' && c != 'U') {
+                dspSerial.read(); // Discard garbage byte
+                break; // Try again next loop
+            }
+
+            // If first byte looks okay, read the whole header
+            dspSerial.readBytes(dspHeader, 4);
+            dspHeader[4] = 0;
+            dspState = WAIT_LEN;
+            dspTimeout = millis();
         }
-        dspTimeout = millis();  // Reset timeout
         break;
 
       case WAIT_LEN:
         if (dspSerial.available() >= 4) {
           dspSerial.readBytes((char*)&dspPayloadLen, 4);
-          if (dspPayloadLen > 10240) {
-            Serial.printf("[DSP] Error: Payload too huge (%d)\n", dspPayloadLen);
-            dspState = WAIT_HEADER;
-            break;
+          
+          // Safety Check: Max payload size
+          if (dspPayloadLen > 4096) { 
+            Serial.printf("[DSP] Sync Error: Huge Payload (%u). Resetting.\n", dspPayloadLen);
+            dspState = WAIT_HEADER; // Go back to finding a valid header
+            
+            // Critical: Flush buffer to prevent reading the same garbage
+            while(dspSerial.available()) dspSerial.read(); 
+          } 
+          else {
+             if (dspBuffer) free(dspBuffer);
+             dspBuffer = (uint8_t*)malloc(dspPayloadLen);
+             dspBytesRead = 0;
+             dspState = READ_PAYLOAD;
           }
-          if (dspBuffer) free(dspBuffer);
-          dspBuffer = (uint8_t*)malloc(dspPayloadLen);
-          dspBytesRead = 0;
-          dspState = READ_PAYLOAD;
         }
         break;
+
       case READ_PAYLOAD:
+        // ... (Keep existing READ_PAYLOAD logic) ...
         if (millis() - dspTimeout > MAX_WAIT_MS) {
-          Serial.println("[DSP] ✗ Timeout waiting for payload");
-          dspState = WAIT_HEADER;
-          dspBytesRead = 0;
-          break;
+             Serial.println("[DSP] Timeout.");
+             dspState = WAIT_HEADER;
+             break;
         }
-
-        if (dspBytesRead < dspPayloadLen) {
-          dspBuffer_static[dspBytesRead++] = dspSerial.read();
+        while (dspSerial.available() && dspBytesRead < dspPayloadLen) {
+            dspBuffer[dspBytesRead++] = dspSerial.read(); // Use dspBuffer (malloc'd) or dspBuffer_static
         }
-
         if (dspBytesRead >= dspPayloadLen) {
-          processDSPPacket(dspHeader, dspBuffer_static, dspPayloadLen);
-          dspState = WAIT_HEADER;
-          dspBytesRead = 0;
+            processDSPPacket(dspHeader, dspBuffer, dspPayloadLen);
+            dspState = WAIT_HEADER;
         }
         break;
     }
@@ -269,6 +284,9 @@ void checkDSPIncoming() {
 }
 
 void processDSPPacket(const char* header, uint8_t* data, uint32_t len) {
+  //Serial.print(header);
+  //Serial.print(" , ");
+  //Serial.println(data);
   if (strcmp(header, "TUNE") == 0 && len == 4) {
     uint8_t packet[7];
     packet[0] = 0x35;
@@ -459,11 +477,15 @@ void onBLEDataReceived(uint8_t* data, size_t len) {
       uint8_t drumEnable = payload[4];
       uint8_t drumLevel  = payload[5];
       uint8_t drumBpmDiv = payload[6];
+      uint8_t looperEnable = payload[7];
+      uint8_t looperLevel = payload[8];
       uint8_t drumFill   = payload[13];
       uint8_t drumStyle  = payload[14];
+      uint8_t loopNumber   = payload[15];
+      uint8_t loopSync  = payload[16];
       
-      Serial.printf("[BLE] ✓ Drum: En=%d Lvl=%d BPM=%d Fill=%d Style=%d\n", 
-                    drumEnable, drumLevel, drumBpmDiv * 10, drumFill, drumStyle);
+      Serial.printf("[BLE] ✓ Drum: En=%d Lvl=%d BPM=%d Fill=%d Style=%d\n loop num=%d loop sync=%d\n", 
+                    drumEnable, drumLevel, drumBpmDiv * 10, drumFill, drumStyle, loopNumber, loopSync);
       
       uint8_t dspPacket[17];
       dspPacket[0] = 0x44; dspPacket[1] = 0x52; 
@@ -471,11 +493,14 @@ void onBLEDataReceived(uint8_t* data, size_t len) {
       dspPacket[4] = drumEnable;
       dspPacket[5] = drumLevel;
       dspPacket[6] = drumBpmDiv;
-      dspPacket[7] = dspPacket[8] = dspPacket[9] = 0;
+      dspPacket[7] = looperEnable;
+      dspPacket[8] = looperLevel;
+      dspPacket[9] = 0;
       dspPacket[10] = dspPacket[11] = dspPacket[12] = 0;
       dspPacket[13] = drumFill;
       dspPacket[14] = drumStyle;
-      dspPacket[15] = dspPacket[16] = 0;
+      dspPacket[15] = loopNumber;
+      dspPacket[16] = loopSync;
       
       dspSerial.write(dspPacket, 17);
       Serial.println("[DSP] ✓ Drum packet forwarded (17 bytes)");
@@ -734,6 +759,19 @@ void handleEncoders() {
   }
 }
 
+// Callback to forward MIDI data from pedal to DSP
+void processMidiFromPedal(uint8_t* data, size_t len) {
+  uint8_t payload[5] = {0};
+  payload[0] = 1; // Enable flag
+  
+  // Copy up to 4 bytes
+  size_t bytesToCopy = (len > 4) ? 4 : len;
+  memcpy(&payload[1], data, bytesToCopy);
+  
+  // Send "MIDI" command to DSP
+  sendToDSP("MIDI", payload, 5);
+}
+
 void setup() {
   Serial.begin(115200);
   if (!LittleFS.begin(true)) {
@@ -751,11 +789,17 @@ void setup() {
 
   i2s_pin_config_t pins = { .mck_io_num = 0, .bck_io_num = 14, .ws_io_num = 13, .data_out_num = 12, .data_in_num = 35 };
   btManager.setA2DPPinConfig(pins);
+  
+  // 1. Initialize Bluetooth (Starts advertising AND background MIDI task)
   btManager.begin("JamMate", state.a2dpEnabled);
+  
+  // 2. Register Callbacks
   btManager.setBLEDataCallback(onBLEDataReceived);
+  btManager.setMidiCallback(processMidiFromPedal); // <--- IMPORTANT: Link the callback
+
   btManager.setCurrentPreset(&currentPreset);
 
-  Serial.println("[JamMate] v3.3 (LittleFS) Ready");
+  Serial.println("[JamMate] v3.3 Ready");
   updateDSPFromPreset();
   lastSaveTime = millis();
 }
@@ -766,6 +810,8 @@ void loop() {
   handleEncoders();
   handleSwitches();
   checkDSPIncoming();
+
+  //btManager.update();
 
   if (millis() - lastSaveTime > SAVE_INTERVAL) {
     saveSystemState();

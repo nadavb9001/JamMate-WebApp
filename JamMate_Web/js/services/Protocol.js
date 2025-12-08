@@ -166,7 +166,7 @@ export const Protocol = {
   // [0x41, 0x11, 0x00, "DRUM"(4), enable(1), level(1), bpm/10(1), 
   //  xx, xx, xx, xx, xx, fill(1), style(1), xx, xx, xx]
   // ========================================================
-  createDrumUpdate(enable, level, bpm, style, fill) {
+  createDrumUpdate(drumEnable, drumLevel, bpm, style, fill,looperEnable,looperLevel,loopNumber,sync) {
 	  const payloadLen = 15;  // "DRUM"(4) + 11 data bytes
 	  const buffer = new ArrayBuffer(3 + payloadLen);
 	  const view   = new DataView(buffer);
@@ -185,13 +185,14 @@ export const Protocol = {
 	  data[o++] = 0x4D; // 'M'
 
 	  // Fields expected by ESP
-	  data[o++] = enable ? 1 : 0;                          // payload[4]
-	  data[o++] = Math.round(level) & 0xFF;                // payload[5]
+	  data[o++] = drumEnable ? 1 : 0;                          // payload[4]
+	  data[o++] = Math.round(drumLevel) & 0xFF;                // payload[5]
 	  data[o++] = Math.round(bpm) & 0xFF;             // payload[6]
 
 	  // Reserved bytes 7–12
-	  data[o++] = 0;
-	  data[o++] = 0;
+	  
+	  data[o++] =  looperEnable ? 1 : 0;               // payload[7]
+	  data[o++] =  Math.round(looperLevel) & 0xFF;                // payload[8]
 	  data[o++] = 0;
 	  data[o++] = 0;
 	  data[o++] = 0;
@@ -200,6 +201,8 @@ export const Protocol = {
 	  // Fill / Style
 	  data[o++] = (fill  || 0) & 0xFF;                     // payload[13]
 	  data[o++] = (style || 0) & 0xFF;                     // payload[14]
+	  data[o++] = (loopNumber || 0) & 0xFF;                     // payload[15]
+	  data[o++] = (sync || 0) & 0xFF;                     // payload[16]
 
 	  return buffer;
 	},

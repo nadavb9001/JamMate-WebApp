@@ -38,6 +38,10 @@ export const app = {
   drumStyle: 0,
   drumFill: 0,
   bpm: 120,
+  looperEnabled: false,
+  loopLevel: 50,
+  loopNumber: 1, // 1-5
+  loopSync: 0,   // 0=None, 1=Beat, 2=Bar
 
   // ========================================================
   // Init (FIXED - Initialize all 17 effects)
@@ -51,6 +55,10 @@ export const app = {
     this.drumStyle = 0;
     this.drumFill = 0;
     this.bpm = 120;
+	this.looperEnabled = false;
+    this.loopLevel = 50;
+    this.loopNumber = 1;
+    this.loopSync = 0;
 
     // CRITICAL FIX: Initialize ALL 17 effect states FIRST
     // This prevents "Cannot set properties of undefined" errors
@@ -116,7 +124,7 @@ export const app = {
   // Setup Drum Controls (FIXED - use sendDrumUpdate)
   // ========================================================
   setupDrumControls() {
-    // Enable Checkbox
+// 1. Drum Enable
     const drumEnableEl = document.getElementById('drumEnable');
     if (drumEnableEl) {
       drumEnableEl.addEventListener('change', (e) => {
@@ -126,11 +134,21 @@ export const app = {
       });
     }
 
-    // Level Knob
+    // 2. Looper Enable (NEW)
+    const looperEnableEl = document.getElementById('looperEnable');
+    if (looperEnableEl) {
+      looperEnableEl.addEventListener('change', (e) => {
+        this.looperEnabled = e.target.checked;
+        this.sendDrumUpdate();
+        View.updateStatus(this.looperEnabled ? "Looper ON" : "Looper OFF");
+      });
+    }
+
+    // 3. Drum Level Knob
     const drumLevelKnobEl = document.getElementById('drumLevelKnob');
     if (drumLevelKnobEl && !drumLevelKnobEl.knob) {
       const knob = new Knob(drumLevelKnobEl, 0, 100, 50, (val) => {
-        View.updateStatus(`Drum Level: ${Math.round(val)}`);
+        View.updateStatus(`Drum Vol: ${Math.round(val)}`);
       });
       knob.onrelease = () => {
         this.drumLevel = knob.value;
@@ -138,54 +156,75 @@ export const app = {
       };
     }
 
-    // Style Dropdown
-    const drumStyleEl = document.getElementById('drumStyle');
-    if (drumStyleEl) {
-      drumStyleEl.addEventListener('change', (e) => {
-        this.drumStyle = parseInt(e.target.value);
-        this.sendDrumUpdate();
-        View.updateStatus(`Drum Style: ${e.target.options[e.target.selectedIndex].text}`);
+    // 4. Loop Level Knob (NEW)
+    const loopLevelKnobEl = document.getElementById('loopLevelKnob');
+    if (loopLevelKnobEl && !loopLevelKnobEl.knob) {
+      const knob = new Knob(loopLevelKnobEl, 0, 100, 50, (val) => {
+        View.updateStatus(`Loop Vol: ${Math.round(val)}`);
       });
+      knob.onrelease = () => {
+        this.loopLevel = knob.value;
+        this.sendDrumUpdate();
+      };
     }
 
-    // Fill Dropdown
-    const drumFillEl = document.getElementById('drumFill');
-    if (drumFillEl) {
-      drumFillEl.addEventListener('change', (e) => {
-        this.drumFill = parseInt(e.target.value);
-        this.sendDrumUpdate();
-        View.updateStatus(`Drum Fill: ${e.target.options[e.target.selectedIndex].text}`);
-      });
+    // 5. Style & Fill Dropdowns
+    ['drumStyle', 'drumFill',"loopNum","loopSync"].forEach(id => {
+        const el = document.getElementById(id);
+        if(el) el.addEventListener('change', (e) => {
+            this[id] = parseInt(e.target.value);
+            this.sendDrumUpdate();
+        });
+    });
+
+    // 6. Loop Number (NEW)
+    /*const loopNumEl = document.getElementById('loopNumber');
+    if (loopNumEl) {
+        loopNumEl.addEventListener('change', (e) => {
+            this.loopNumber = parseInt(e.target.value);
+            this.sendDrumUpdate();
+            View.updateStatus(`Loop Track: ${this.loopNumber}`);
+        });
     }
+
+    // 7. Loop Sync (NEW)
+    const loopSyncEl = document.getElementById('loopSync');
+    if (loopSyncEl) {
+        loopSyncEl.addEventListener('change', (e) => {
+            this.loopSync = parseInt(e.target.value);
+            this.sendDrumUpdate();
+            const texts = ["None", "Beat", "Bar"];
+            View.updateStatus(`Sync: ${texts[this.loopSync]}`);
+        });
+    }*/
   },
 
   // ========================================================
   // Send Drum Update (0x41 command)
   // ========================================================
-  sendDrumUpdate() {
-    if (this.isUpdatingUI) return;
+	sendDrumUpdate() {
+		if (this.isUpdatingUI) return;
 
-    const bpmEl = document.getElementById('bpmKnob');
-    const currentBPM = bpmEl && bpmEl.knob ? bpmEl.knob.value : this.bpm;
+		const bpmEl = document.getElementById('bpmKnob');
+		const currentBPM = bpmEl && bpmEl.knob ? bpmEl.knob.value : this.bpm;
 
-    console.log(`[APP] Drum Update: En=${this.drumEnabled} Lvl=${this.drumLevel} BPM=${currentBPM} Style=${this.drumStyle} Fill=${this.drumFill}`);
+		console.log(`[APP] Drum/Loop Update`);
 
-    const pkt = Protocol.createDrumUpdate(
-        this.drumEnabled || false,
-        this.drumLevel || 50,
-        currentBPM || 120,
-        this.drumStyle || 0,
-        this.drumFill || 0
-    );
+		const pkt = Protocol.createDrumUpdate(
+			this.drumEnabled || false,
+			this.drumLevel || 50,
+			currentBPM || 120,
+			this.drumStyle || 0,
+			this.drumFill || 0,
+			// New Params
+			this.looperEnabled || false,
+			this.loopLevel || 50,
+			this.loopNumber || 1,
+			this.loopSync || 0
+		);
 
-    // Log packet content
-    const bytes = pkt instanceof ArrayBuffer ? new Uint8Array(pkt)
-               : pkt.buffer instanceof ArrayBuffer ? new Uint8Array(pkt.buffer)
-               : new Uint8Array();
-    console.log('[APP] Drum packet bytes:', pkt);
-
-    BLEService.send(pkt);
-  },
+		BLEService.send(pkt);
+	},
 
   // ========================================================
   // Load State from Blob (FIXED - with safety checks)
@@ -218,7 +257,7 @@ export const app = {
       });
 
       // Load EQ points
-      if (state.eqPoints && state.eqPoints.length > 0) {
+      /*if (state.eqPoints && state.eqPoints.length > 0) {
         this.currentEQPoints = state.eqPoints;
         if (this.iirDesigner) {
           this.iirDesigner.points.forEach((pt, i) => {
@@ -230,6 +269,22 @@ export const app = {
             }
           });
           this.iirDesigner.draw();
+        }
+      }*/
+	  if (state.eqPoints && state.eqPoints.length > 0) {
+        this.currentEQPoints = state.eqPoints;
+        
+        // Check if IIRDesigner is currently active/visible
+        if (this.iirDesigner) {
+          this.iirDesigner.loadPoints(this.currentEQPoints);
+          
+          // --- FIX: Update the Dropdown Visual ---
+          // Since we loaded a preset, we should probably reset the dropdown 
+          // to "12 Bands" (Max) or infer it from active bands.
+          // For simplicity, default to Max to ensure user sees data.
+          const dd = document.getElementById('biquadCount');
+          if(dd) dd.value = "10"; 
+          if(this.iirDesigner.setBiquadCount) this.iirDesigner.setBiquadCount(10);
         }
       }
 
@@ -376,8 +431,20 @@ export const app = {
         BLEService.send(Protocol.createToggleUpdate(idx, en));
       },
       // EQ Callback
-      (b, en, f, g, q) => {
+      /*(b, en, f, g, q) => {
         if (this.isUpdatingUI) return;
+        BLEService.send(Protocol.createEQUpdate(b, en, f, g, q));
+      }*/
+	  (b, en, f, g, q) => {
+        if (this.isUpdatingUI) return;
+        
+        // Update Internal State immediately so it doesn't get lost on tab switch
+        if(!this.currentEQPoints) this.currentEQPoints = [];
+        // Ensure array is big enough
+        while(this.currentEQPoints.length <= b) this.currentEQPoints.push({freq:100, gain:0, q:1.4, enabled:true});
+        
+        this.currentEQPoints[b] = { freq: f, gain: g, q: q, enabled: (en === 1 || en === true) };
+
         BLEService.send(Protocol.createEQUpdate(b, en, f, g, q));
       }
     );
@@ -476,6 +543,14 @@ export const app = {
     }
 
     BLEService.send(packet);
+  },
+  
+  // --- INSERT YOUR NEW FUNCTION HERE ---
+  sendTunerUpdate(isEnabled) {
+      // We reuse the UTIL command (0x23). 
+      // Type 0 = Noise, Type 1 = Tone. Let's use Type 2 for Tuner.
+      const packet = Protocol.createUtilUpdate(2, isEnabled, 0, 0);
+      BLEService.send(packet);
   },
 
   // ========================================================
@@ -619,9 +694,30 @@ export const app = {
 		}
 
 		// === Easy Mode / Solo Effect overlay ===
+	
+
+		// Solo effect handler
 		window.soloEffectOpen = false;
 
+		window.closeSoloEffect = () => {
+			const overlay = document.querySelector('.solo-effect-overlay');
+			const controls = document.getElementById('effectControls');
+			const effectsTab = document.getElementById('effects-tab');
+
+			if (overlay) {
+				if (controls && effectsTab) {
+					effectsTab.appendChild(controls);  // put controls back
+				}
+				overlay.remove();
+			}
+			window.soloEffectOpen = false;
+		};
+
 		window.showSoloEffect = (name, idx) => {
+			// If something is already open, clean it up first
+			if (window.soloEffectOpen) {
+				window.closeSoloEffect();
+			}
 			window.soloEffectOpen = true;
 
 			const overlay = document.createElement('div');
@@ -629,34 +725,31 @@ export const app = {
 
 			const cont = document.createElement('div');
 			cont.className = 'solo-effect-container';
-			cont.innerHTML =
-				`<div class="solo-effect-title">${name}</div>` +
-				`<button class="solo-effect-close-btn" onclick="window.closeSoloEffect()">X</button>`;
 
+			const title = document.createElement('div');
+			title.className = 'solo-effect-title';
+			title.textContent = name;
+
+			const closeBtn = document.createElement('button');
+			closeBtn.className = 'solo-effect-close-btn';
+			closeBtn.textContent = 'X';
+			closeBtn.addEventListener('click', window.closeSoloEffect);
+
+			cont.appendChild(title);
+			cont.appendChild(closeBtn);
 			overlay.appendChild(cont);
 			document.body.appendChild(overlay);
 
 			const controls = document.getElementById('effectControls');
-			cont.appendChild(controls);
+			if (controls) {
+				cont.appendChild(controls);
+			}
 
-			// Redraw EQ designer if present
-			if (appRef.iirDesigner) {
-				requestAnimationFrame(() => appRef.iirDesigner.draw());
+			if (app.iirDesigner) {
+				requestAnimationFrame(() => app.iirDesigner.draw());
 			}
 		};
 
-		window.closeSoloEffect = () => {
-			const ov = document.querySelector('.solo-effect-overlay');
-			if (ov) {
-				const controls = document.getElementById('effectControls');
-				const effectsTab = document.getElementById('effects-tab');
-				if (effectsTab && controls) {
-					effectsTab.appendChild(controls);
-				}
-				ov.remove();
-			}
-			window.soloEffectOpen = false;
-		};
 
 		const btnEasyMode = document.getElementById('btnEasyMode');
 		if (btnEasyMode) {
@@ -678,6 +771,18 @@ export const app = {
 				View.updateStatus(isActive ? 'Easy Mode Enabled' : 'Easy Mode Disabled');
 			};
 		}
+		const tunerEnable = document.getElementById('tunerEnable');
+		if (tunerEnable) {
+			tunerEnable.addEventListener('change', (e) => {
+				const isEnabled = e.target.checked;
+				this.sendTunerUpdate(isEnabled);
+				View.updateStatus(isEnabled ? "Tuner ON" : "Tuner OFF");
+			});
+		}
+		
+		
+			
 	}
+	
 
 };

@@ -57,38 +57,53 @@
         <div id="effectControls"></div>
     </div>
     
-    <div class="tab-content" id="drum-tab">
+   <div class="tab-content" id="drum-tab">
         <div class="preset-controls">
-            <div class="knobs-grid">
-                <div class="knob-container"><div class="knob" id="drumLevelKnob"></div><div class="knob-label">Level</div></div>
+            <div class="knobs-grid" style="grid-template-columns: repeat(2, 1fr); justify-items: center; margin-bottom: 15px;">
+                <div class="knob-container"><div class="knob" id="drumLevelKnob"></div><div class="knob-label">Drum Level</div></div>
+                <div class="knob-container"><div class="knob" id="loopLevelKnob"></div><div class="knob-label">Loop Level</div></div>
             </div>
-            <div class="control-group">
+
+            <div style="display: flex; gap: 20px; justify-content: center; margin-bottom: 15px;">
                 <label class="checkbox"><input type="checkbox" id="drumEnable" checked><span>Enable Drum</span></label>
+                <label class="checkbox"><input type="checkbox" id="looperEnable"><span>Enable Looper</span></label>
             </div>
+
             <div class="preset-row">
                 <div>
                     <label class="control-label">Style</label>
-                    <select id="drumStyle" style="width: fit-content;">
-                        <option value="0">Rock</option>
-						<option value="1">Blues</option>
-						<option value="2">Jazz</option>
-						<option value="3">Shuffle</option>
-						<option value="4">Pop</option>
-						<option value="5">Metal</option>
-						<option value="6">Latin</option>
-						<option value="7">R&amp;B</option>
-						<option value="8">Country</option>
-						<option value="9">Funk</option>
+                    <select id="drumStyle" style="width: 100%;">
+                        <option value="0">Rock</option><option value="1">Blues</option><option value="2">Jazz</option>
+                        <option value="3">Shuffle</option><option value="4">Pop</option><option value="5">Metal</option>
+                        <option value="6">Latin</option><option value="7">R&amp;B</option><option value="8">Country</option><option value="9">Funk</option>
                     </select>
                 </div>
                 <div>
                     <label class="control-label">Fill</label>
-                    <select id="drumFill" style="width: fit-content;">
+                    <select id="drumFill" style="width: 100%;">
+                        <option value="0">None</option><option value="1">x1</option><option value="2">x4</option>
+                        <option value="3">x12</option><option value="4">x16</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="preset-row">
+                <div>
+                    <label class="control-label">Loop Number</label>
+                    <select id="loopNumber" style="width: 100%;">
+                        <option value="1">1</option>
+                        <option value="2">2</option>
+                        <option value="3">3</option>
+                        <option value="4">4</option>
+                        <option value="5">5</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="control-label">Sync</label>
+                    <select id="loopSync" style="width: 100%;">
                         <option value="0">None</option>
-						<option value="1">x1</option>
-						<option value="2">x4</option>
-						<option value="3">x12</option>
-						<option value="4">x16</option>
+                        <option value="1">Beat</option>
+                        <option value="2">Bar</option>
                     </select>
                 </div>
             </div>

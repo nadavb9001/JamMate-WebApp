@@ -101,67 +101,87 @@ export const View = {
     // CONTROLS GENERATION
     // =========================================================
 
-    showEffectControls(effect, idx, effectParams, effectStates, onKnobChange, onDropChange, onToggle, onEQChange) {
-        const controls = document.getElementById('effectControls');
-        
-        // 1. Equalizer Special Case
-        if (effect.title === 'Equalizer') {
-            controls.innerHTML = `
-            <div class="iir-designer">
-                <div class="effect-title">IIR Parametric Equalizer - 12 Bands</div>
-                <canvas class="iir-canvas" id="iirCanvas"></canvas>
-                <div class="iir-controls">
-                    <div class="iir-controls-row">
-                        <div class="knob-container"><div class="knob" id="eqLevelKnob"></div><div class="knob-label">Level</div></div>
-                        <div class="knob-container"><div class="knob" id="eqQKnob"></div><div class="knob-label">Q Factor</div></div>
-                        <select class="biquad-dropdown" id="biquadCount">
-                            <option value="0">LPF/HPF Only</option><option value="1">1 Biquad</option><option value="2">2 Biquads</option>
-                            <option value="3">3 Biquads</option><option value="4">4 Biquads</option><option value="5">5 Biquads</option>
-                            <option value="6">6 Biquads</option><option value="7">7 Biquads</option><option value="8">8 Biquads</option>
-                            <option value="9">9 Biquads</option><option value="10" selected>10 Biquads</option>
-                        </select>
-                        <button class="btn-reset-small" onclick="document.dispatchEvent(new CustomEvent('eq-reset'))">RESET</button>
-                    </div>
-                </div>
-            </div>`;
-            
-            // Level Knob
-            const savedLevel = effectParams[`knob0`] !== undefined ? effectParams[`knob0`] : 50;
-            const levelKnob = new Knob(document.getElementById('eqLevelKnob'), 0, 100, savedLevel, (val) => this.updateStatus(`Level: ${Math.round(val)}`));
-            levelKnob.onrelease = () => { if(onKnobChange) onKnobChange(0, levelKnob.value); };
+	showEffectControls(effect, idx, effectParams, effectStates, onKnobChange, onDropChange, onToggle, onEQChange) {
+		const controls = document.getElementById('effectControls');
+		
+		// 1. Equalizer Special Case
+		if (effect.title === 'Equalizer') {
+			controls.innerHTML = `
+			<div class="iir-designer">
+				<div class="effect-title">IIR Parametric Equalizer - 12 Bands</div>
+				<canvas class="iir-canvas" id="iirCanvas"></canvas>
+				<div class="iir-controls">
+					<div class="iir-controls-row">
+						<div class="knob-container"><div class="knob" id="eqLevelKnob"></div><div class="knob-label">Level</div></div>
+						<div class="knob-container"><div class="knob" id="eqQKnob"></div><div class="knob-label">Q Factor</div></div>
+						
+						<div style="display:flex; flex-direction:column;">
+							<label class="control-label">Active Bands</label>
+							<select class="biquad-dropdown" id="biquadCount">
+								<option value="0">2 (HPF/LPF)</option>
+								<option value="1">3 Bands</option>
+								<option value="2">4 Bands</option>
+								<option value="3">5 Bands</option>
+								<option value="4">6 Bands</option>
+								<option value="5">7 Bands</option>
+								<option value="6">8 Bands</option>
+								<option value="7">9 Bands</option>
+								<option value="8">10 Bands</option>
+								<option value="9">11 Bands</option>
+								<option value="10" selected>12 (Max)</option>
+							</select>
+						</div>
 
-            // Q Knob
-            const qKnob = new Knob(document.getElementById('eqQKnob'), 0.1, 10, 1.41, (val) => this.updateStatus(`Q Factor: ${val.toFixed(2)}`));
-            
-            // IIR Designer
-            this.app.iirDesigner = new IIRDesigner(
-                document.getElementById('iirCanvas'), 
-                qKnob, 
-                (txt) => this.updateStatus(txt),
-                // FIXED: Now accepting 5 arguments (idx, en, f, g, q)
-                (idx, en, f, g, q) => { 
-                    if(onEQChange) onEQChange(idx, en, f, g, q); 
-                }
-            );
-			// --- ADD THIS BLOCK ---
-            // Check if we have loaded points waiting in the app state
-            if (this.app.currentEQPoints && this.app.currentEQPoints.length > 0) {
-                this.app.currentEQPoints.forEach((ptData, i) => {
-                    if (this.app.iirDesigner.points[i]) {
-                        this.app.iirDesigner.points[i].freq = ptData.freq;
-                        this.app.iirDesigner.points[i].gain = ptData.gain;
-                        this.app.iirDesigner.points[i].q = ptData.q;
-                        this.app.iirDesigner.points[i].enabled = true; // Assume enabled if saved
-                    }
-                });
-                this.app.iirDesigner.draw(); // Force redraw
-            }
-            // ----------------------
-            
-            document.addEventListener('eq-reset', () => this.app.iirDesigner.reset(), { once: true });
-            document.getElementById('biquadCount').addEventListener('change', (e) => { this.app.iirDesigner.setBiquadCount(parseInt(e.target.value)); });
-            return;
-        }
+						<button class="btn-reset-small" id="btnEqReset">RESET</button>
+					</div>
+				</div>
+			</div>`;
+			
+			// Level Knob
+			const savedLevel = effectParams[`knob0`] !== undefined ? effectParams[`knob0`] : 50;
+			const levelKnob = new Knob(document.getElementById('eqLevelKnob'), 0, 100, savedLevel, (val) => this.updateStatus(`Level: ${Math.round(val)}`));
+			levelKnob.onrelease = () => { if(onKnobChange) onKnobChange(0, levelKnob.value); };
+
+			// Q Knob
+			const qKnob = new Knob(document.getElementById('eqQKnob'), 0.1, 10, 1.41, (val) => this.updateStatus(`Q Factor: ${val.toFixed(2)}`));
+			
+			// Initialize Designer
+			this.app.iirDesigner = new IIRDesigner(
+				document.getElementById('iirCanvas'), 
+				qKnob, 
+				(txt) => this.updateStatus(txt),
+				(idx, en, f, g, q) => { 
+					if(onEQChange) onEQChange(idx, en, f, g, q); 
+				}
+			);
+
+			// --- LOAD EXISTING DATA ---
+			// We must check if app has data, otherwise default
+			if (this.app.currentEQPoints && this.app.currentEQPoints.length === 12) {
+				this.app.iirDesigner.loadPoints(this.app.currentEQPoints);
+			} else {
+				this.app.iirDesigner.reset(); // Force default structure
+			}
+
+			// --- FIX: RESET BUTTON LISTENER ---
+			// Removed { once: true } and attached directly to ID
+			document.getElementById('btnEqReset').addEventListener('click', () => {
+				this.app.iirDesigner.reset();
+				// Sync dropdown visual to 12 (default)
+				document.getElementById('biquadCount').value = "10";
+				this.updateStatus("EQ Reset to Default");
+			});
+
+			// --- FIX: DROPDOWN LISTENER ---
+			document.getElementById('biquadCount').addEventListener('change', (e) => {
+				const count = parseInt(e.target.value); // 0 to 10
+				this.app.iirDesigner.setBiquadCount(count);
+			});
+			
+			// Initial Draw
+			this.app.iirDesigner.draw();
+			return;
+		}
 
         // 2. Generic Controls
         controls.innerHTML = `
@@ -317,20 +337,46 @@ export const View = {
         
         if (!audioData || !sampleRate) return;
         
+        // 1. Prepare Data
         const fft = cachedFullFFT || this.computeFFT(audioData.slice(0, 2048));
-        
+        const fullFFTSize = fft.length * 2; // Used for normalization
+
         const maxMag = Math.max(...fft);
+        // Safety against -Infinity
         const maxDb = 20 * Math.log10(maxMag + 1e-10);
         const minDb = maxDb - 80;
         const minFreq = 20;
         const maxFreq = Math.min(20000, sampleRate / 2);
+
+        // Helper: Interpolated Magnitude Lookup
+        const getSmoothMag = (frequency, fftData) => {
+            const nyquist = sampleRate / 2;
+            // Float index representing the exact position in the array
+            const binFloat = (frequency / nyquist) * fftData.length;
+            
+            const idx = Math.floor(binFloat);
+            const frac = binFloat - idx;
+
+            // Safety check for bounds
+            if (idx >= fftData.length - 1) return fftData[fftData.length - 1] || 0;
+            if (idx < 0) return fftData[0] || 0;
+
+            const val1 = fftData[idx];
+            const val2 = fftData[idx + 1];
+
+            // Linear Interpolation: (1 - t) * v1 + t * v2
+            return val1 * (1 - frac) + val2 * frac;
+        };
         
+        // 2. Draw Grid (Unchanged)
         ctx.strokeStyle = '#333'; ctx.lineWidth = 1;
         [20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000].forEach(freq => {
             if (freq <= maxFreq) {
                 const t = Math.log10(freq / minFreq) / Math.log10(maxFreq / minFreq);
                 const x = t * width;
                 ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, height); ctx.stroke();
+                
+                // Labels
                 ctx.fillStyle = '#888'; ctx.font = '11px monospace';
                 if ([20, 100, 1000, 10000].includes(freq)) {
                     const label = freq >= 1000 ? `${freq/1000}k` : `${freq}`;
@@ -338,48 +384,62 @@ export const View = {
                 }
             }
         });
-        
+
+        // 3. Draw Main (Green) Curve with Smoothing
         ctx.strokeStyle = '#0a0'; ctx.lineWidth = 1.5; ctx.beginPath();
         for (let i = 0; i < width; i++) {
             const t = i / width;
             const freq = minFreq * Math.pow(maxFreq / minFreq, t);
-            const bin = Math.floor(freq / (sampleRate/2) * fft.length);
-            if (bin < fft.length) {
-                const db = 20 * Math.log10(fft[bin] + 1e-10);
-                const dbNorm = Math.max(0, Math.min(1, (db - minDb) / (maxDb - minDb)));
-                const y = height - (dbNorm * height);
-                if (i === 0) ctx.moveTo(i, y); else ctx.lineTo(i, y);
-            }
+            
+            // Use Interpolated Helper
+            const mag = getSmoothMag(freq, fft);
+            
+            const db = 20 * Math.log10(mag + 1e-10);
+            const dbNorm = Math.max(0, Math.min(1, (db - minDb) / (maxDb - minDb)));
+            const y = height - (dbNorm * height);
+            
+            if (i === 0) ctx.moveTo(i, y); else ctx.lineTo(i, y);
         }
         ctx.stroke();
 
+        // 4. Draw Subset (Cyan) Curve
         const irPointsSelect = document.getElementById('irPoints');
         const selectedPoints = irPointsSelect ? parseInt(irPointsSelect.value) : 512;
-        if (selectedPoints <= fft.length) {
+        
+        if (selectedPoints <= fft.length * 2) {
             ctx.strokeStyle = '#0ff'; ctx.lineWidth = 2; ctx.beginPath();
             const truncatedAudio = audioData.slice(0, selectedPoints);
             const overlayFFT = this.computeFFT(truncatedAudio);
             
+            // Apply Normalization Correction (from previous fix)
+            const gainCorrection = selectedPoints / fullFFTSize;
+
             for (let i = 0; i < width; i++) {
                 const t = i / width;
                 const freq = minFreq * Math.pow(maxFreq / minFreq, t);
-                const bin = Math.floor(freq / (sampleRate/2) * overlayFFT.length);
                 
-                if (bin < overlayFFT.length) {
-                    const db = 20 * Math.log10(overlayFFT[bin] + 1e-10);
-                    const dbNorm = Math.max(0, Math.min(1, (db - minDb) / (maxDb - minDb)));
-                    const y = height - (dbNorm * height);
-                    if (i === 0) ctx.moveTo(i, y); else ctx.lineTo(i, y);
-                }
+                // Use Interpolated Helper
+                let mag = getSmoothMag(freq, overlayFFT);
+                
+                // Apply Gain Correction
+                mag *= gainCorrection;
+
+                const db = 20 * Math.log10(mag + 1e-10);
+                const dbNorm = Math.max(0, Math.min(1, (db - minDb) / (maxDb - minDb)));
+                const y = height - (dbNorm * height);
+                
+                if (i === 0) ctx.moveTo(i, y); else ctx.lineTo(i, y);
             }
             ctx.stroke();
+
+            // Legend
             ctx.fillStyle = '#0a0'; ctx.fillRect(width - 120, 10, 15, 10);
             ctx.fillStyle = '#888'; ctx.fillText('Full FFT', width - 100, 20);
             ctx.fillStyle = '#0ff'; ctx.fillRect(width - 120, 25, 15, 10);
             ctx.fillStyle = '#888'; ctx.fillText(`${selectedPoints} pts`, width - 100, 35);
         }
     },
-
+	
     computeFFT(data) {
         const maxInput = 65536;
         let inputData = data;

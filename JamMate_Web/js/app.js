@@ -31,7 +31,7 @@ export const app = {
   fullFFT: null,
   iirDesigner: null,
   isUpdatingUI: false,
-
+  effectOrder: null,
   // Drum state
   drumEnabled: false,
   drumLevel: 50,
@@ -48,7 +48,35 @@ export const app = {
   // ========================================================
   init() {
     console.log("JamMate v3.1 Controller Starting...");
-
+	
+	// ============================================================
+    // CRITICAL: Initialize ALL effect states FIRST
+    // ============================================================
+    const effectCount = this.config.tabs.length;
+    console.log(`[APP] Initializing ${effectCount} effects`);
+    
+    // Initialize effectStates for ALL indices
+    this.effectStates = {};
+    for (let i = 0; i < effectCount; i++) {
+        this.effectStates[i] = {
+            enabled: false,
+            selected: false
+        };
+    }
+    
+    // Initialize effectParams for ALL indices
+    this.effectParams = {};
+    for (let i = 0; i < effectCount; i++) {
+        this.effectParams[i] = {};
+    }
+    
+    // Initialize effectOrder
+    this.effectOrder = [];
+    for (let i = 0; i < effectCount; i++) {
+        this.effectOrder.push(i);
+    }
+    console.log(`[APP] Initialized: ${Object.keys(this.effectStates).length} effects`);
+	
     // Initialize drum state
     this.drumEnabled = false;
     this.drumLevel = 50;
@@ -60,16 +88,11 @@ export const app = {
     this.loopNumber = 1;
     this.loopSync = 0;
 
-    // CRITICAL FIX: Initialize ALL 17 effect states FIRST
-    // This prevents "Cannot set properties of undefined" errors
-    for (let i = 0; i < 17; i++) {
-      this.effectStates[i] = { enabled: false, selected: false };
-      this.effectParams[i] = {};
-    }
-
+    
     // Initialize View and pass app reference
     View.init(this);
     
+	
 
     // Setup BLE callbacks
     BLEService.onStatusChange = (status) => {
@@ -257,36 +280,28 @@ export const app = {
       });
 
       // Load EQ points
-      /*if (state.eqPoints && state.eqPoints.length > 0) {
-        this.currentEQPoints = state.eqPoints;
-        if (this.iirDesigner) {
-          this.iirDesigner.points.forEach((pt, i) => {
-            if (state.eqPoints[i]) {
-              pt.freq = state.eqPoints[i].freq;
-              pt.gain = state.eqPoints[i].gain;
-              pt.q = state.eqPoints[i].q;
-              pt.enabled = true;
-            }
-          });
-          this.iirDesigner.draw();
-        }
-      }*/
-	  if (state.eqPoints && state.eqPoints.length > 0) {
-        this.currentEQPoints = state.eqPoints;
-        
-        // Check if IIRDesigner is currently active/visible
-        if (this.iirDesigner) {
-          this.iirDesigner.loadPoints(this.currentEQPoints);
-          
-          // --- FIX: Update the Dropdown Visual ---
-          // Since we loaded a preset, we should probably reset the dropdown 
-          // to "12 Bands" (Max) or infer it from active bands.
-          // For simplicity, default to Max to ensure user sees data.
-          const dd = document.getElementById('biquadCount');
-          if(dd) dd.value = "10"; 
-          if(this.iirDesigner.setBiquadCount) this.iirDesigner.setBiquadCount(10);
-        }
-      }
+	// ✅ NEW CODE (SYNC TO HARDWARE)
+	if (state.eqPoints && state.eqPoints.length > 0) {
+		this.currentEQPoints = state.eqPoints;
+
+		// Check if IIRDesigner is currently active/visible
+		if (this.iirDesigner) {
+			this.iirDesigner.loadPoints(this.currentEQPoints);
+
+			// === NEW: SYNC ALL EQ BANDS TO HARDWARE DSP ===
+			// loadPoints() updates the UI and infers count,
+			// but we also need to send all band data to hardware
+			console.log('[APP] Syncing loaded EQ state to hardware DSP...');
+			this.iirDesigner.masterPoints.forEach((pt, bandIdx) => {
+				// triggerDataChange() will:
+				// 1. Find the point in masterPoints
+				// 2. Send via Protocol.createEQUpdate()
+				// 3. Send to BLEService
+				this.iirDesigner.triggerDataChange(bandIdx);
+			});
+			console.log('[APP] EQ sync complete - all bands sent to DSP');
+		}
+	}
 
       View.updateEffectButtons(this.effectStates);
 
@@ -758,6 +773,13 @@ export const app = {
 				if (!tab) return;
 
 				tab.classList.toggle('easy-mode');
+				
+				// Ensure all effect buttons remain draggable
+				document.querySelectorAll('.effect-btn').forEach(btn => {
+					btn.draggable = true;
+				});
+		
+		
 				const isActive = tab.classList.contains('easy-mode');
 
 				e.target.style.background = isActive
@@ -782,7 +804,119 @@ export const app = {
 		
 		
 			
+	},
+	
+	/**
+	 * Reorder effects by swapping their positions
+	 * @param {number} fromIdx - Source effect index
+	 * @param {number} toIdx - Target effect index
+	 */
+	reorderEffects(fromIdx, toIdx) {
+		console.log(`[APP] Before swap - order: ${this.effectOrder.join(',')}`);
+		
+		// Swap states
+		const tempStates = this.effectStates[fromIdx];
+		this.effectStates[fromIdx] = this.effectStates[toIdx];
+		this.effectStates[toIdx] = tempStates;
+		
+		const tempParams = this.effectParams[fromIdx];
+		this.effectParams[fromIdx] = this.effectParams[toIdx];
+		this.effectParams[toIdx] = tempParams;
+		
+		// NEW: Swap order array
+		const tempOrder = this.effectOrder[fromIdx];
+		this.effectOrder[fromIdx] = this.effectOrder[toIdx];
+		this.effectOrder[toIdx] = tempOrder;
+		
+		console.log(`[APP] After swap - order: ${this.effectOrder.join(',')}`);
+		
+		// Rebuild UI with new order
+		this.rebuildEffectsUI();
+		
+		// Feedback
+		const fromName = this.config.tabs[fromIdx]?.title || 'Effect';
+		const toName = this.config.tabs[toIdx]?.title || 'Effect';
+		View.updateStatus(`Reordered: ${fromName} ↔ ${toName}`);
+	},
+	
+	rebuildEffectsUI() {
+		const grid = document.getElementById('effectsGrid');
+		grid.innerHTML = '';
+		
+		this.effectOrder.forEach((idx) => {
+			// Safety: Create state if missing
+			if (!this.effectStates[idx]) {
+				this.effectStates[idx] = {
+					enabled: false,
+					selected: false
+				};
+			}
+			
+			const effect = this.config.tabs[idx];
+			const state = this.effectStates[idx];  // Now guaranteed to exist
+			
+			const btn = document.createElement('div');
+			btn.className = 'effect-btn';
+			btn.dataset.index = idx;
+			btn.draggable = true;
+			btn.textContent = effect.title;
+			
+			if (state.selected) btn.classList.add('selected');
+			if (state.enabled) btn.classList.add('enabled');
+			
+			btn.addEventListener('click', () => {
+				this.selectEffect(idx);
+			});
+			
+			grid.appendChild(btn);
+		});
+		
+		this.setupDragDropListeners();
+	},
+
+	setupDragDropListeners() {
+		const buttons = document.querySelectorAll('.effect-btn');
+		
+		buttons.forEach((btn) => {
+			const idx = parseInt(btn.dataset.index);
+			
+			btn.addEventListener('dragstart', (e) => {
+				e.dataTransfer.effectAllowed = 'move';
+				e.dataTransfer.setData('effectIndex', idx);
+				btn.classList.add('dragging');
+			});
+			
+			btn.addEventListener('dragend', (e) => {
+				btn.classList.remove('dragging');
+				document.querySelectorAll('.effect-btn').forEach(b => {
+					b.classList.remove('drag-over');
+				});
+			});
+			
+			btn.addEventListener('dragover', (e) => {
+				e.preventDefault();
+				e.dataTransfer.dropEffect = 'move';
+				btn.classList.add('drag-over');
+			});
+			
+			btn.addEventListener('dragleave', (e) => {
+				btn.classList.remove('drag-over');
+			});
+			
+			btn.addEventListener('drop', (e) => {
+				e.preventDefault();
+				e.stopPropagation();
+				btn.classList.remove('drag-over');
+				
+				const sourceIdx = parseInt(e.dataTransfer.getData('effectIndex'));
+				if (sourceIdx !== idx) {
+					this.reorderEffects(sourceIdx, idx);
+				}
+			});
+		});
 	}
+
+
 	
 
 };

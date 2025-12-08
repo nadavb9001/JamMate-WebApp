@@ -80,6 +80,51 @@ export const View = {
                     clickCount = 0;
                 }
             });
+			btn.className = 'effect-btn';
+			btn.dataset.index = idx;
+			btn.dataset.effectId = idx;
+			btn.draggable = true;  // ← Enable dragging
+			btn.textContent = effect.title;
+
+			// Drag start - show as dragging
+			btn.addEventListener('dragstart', (e) => {
+				e.dataTransfer.effectAllowed = 'move';
+				e.dataTransfer.setData('effectIndex', idx);
+				btn.classList.add('dragging');
+			});
+
+			// Drag end - cleanup
+			btn.addEventListener('dragend', (e) => {
+				btn.classList.remove('dragging');
+				document.querySelectorAll('.effect-btn').forEach(b => {
+					b.classList.remove('drag-over');
+				});
+			});
+
+			// Drag over - show drop zone
+			btn.addEventListener('dragover', (e) => {
+				e.preventDefault();
+				e.dataTransfer.dropEffect = 'move';
+				btn.classList.add('drag-over');
+			});
+
+			// Drag leave - remove highlight
+			btn.addEventListener('dragleave', (e) => {
+				btn.classList.remove('drag-over');
+			});
+
+			// Drop - perform reorder
+			btn.addEventListener('drop', (e) => {
+				e.preventDefault();
+				e.stopPropagation();
+				
+				const sourceIdx = parseInt(e.dataTransfer.getData('effectIndex'));
+				if (sourceIdx !== idx) {
+					this.app.reorderEffects(sourceIdx, idx);
+				}
+				
+				btn.classList.remove('drag-over');
+			});
             grid.appendChild(btn);
         });
     },

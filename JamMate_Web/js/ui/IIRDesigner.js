@@ -119,7 +119,65 @@ export class IIRDesigner {
             this.triggerDataChange(null, pt);
         });
         this.draw();
+		if (window.app) {
+			window.app.currentEQPoints = null;
+			console.log('[IIR] Reset complete - cleared currentEQPoints cache');
+}
     }
+	
+	// ======= NEW METHOD: Load points from preset =======
+loadPoints(loadedPoints) {
+    if (!loadedPoints || loadedPoints.length === 0) {
+        console.warn('[IIR] No points to load');
+        return;
+    }
+
+    // Map loaded points back to masterPoints (indices 0-11)
+    loadedPoints.forEach((loaded, idx) => {
+        if (idx < this.masterPoints.length) {
+            const mp = this.masterPoints[idx];
+            mp.freq = loaded.freq || mp.freq;
+            mp.gain = loaded.gain || 0;
+            mp.q = loaded.q || mp.q;
+            mp.enabled = loaded.enabled !== false;
+            console.log(`[IIR] Loaded Band ${idx}: freq=${mp.freq}, gain=${mp.gain}, q=${mp.q}, enabled=${mp.enabled}`);
+        }
+    });
+
+    // Infer biquad count from active peaking bands (indices 1-10)
+    let activeCount = 0;
+    for (let i = 1; i <= 10; i++) {
+        if (loadedPoints[i] && loadedPoints[i].enabled) {
+            activeCount = i;
+        }
+    }
+
+    console.log(`[IIR] Inferred biquad count: ${activeCount}`);
+
+    // Update UI to reflect inferred count
+    const dropdown = document.getElementById('biquadCount');
+    if (dropdown) {
+        dropdown.value = String(activeCount);
+    }
+
+    // Rebuild points array based on new count
+    this.setBiquadCount(activeCount);
+
+    // Update Q knob if a band is selected
+    if (this.selectedIndex !== null && this.qKnob) {
+        this.qKnob.value = this.points[this.selectedIndex].q;
+        this.qKnob.draw();
+    }
+
+    // Redraw canvas with new state
+    this.draw();
+
+    // Report status
+    if (this.onInteract) {
+        this.onInteract(`Loaded EQ: ${activeCount} bands`);
+    }
+}
+
 
     bindEvents() {
         const getPos = (e) => {
@@ -145,7 +203,7 @@ export class IIRDesigner {
                 let newQ = this.points[this.hoverIndex].q + delta;
                 newQ = Math.round(newQ * 10) / 10; 
                 this.points[this.hoverIndex].q = Math.max(0.1, Math.min(10, newQ));
-                if (this.selectedIndex === this.hoverIndex && this.qKnob) {
+                if (this.qKnob && this.points[this.hoverIndex]) {
                     this.qKnob.value = this.points[this.hoverIndex].q;
                     this.qKnob.draw();
                 }

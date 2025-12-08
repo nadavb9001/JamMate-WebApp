@@ -15,6 +15,31 @@
 .effect-btn.enabled.selected { background: var(--color-enabled-selected); border-color: var(--color-enabled-selected); }
 .effect-btn:active { transform: scale(0.95); }
 
+.effect-btn {
+    transition: all 200ms ease;
+    cursor: grab;
+}
+
+.effect-btn.dragging {
+    opacity: 0.5;
+    background: var(--color-secondary);
+    cursor: grabbing;
+}
+
+.effect-btn.drag-over {
+    box-shadow: 
+        inset 0 0 0 2px var(--color-primary),
+        0 0 10px rgba(33, 128, 141, 0.5);
+    transform: scale(1.05);
+}
+
+/* Easy mode specific styles */
+.effects-tab.easy-mode .effect-btn.drag-over {
+    box-shadow: 
+        inset 0 0 0 3px var(--color-accent),
+        0 0 15px rgba(255, 200, 0, 0.6);
+}
+
 /* Knobs */
 .knob-container { 
     display: inline-block; 

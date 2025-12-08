@@ -59,8 +59,8 @@ export const APP_CONFIG = {
       "short_name": "Harm", 
       "params": { 
         "checkbox": "enable", 
-        "knobs": ["Level", "Harm1", "Harm2","Dry", "Wet1", "Wet2", "Arpeg", "ArpegRate"], 
-        "dropdowns": ["Scale", "Mode"] 
+        "knobs": ["Level","Dry", "Wet1", "Wet2", "Arpeg", "ArpegRate"], 
+        "dropdowns": ["Scale", "Mode","harm_wet1","harm_wet2"] 
       } 
     },
     { 
@@ -185,6 +185,8 @@ export const APP_CONFIG = {
 	"shift_direction": ["up","down"],
 	"shift_semitone": ["detune","1", "2", "3", "4", "5", "6", "7", "8", "9", "11","12"],
 	"phaser_poles": ["1", "2", "3", "4"],
+	"harm_wet1": ["2", "3", "4", "5","6"],
+	"harm_wet2": ["2", "3", "4", "5","6"],
 	"tremolo_mode": ["vintage","harmonic"],
 	"waveform": ["Sine","Triangle","Saw","Square"],
 	"delay-multi": ["1", "2", "3"]

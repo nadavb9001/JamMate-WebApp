@@ -179,7 +179,7 @@ button:disabled { background: var(--color-border); cursor: not-allowed; }
     display: grid !important; 
     /* Scale columns to fill screen: Min 110px width */
     grid-template-columns: repeat(auto-fill, minmax(90px, 1fr)) !important; 
-    gap: 5px !important; 
+    gap: 2px !important; 
     padding: 1px !important; 
     width: 100% !important; 
     align-content: start !important; 
@@ -203,4 +203,5 @@ button:disabled { background: var(--color-border); cursor: not-allowed; }
     .knobs-grid { gap: 3px; }
 
 }
+
 

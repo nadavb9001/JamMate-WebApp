@@ -181,7 +181,7 @@ button:disabled { background: var(--color-border); cursor: not-allowed; }
     grid-template-columns: repeat(auto-fill, minmax(90px, 1fr)) !important; 
     gap: 2px !important; 
     padding: 1px !important; 
-    width: 100% !important; 
+    width: 80% !important; 
     align-content: start !important; 
 }
 
@@ -203,5 +203,6 @@ button:disabled { background: var(--color-border); cursor: not-allowed; }
     .knobs-grid { gap: 3px; }
 
 }
+
 
 

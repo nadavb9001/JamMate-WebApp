@@ -59,7 +59,7 @@
 .knobs-grid { 
     display: grid; 
     grid-template-columns: repeat(4, 1fr); 
-    gap: 15px; 
+    gap: 5px; 
     justify-items: center; 
     margin-bottom: 2px; 
 }
@@ -203,6 +203,7 @@ button:disabled { background: var(--color-border); cursor: not-allowed; }
     .knobs-grid { gap: 3px; }
 
 }
+
 
 
 

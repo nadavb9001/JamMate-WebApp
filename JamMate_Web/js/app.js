@@ -317,10 +317,10 @@ export const app = {
       }
 
       // Update Master knob
-      const masterKnob = document.getElementById('masterKnob');
-      if (masterKnob && masterKnob.knob) {
-        masterKnob.knob.value = state.master;
-      }
+      //const masterKnob = document.getElementById('masterKnob');
+      //if (masterKnob && masterKnob.knob) {
+      //  masterKnob.knob.value = state.master;
+      //}
 
       View.updateStatus(`Loaded: ${state.name}`);
     } catch (e) {

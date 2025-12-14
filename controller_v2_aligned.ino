@@ -8,6 +8,8 @@
 #include "BluetoothManager_binary.hpp"
 #include "MyRotaryEncoder.h"
 #include <LittleFS.h>
+#include "DisplayManager.h"
+
 
 // Pin Definitions
 #define ENCODER1_PIN_A 19
@@ -18,14 +20,32 @@
 #define ENCODER2_BTN 23
 #define SWITCH1_PIN 26
 #define SWITCH2_PIN 2
-#define SWITCH3_PIN 26
-#define SWITCH4_PIN 26
 #define DSP_TX_PIN 33
 #define DSP_RX_PIN 25
 
 // Config
 #define SAVE_INTERVAL 5000
 #define MAX_BLOB_SIZE 1024  // Max preset size
+
+// Configuration
+const int FRAME_COUNT = 50;  // Change this to match your total number of frames
+const int FPS_DELAY = 0;     // Delay between frames (0 = max speed)
+
+// =========================================================================
+//  TJpg_Decoder Callback Function
+//  This function is called by the decoder to render the image blocks
+// =========================================================================
+bool tft_output(int16_t x, int16_t y, uint16_t w, uint16_t h, uint16_t* bitmap) {
+  // Stop further decoding as image is out of screen bounds
+  if (y >= display.tft.height()) return 0;
+
+  // This function automatically clips the image block rendering at screen bounds
+  display.tft.pushImage(x, y, w, h, bitmap);
+
+  // Return 1 to decode the next block
+  return 1;
+}
+
 
 // ===================================================================
 // DEVELOPMENT MODE
@@ -36,6 +56,8 @@ bool presetsLocked = false;
 BluetoothManager btManager;
 RotaryEncoder encoder1(ENCODER1_PIN_A, ENCODER1_PIN_B, ENCODER1_BTN);
 RotaryEncoder encoder2(ENCODER2_PIN_A, ENCODER2_PIN_B, ENCODER2_BTN);
+PushSwitch switch1(SWITCH1_PIN);
+PushSwitch switch2(SWITCH2_PIN);
 HardwareSerial dspSerial(2);
 
 #define MAX_DSP_PAYLOAD 10240
@@ -101,25 +123,24 @@ size_t serializeStructToBlob(const Preset& p, uint8_t* buf) {
     offset += 4;
   }
 
-  // --- FIX: Save EQ Data ---
-  // Tag 0xFE indicates EQ block start in Protocol v3
+  // 3. EQ Data
+  // Tag 0xFE indicates EQ block start
   buf[offset++] = 0xFE;
   buf[offset++] = 12;  // Count (Always 12 bands)
 
   for (int i = 0; i < 12; i++) {
-    // Write 4 bytes per band: [FreqL, FreqH, Gain, Q]
+    // Write 5 bytes per band: [FreqL, FreqH, Gain, Q, Enabled]
     buf[offset++] = (uint8_t)(p.eqPoints[i].freq & 0xFF);
     buf[offset++] = (uint8_t)(p.eqPoints[i].freq >> 8);
     buf[offset++] = (uint8_t)p.eqPoints[i].gain;
     buf[offset++] = p.eqPoints[i].q;
-    // Note: 'enabled' state is assumed true if present in blob for simplicity,
-    // or could be encoded if you modify protocol further.
+    buf[offset++] = p.eqPoints[i].enabled ? 1 : 0;  // <--- ADDED THIS BYTE
   }
 
   return offset;
 }
 
-// Parse Protocol v3 Blob -> Internal Struct
+// Parse Protocol v3/v4 Blob -> Internal Struct
 void parseBlobToStruct(const uint8_t* buf, size_t len, Preset& p) {
   if (len < 4) return;
   size_t offset = 0;
@@ -136,38 +157,40 @@ void parseBlobToStruct(const uint8_t* buf, size_t len, Preset& p) {
     offset += nameLen;
   }
 
-  // --- FIX: Initialize EQ Defaults ---
-  // Essential to prevent garbage data if the loaded preset lacks EQ block
+  // Initialize EQ Defaults (Safe Fallback)
   for (int i = 0; i < 12; i++) {
     p.eqPoints[i].freq = (i == 0) ? 80 : (i == 11) ? 8000
                                                    : (100 * (i + 1));
     p.eqPoints[i].gain = 0;
-    p.eqPoints[i].q = 14;  // 1.4
+    p.eqPoints[i].q = 14;
     p.eqPoints[i].enabled = true;
   }
 
   // 2. Parse Blocks
   while (offset < len) {
+    if (offset >= len) break;
     uint8_t id = buf[offset++];
 
-    // --- FIX: Parse EQ Tag ---
+    // --- EQ Tag ---
     if (id == 0xFE) {
       if (offset >= len) break;
       uint8_t count = buf[offset++];
 
       for (int i = 0; i < count && i < 12; i++) {
-        if (offset + 4 > len) break;
+        // We need 5 bytes to read an EQ point safely
+        if (offset + 5 > len) break;
 
         uint16_t freq = buf[offset] | (buf[offset + 1] << 8);
         int8_t gain = (int8_t)buf[offset + 2];
         uint8_t q = buf[offset + 3];
         uint8_t enabled = buf[offset + 4];
+
         p.eqPoints[i].freq = freq;
         p.eqPoints[i].gain = gain;
         p.eqPoints[i].q = q;
-        p.eqPoints[i].enabled = true;
         p.eqPoints[i].enabled = (enabled != 0);
-        offset += 5;  // ← MUST increment by 5
+
+        offset += 5;  // Increment by 5
       }
       continue;
     }
@@ -195,11 +218,11 @@ void parseBlobToStruct(const uint8_t* buf, size_t len, Preset& p) {
         }
       }
     } else {
-      // Unknown Effect (Skip)
-      offset += kCount;
+      // Unknown ID - skip over it
+      offset += kCount;  // Skip knobs
       if (offset < len) {
         uint8_t dCount = buf[offset++];
-        offset += dCount;
+        offset += dCount;  // Skip dropdowns
       }
     }
   }
@@ -221,45 +244,44 @@ uint8_t* dspBuffer = nullptr;
 
 void checkDSPIncoming() {
   const uint32_t MAX_WAIT_MS = 2000;
-  
+
   while (dspSerial.available()) {
     switch (dspState) {
       case WAIT_HEADER:
         // We need at least 4 bytes to check for a header
         if (dspSerial.available() >= 4) {
-            // PEEK at the first byte. If it's not a known header start char, discard it.
-            // Known headers start with: 'T' (TUNE), 'L' (LOAD, LOOP), 'D' (DRUM), 'S' (SWCH), 'P' (PRES), 'G' (GEN), 'U' (UTIL)
-            char c = dspSerial.peek();
-            if (c != 'T' && c != 'L' && c != 'D' && c != 'S' && c != 'P' && c != 'G' && c != 'U') {
-                dspSerial.read(); // Discard garbage byte
-                break; // Try again next loop
-            }
+          // PEEK at the first byte. If it's not a known header start char, discard it.
+          // Known headers start with: 'T' (TUNE), 'L' (LOAD, LOOP), 'D' (DRUM), 'S' (SWCH), 'P' (PRES), 'G' (GEN), 'U' (UTIL)
+          char c = dspSerial.peek();
+          if (c != 'T' && c != 'L' && c != 'D' && c != 'S' && c != 'P' && c != 'G' && c != 'U') {
+            dspSerial.read();  // Discard garbage byte
+            break;             // Try again next loop
+          }
 
-            // If first byte looks okay, read the whole header
-            dspSerial.readBytes(dspHeader, 4);
-            dspHeader[4] = 0;
-            dspState = WAIT_LEN;
-            dspTimeout = millis();
+          // If first byte looks okay, read the whole header
+          dspSerial.readBytes(dspHeader, 4);
+          dspHeader[4] = 0;
+          dspState = WAIT_LEN;
+          dspTimeout = millis();
         }
         break;
 
       case WAIT_LEN:
         if (dspSerial.available() >= 4) {
           dspSerial.readBytes((char*)&dspPayloadLen, 4);
-          
+
           // Safety Check: Max payload size
-          if (dspPayloadLen > 4096) { 
+          if (dspPayloadLen > 4096) {
             Serial.printf("[DSP] Sync Error: Huge Payload (%u). Resetting.\n", dspPayloadLen);
-            dspState = WAIT_HEADER; // Go back to finding a valid header
-            
+            dspState = WAIT_HEADER;  // Go back to finding a valid header
+
             // Critical: Flush buffer to prevent reading the same garbage
-            while(dspSerial.available()) dspSerial.read(); 
-          } 
-          else {
-             if (dspBuffer) free(dspBuffer);
-             dspBuffer = (uint8_t*)malloc(dspPayloadLen);
-             dspBytesRead = 0;
-             dspState = READ_PAYLOAD;
+            while (dspSerial.available()) dspSerial.read();
+          } else {
+            if (dspBuffer) free(dspBuffer);
+            dspBuffer = (uint8_t*)malloc(dspPayloadLen);
+            dspBytesRead = 0;
+            dspState = READ_PAYLOAD;
           }
         }
         break;
@@ -267,16 +289,16 @@ void checkDSPIncoming() {
       case READ_PAYLOAD:
         // ... (Keep existing READ_PAYLOAD logic) ...
         if (millis() - dspTimeout > MAX_WAIT_MS) {
-             Serial.println("[DSP] Timeout.");
-             dspState = WAIT_HEADER;
-             break;
+          Serial.println("[DSP] Timeout.");
+          dspState = WAIT_HEADER;
+          break;
         }
         while (dspSerial.available() && dspBytesRead < dspPayloadLen) {
-            dspBuffer[dspBytesRead++] = dspSerial.read(); // Use dspBuffer (malloc'd) or dspBuffer_static
+          dspBuffer[dspBytesRead++] = dspSerial.read();  // Use dspBuffer (malloc'd) or dspBuffer_static
         }
         if (dspBytesRead >= dspPayloadLen) {
-            processDSPPacket(dspHeader, dspBuffer, dspPayloadLen);
-            dspState = WAIT_HEADER;
+          processDSPPacket(dspHeader, dspBuffer, dspPayloadLen);
+          dspState = WAIT_HEADER;
         }
         break;
     }
@@ -287,13 +309,28 @@ void processDSPPacket(const char* header, uint8_t* data, uint32_t len) {
   //Serial.print(header);
   //Serial.print(" , ");
   //Serial.println(data);
+  int tuneFactor=0;
   if (strcmp(header, "TUNE") == 0 && len == 4) {
+    if (tuneFactor++ < 7)
+      return;
+      
+    tuneFactor = 0;  
+    float freq; 
+    memcpy(&freq, data, 4);
+
     uint8_t packet[7];
     packet[0] = 0x35;
     packet[1] = 4;
     packet[2] = 0;
     memcpy(&packet[3], data, 4);
     btManager.sendBLEData(packet, 7);
+
+    // --- NEW: Update Display ---
+    if (display.isTunerActive()) {
+        display.updateTuner(freq);
+    }
+
+
   } else if (strcmp(header, "LOAD") == 0) {
     float load;
     memcpy(&load, data, 4);
@@ -369,6 +406,12 @@ void onBLEDataReceived(uint8_t* data, size_t len) {
         uint8_t p[5] = { t, en, lv, (uint8_t)(f >> 8), (uint8_t)(f & 0xFF) };
         delay(10);
         sendToDSP("UTIL", p, 5);
+
+        if (t == 2) {
+            display.toggleTuner(en > 0);
+        }
+
+
         break;
       }
     case 0x25:
@@ -462,89 +505,112 @@ void onBLEDataReceived(uint8_t* data, size_t len) {
         }
         break;
       }
-    case 0x41: {  // SET_DRUM_UPDATE
-      if (payloadLen < 14) {
-        Serial.println("[BLE] ✗ Drum packet too short");
+    case 0x41:
+      {  // SET_DRUM_UPDATE
+        if (payloadLen < 14) {
+          Serial.println("[BLE] ✗ Drum packet too short");
+          break;
+        }
+
+        if (payload[0] != 0x44 || payload[1] != 0x52 || payload[2] != 0x55 || payload[3] != 0x4D) {
+          Serial.printf("[BLE] ✗ Invalid drum header\n");
+          break;
+        }
+
+        uint8_t drumEnable = payload[4];
+        uint8_t drumLevel = payload[5];
+        uint8_t drumBpmDiv = payload[6];
+        uint8_t looperEnable = payload[7];
+        uint8_t looperLevel = payload[8];
+        uint8_t drumFill = payload[13];
+        uint8_t drumStyle = payload[14];
+        uint8_t loopNumber = payload[15];
+        uint8_t loopSync = payload[16];
+
+        Serial.printf("[BLE] ✓ Drum: En=%d Lvl=%d BPM=%d Fill=%d Style=%d\n loop num=%d loop sync=%d\n",
+                      drumEnable, drumLevel, drumBpmDiv * 10, drumFill, drumStyle, loopNumber, loopSync);
+
+        uint8_t dspPacket[17];
+        dspPacket[0] = 0x44;
+        dspPacket[1] = 0x52;
+        dspPacket[2] = 0x55;
+        dspPacket[3] = 0x4D;
+        dspPacket[4] = drumEnable;
+        dspPacket[5] = drumLevel;
+        dspPacket[6] = drumBpmDiv;
+        dspPacket[7] = looperEnable;
+        dspPacket[8] = looperLevel;
+        dspPacket[9] = 0;
+        dspPacket[10] = dspPacket[11] = dspPacket[12] = 0;
+        dspPacket[13] = drumFill;
+        dspPacket[14] = drumStyle;
+        dspPacket[15] = loopNumber;
+        dspPacket[16] = loopSync;
+
+        dspSerial.write(dspPacket, 17);
+        Serial.println("[DSP] ✓ Drum packet forwarded (17 bytes)");
+
         break;
       }
-      
-      if (payload[0] != 0x44 || payload[1] != 0x52 || 
-          payload[2] != 0x55 || payload[3] != 0x4D) {
-        Serial.printf("[BLE] ✗ Invalid drum header\n");
-        break;
-      }
-      
-      uint8_t drumEnable = payload[4];
-      uint8_t drumLevel  = payload[5];
-      uint8_t drumBpmDiv = payload[6];
-      uint8_t looperEnable = payload[7];
-      uint8_t looperLevel = payload[8];
-      uint8_t drumFill   = payload[13];
-      uint8_t drumStyle  = payload[14];
-      uint8_t loopNumber   = payload[15];
-      uint8_t loopSync  = payload[16];
-      
-      Serial.printf("[BLE] ✓ Drum: En=%d Lvl=%d BPM=%d Fill=%d Style=%d\n loop num=%d loop sync=%d\n", 
-                    drumEnable, drumLevel, drumBpmDiv * 10, drumFill, drumStyle, loopNumber, loopSync);
-      
-      uint8_t dspPacket[17];
-      dspPacket[0] = 0x44; dspPacket[1] = 0x52; 
-      dspPacket[2] = 0x55; dspPacket[3] = 0x4D;
-      dspPacket[4] = drumEnable;
-      dspPacket[5] = drumLevel;
-      dspPacket[6] = drumBpmDiv;
-      dspPacket[7] = looperEnable;
-      dspPacket[8] = looperLevel;
-      dspPacket[9] = 0;
-      dspPacket[10] = dspPacket[11] = dspPacket[12] = 0;
-      dspPacket[13] = drumFill;
-      dspPacket[14] = drumStyle;
-      dspPacket[15] = loopNumber;
-      dspPacket[16] = loopSync;
-      
-      dspSerial.write(dspPacket, 17);
-      Serial.println("[DSP] ✓ Drum packet forwarded (17 bytes)");
-      
-      break;
-    }
   }
 }
 
 // ===================================================================
 // DSP Helpers
 // ===================================================================
+// ===================================================================
+// DSP Helpers - 17-Byte Uniform Packet
+// ===================================================================
+
 void sendToDSP(const char cmd[4], uint8_t* payload, size_t len) {
-  uint8_t buf[17] = { 0 };
+  uint8_t buf[17] = { 0 };  // Initialize to zeros (padding)
   memcpy(buf, cmd, 4);
-  if (payload && len > 0) memcpy(buf + 4, payload, min(len, (size_t)13));
+  if (payload && len > 0) {
+    memcpy(buf + 4, payload, min(len, (size_t)13));
+  }
   dspSerial.write(buf, 17);
 }
 
+// -----------------------------------------------------------
+// Unified Effect Sender
+// Flattens [Knobs] + [Dropdowns] into Bytes 5-16
+// -----------------------------------------------------------
 void sendEffectChangeToDSP(uint8_t idx, uint8_t en, const uint8_t* k, const uint8_t* d) {
   const char* name;
   if (idx < MAX_EFFECTS) name = EFFECT_NAMES[idx];
   else name = "GEN ";
 
-  uint8_t buf[17] = { 0 };
+  uint8_t buf[17] = { 0 };  // Zero initialize (handles padding automatically)
+
+  // 1. Header (0-3)
   memcpy(buf, name, 4);
+
+  // 2. Enable (4)
   buf[4] = en ? 1 : 0;
 
-  if (strncmp(name, "FIR ", 4) == 0) {
-    if (k) memcpy(&buf[5], k, 7);
-    if (d) {
-      buf[12] = d[0];
-      buf[13] = d[1];
-      buf[14] = d[2];
-      buf[15] = d[3];
-    }
-  } else {
-    if (k) memcpy(&buf[5], k, 10);
-    if (d) {
-      buf[15] = d[0];
-      buf[16] = d[1];
+  // 3. Payload (5-16): Concatenate Knobs then Dropdowns
+  int offset = 5;
+  int maxOffset = 17;
+
+  // Note: Preset struct sizes are fixed (10 knobs, 4 drops)
+  // We simply fill the buffer until it's full.
+
+  // Copy Knobs (Struct has 10)
+  if (k) {
+    for (int i = 0; i < 10 && offset < maxOffset; i++) {
+      buf[offset++] = k[i];
     }
   }
-  delay(10);
+
+  // Copy Dropdowns (Struct has 4)
+  if (d) {
+    for (int i = 0; i < 4 && offset < maxOffset; i++) {
+      buf[offset++] = d[i];
+    }
+  }
+
+  // Send exactly 17 bytes
+  delay(10);  // Small delay for DSP UART stability
   dspSerial.write(buf, 17);
 }
 
@@ -559,7 +625,7 @@ void sendEQBandToDSP(uint8_t b, uint8_t enabled, uint16_t f, int8_t g, uint8_t q
 }
 
 void updateDSPFromPreset() {
-  uint8_t p[13] = { currentPreset.bank, currentPreset.number, currentPreset.masterVolume, currentPreset.bpm };
+  uint8_t p[13] = { currentPreset.bank, currentPreset.number, 255 /*currentPreset.masterVolume*/, currentPreset.bpm };
   sendToDSP("PRES", p, 13);
 
   for (int i = 0; i < MAX_EFFECTS; i++) {
@@ -654,20 +720,67 @@ void initializeFactoryPresets() {
   Serial.println("[PRESETS] ✓ Generation Complete.");
 }
 
+// -----------------------------------------------------------
+// Load Preset - Master Volume Protection
+// -----------------------------------------------------------
 bool loadPreset(uint8_t bank, uint8_t number, Preset& preset) {
   if (bank > 6 || number > 4) return false;
+
   char filename[64];
   if (bank < 5) snprintf(filename, sizeof(filename), "/presets/f_%d_%d.bin", bank, number);
   else snprintf(filename, sizeof(filename), "/presets/c_%d_%d.bin", bank - 5, number);
 
-  File file = LittleFS.open(filename, "r");
-  if (!file) return false;
+  if (LittleFS.exists(filename)) {
+    File file = LittleFS.open(filename, "r");
+    if (file) {
+      // Load into TEMP to protect Master Volume
+      Preset temp;
+      size_t size = file.read(blobBuffer, MAX_BLOB_SIZE);
+      file.close();
 
-  size_t size = file.read(blobBuffer, MAX_BLOB_SIZE);
-  file.close();
+      parseBlobToStruct(blobBuffer, size, temp);
 
-  parseBlobToStruct(blobBuffer, size, preset);
-  return true;
+      // 1. Save current Master Volume
+      uint8_t currentVol = preset.masterVolume;
+
+      // 2. Overwrite everything
+      preset = temp;
+
+      // 3. Restore Master Volume
+      preset.masterVolume = currentVol;
+
+      // 4. Ensure IDs correct
+      preset.bank = bank;
+      preset.number = number;
+      return true;
+    }
+  }
+
+  // 2. File missing? Load "Default/Empty" state instead of failing
+  // This allows navigation to proceed to empty banks (Custom 1 & 2)
+  Serial.printf("[PRESET] File %s not found. Loading default.\n", filename);
+
+  memset(&preset, 0, sizeof(Preset));
+
+  // Set default name based on Bank
+  const char* defaultNames[] = { "Clean", "Crunch", "Overdrive", "Distortion", "Modulated", "Custom1", "Custom2" };
+  snprintf(preset.name, 32, "%s %d", defaultNames[bank], number + 1);
+
+  preset.bank = bank;
+  preset.number = number;
+  preset.masterVolume = 100;
+  preset.bpm = 120;
+
+  // Default EQ
+  for (int i = 0; i < 12; i++) {
+    preset.eqPoints[i].freq = (i == 0) ? 80 : (i == 11) ? 8000
+                                                        : (100 * (i + 1));
+    preset.eqPoints[i].gain = 0;
+    preset.eqPoints[i].q = 14;
+    preset.eqPoints[i].enabled = true;
+  }
+
+  return true;  // Return TRUE so the system allows the switch
 }
 
 void saveSystemState() {
@@ -700,28 +813,22 @@ void loadSystemState() {
 // Hardware Setup (Switches, Encoders, Loop)
 // ===================================================================
 void setupSwitches() {
-  const int switchPins[4] = { SWITCH1_PIN, SWITCH2_PIN, SWITCH3_PIN, SWITCH4_PIN };
-  for (int i = 0; i < 4; i++) pinMode(switchPins[i], INPUT_PULLUP);
+  //const int switchPins[4] = { SWITCH1_PIN, SWITCH2_PIN, SWITCH3_PIN, SWITCH4_PIN };
+  //for (int i = 0; i < 4; i++) pinMode(switchPins[i], INPUT_PULLUP);
+  switch1.begin();
+  switch2.begin();
 }
 
 void sendSwitchStateToDSP(int switchIndex, bool switchState) {
   uint8_t payload[13] = { 0 };
   payload[0] = switchIndex;
-  payload[1] = switchState ? 1 : 0;
+  payload[1] = switchState;
   sendToDSP("SWCH", payload, 2);
 }
 
 void handleSwitches() {
-  static bool switchLastState[4] = { false };
-  const int switchPins[4] = { SWITCH1_PIN, SWITCH2_PIN, SWITCH3_PIN, SWITCH4_PIN };
-  for (int i = 0; i < 4; i++) {
-    bool currentState = digitalRead(switchPins[i]) == LOW;
-    if (currentState != switchLastState[i]) {
-      switchLastState[i] = currentState;
-      state.switchStates[i] = currentState;
-      sendSwitchStateToDSP(i, currentState);
-    }
-  }
+  switch1.update();
+  switch2.update();
 }
 
 void handleEncoders() {
@@ -761,23 +868,136 @@ void handleEncoders() {
 
 // Callback to forward MIDI data from pedal to DSP
 void processMidiFromPedal(uint8_t* data, size_t len) {
-  uint8_t payload[5] = {0};
-  payload[0] = 1; // Enable flag
-  
+  uint8_t payload[5] = { 0 };
+  payload[0] = 1;  // Enable flag
+
   // Copy up to 4 bytes
   size_t bytesToCopy = (len > 4) ? 4 : len;
   memcpy(&payload[1], data, bytesToCopy);
-  
+
   // Send "MIDI" command to DSP
   sendToDSP("MIDI", payload, 5);
 }
 
-void setup() {
+/*void playBootAnimation() {
+  char filename[32];
+  
+  for (int i = 1; i <= FRAME_COUNT; i++) {
+    // Format the filename string (e.g., "/frame_001.jpg")
+    // Adjust the format "%03d" if your numbering is different (e.g. 1 vs 001)
+    sprintf(filename, "/frame_%03d.jpg", i); 
+
+    if (LittleFS.exists(filename)) {
+      // Draw the image at 0,0
+      TJpgDec.drawFsJpg(0, 0, filename, LittleFS);
+      delay(FPS_DELAY); 
+    } else {
+      Serial.printf("File not found: %s\n", filename);
+    }
+  }
+}*/
+
+// Define a buffer size slightly larger than your biggest JPG file.
+// 20KB (20480) is usually safe for 240x240 frames.
+#define MAX_JPG_SIZE 24000
+
+void playBootAnimation() {
+  char filename[32];
+
+  // 1. Allocate a reuseable buffer in RAM (Heaps faster than Flash reading)
+  uint8_t* pBuffer = (uint8_t*)malloc(MAX_JPG_SIZE);
+
+  // Safety check: if we ran out of RAM, fallback or exit
+  if (!pBuffer) {
+    Serial.println("Not enough RAM for animation buffer!");
+    return;
+  }
+
+  for (int i = 1; i <= FRAME_COUNT; i++) {
+    sprintf(filename, "/frame_%03d.jpg", i);
+
+    // 2. Open file directly. Don't use .exists() (it wastes time double-checking)
+    File jpgFile = LittleFS.open(filename, "r");
+
+    if (jpgFile) {
+      size_t fileSize = jpgFile.size();
+
+      // Check if the frame fits in our RAM buffer
+      if (fileSize < MAX_JPG_SIZE) {
+
+        // 3. READ: Slurp the whole file into RAM in one go
+        jpgFile.read(pBuffer, fileSize);
+
+        // 4. DECODE: Decode from fast RAM instead of slow Flash
+        TJpgDec.drawJpg(0, 0, pBuffer, fileSize);
+      }
+
+      jpgFile.close();  // Close file handle immediately
+    }
+
+    // 5. REMOVE delay entirely. The decoding time is usually delay enough.
+    // delay(FPS_DELAY);
+  }
+
+  // 6. Free the RAM buffer so your main program can use it
+  free(pBuffer);
+}
+
+/*void setup() {
   Serial.begin(115200);
   if (!LittleFS.begin(true)) {
     Serial.println("[FS] Mount Failed, formatting...");
   }
+  listDir(LittleFS, "/", 0);  // <--- Add this line
 
+  initializeFactoryPresets();
+  loadSystemState();
+
+  encoder1.begin();
+  encoder2.begin();
+  setupSwitches();
+  
+  //display.begin();
+  dspSerial.begin(115200, SERIAL_8N1, DSP_RX_PIN, DSP_TX_PIN);
+
+  display.tft.init();
+  display.tft.setRotation(2);
+  display.tft.fillScreen(TFT_BLACK);
+  TJpgDec.setJpgScale(1);
+  TJpgDec.setSwapBytes(true);
+  TJpgDec.setCallback(tft_output);
+
+  // 4. Run Boot Animation
+  playBootAnimation();
+  delay(2000);
+  display.begin();
+
+  i2s_pin_config_t pins = { .mck_io_num = 0, .bck_io_num = 14, .ws_io_num = 13, .data_out_num = 12, .data_in_num = 35 };
+  btManager.setA2DPPinConfig(pins);
+
+  // 1. Initialize Bluetooth (Starts advertising AND background MIDI task)
+  btManager.begin("JamMate", state.a2dpEnabled);
+
+  // 2. Register Callbacks
+  btManager.setBLEDataCallback(onBLEDataReceived);
+  btManager.setMidiCallback(processMidiFromPedal);  // <--- IMPORTANT: Link the callback
+
+  btManager.setCurrentPreset(&currentPreset);
+
+  Serial.println("[JamMate] v3.3 Ready");
+  updateDSPFromPreset();
+  lastSaveTime = millis();
+}*/
+
+void setup() {
+  Serial.begin(115200);
+  delay(2000);
+  // 1. Init Filesystem
+  if (!LittleFS.begin(true)) {
+    Serial.println("[FS] Mount Failed, formatting...");
+  }
+
+  // 2. Load State & Hardware Init
   initializeFactoryPresets();
   loadSystemState();
 
@@ -787,30 +1007,49 @@ void setup() {
 
   dspSerial.begin(115200, SERIAL_8N1, DSP_RX_PIN, DSP_TX_PIN);
 
+  // 3. Init Display & Decoder
+  display.tft.init();
+  display.tft.setRotation(2);
+  display.tft.fillScreen(TFT_BLACK);
+  TJpgDec.setJpgScale(1);
+  TJpgDec.setSwapBytes(true);
+  TJpgDec.setCallback(tft_output);
+
+  // 4. CRITICAL FIX: Init Bluetooth FIRST (Before Animation)
+  // This ensures A2DP gets the clean continuous RAM it needs before we fragment heap with images.
   i2s_pin_config_t pins = { .mck_io_num = 0, .bck_io_num = 14, .ws_io_num = 13, .data_out_num = 12, .data_in_num = 35 };
   btManager.setA2DPPinConfig(pins);
-  
-  // 1. Initialize Bluetooth (Starts advertising AND background MIDI task)
   btManager.begin("JamMate", state.a2dpEnabled);
-  
-  // 2. Register Callbacks
   btManager.setBLEDataCallback(onBLEDataReceived);
-  btManager.setMidiCallback(processMidiFromPedal); // <--- IMPORTANT: Link the callback
-
+  btManager.setMidiCallback(processMidiFromPedal);
   btManager.setCurrentPreset(&currentPreset);
 
+  // 5. Run Boot Animation (Now safe to run while BT advertises in background)
+  playBootAnimation();
+
+  // 6. REMOVE BLOCKING DELAY
+  // delay(2000);  <-- Delete this line. It makes the GUI unresponsive for no reason.
+
+
+
+
   Serial.println("[JamMate] v3.3 Ready");
+
+  // 8. Sync DSP
   updateDSPFromPreset();
+  // 7. Draw Main Interface
+  // We do this LAST so the user never sees a UI until the loop is about to start.
+  display.begin();
   lastSaveTime = millis();
 }
 
 void loop() {
   encoder1.update();
   encoder2.update();
-  handleEncoders();
+  //handleEncoders();
   handleSwitches();
   checkDSPIncoming();
-
+  display.loop();
   //btManager.update();
 
   if (millis() - lastSaveTime > SAVE_INTERVAL) {
@@ -818,4 +1057,32 @@ void loop() {
     lastSaveTime = millis();
   }
   delay(1);
+}
+
+void listDir(fs::FS& fs, const char* dirname, uint8_t levels) {
+  Serial.printf("Listing directory: %s\r\n", dirname);
+
+  File root = fs.open(dirname);
+  if (!root) {
+    Serial.println("- failed to open directory");
+    return;
+  }
+  if (!root.isDirectory()) {
+    Serial.println(" - not a directory");
+    return;
+  }
+
+  File file = root.openNextFile();
+  while (file) {
+    if (file.isDirectory()) {
+      Serial.print("  DIR : ");
+      Serial.println(file.name());
+    } else {
+      Serial.print("  FILE: ");
+      Serial.print(file.name());
+      Serial.print("\tSIZE: ");
+      Serial.println(file.size());
+    }
+    file = root.openNextFile();
+  }
 }

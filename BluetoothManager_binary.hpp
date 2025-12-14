@@ -174,6 +174,7 @@ private:
   static void midiNotifyCallback(BLERemoteCharacteristic* pChar, uint8_t* data, size_t length, bool isNotify) {
       if (onMidiReceive) {
           onMidiReceive(data, length);
+          //Serial.println(data);
       }
   }
 

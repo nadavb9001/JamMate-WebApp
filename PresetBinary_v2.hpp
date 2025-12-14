@@ -15,8 +15,8 @@
 #define MAX_EFFECT_DROPDOWNS    4
 #define PRESET_NAME_LENGTH      32
 
-const char* EFFECT_NAMES[MAX_EFFECTS] = {
-    "GATET", "COMP", "AWAH", "OVRD", "DIST", "EQUL", "HARM",
+static const char* EFFECT_NAMES[MAX_EFFECTS] = {
+    "GATE", "COMP", "AWAH", "OVRD", "DIST", "EQUL", "HARM",
     "VIBR", "CHOR", "OCTV", "FLNG", "PHAS", "TREM", "FIR ",
     "DELY", "NAM ", "RVRB"
 };

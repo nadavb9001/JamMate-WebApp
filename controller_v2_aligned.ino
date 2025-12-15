@@ -228,77 +228,86 @@ void parseBlobToStruct(const uint8_t* buf, size_t len, Preset& p) {
   }
 }
 
+
 // ===================================================================
-// DSP Comm Handler
+// ROBUST DSP COMMUNICATION BRIDGE
 // ===================================================================
 
-// Global Parser State
-enum DSPState { WAIT_HEADER,
-                WAIT_LEN,
-                READ_PAYLOAD };
-DSPState dspState = WAIT_HEADER;
-char dspHeader[5];
-uint32_t dspPayloadLen = 0;
-//uint32_t dspBytesRead = 0;
-uint8_t* dspBuffer = nullptr;
+enum DSPState {
+  DSP_FIND_HEADER,
+  DSP_GET_LENGTH,
+  DSP_GET_PAYLOAD
+};
+
+DSPState dspState = DSP_FIND_HEADER;
+uint8_t dspHeaderWin[4] = { 0 };  // Sliding window buffer
+uint8_t dspLenBuf[4];
+uint32_t dspTargetLen = 0;
+uint32_t dspByteCount = 0;
+
+// Static buffer to avoid malloc fragmentation
+// Size this according to your largest expected packet (e.g. presets)
+#define MAX_DSP_BUFFER 4096
+uint8_t dspRxBuffer[MAX_DSP_BUFFER];
 
 void checkDSPIncoming() {
-  const uint32_t MAX_WAIT_MS = 2000;
-
   while (dspSerial.available()) {
+    uint8_t b = dspSerial.read();
+
     switch (dspState) {
-      case WAIT_HEADER:
-        // We need at least 4 bytes to check for a header
-        if (dspSerial.available() >= 4) {
-          // PEEK at the first byte. If it's not a known header start char, discard it.
-          // Known headers start with: 'T' (TUNE), 'L' (LOAD, LOOP), 'D' (DRUM), 'S' (SWCH), 'P' (PRES), 'G' (GEN), 'U' (UTIL)
-          char c = dspSerial.peek();
-          if (c != 'T' && c != 'L' && c != 'D' && c != 'S' && c != 'P' && c != 'G' && c != 'U') {
-            dspSerial.read();  // Discard garbage byte
-            break;             // Try again next loop
-          }
+      // ---------------------------------------------------------
+      // 1. SLIDING WINDOW: Hunt for Valid Headers
+      // ---------------------------------------------------------
+      case DSP_FIND_HEADER:
+        // Shift buffer left
+        dspHeaderWin[0] = dspHeaderWin[1];
+        dspHeaderWin[1] = dspHeaderWin[2];
+        dspHeaderWin[2] = dspHeaderWin[3];
+        dspHeaderWin[3] = b;
 
-          // If first byte looks okay, read the whole header
-          dspSerial.readBytes(dspHeader, 4);
-          dspHeader[4] = 0;
-          dspState = WAIT_LEN;
-          dspTimeout = millis();
+        // Check for Known Headers
+        // Add any new future headers here (e.g., "FILE", "DATA")
+        if (memcmp(dspHeaderWin, "TUNE", 4) == 0 || memcmp(dspHeaderWin, "LOAD", 4) == 0 || memcmp(dspHeaderWin, "NAML", 4) == 0 || memcmp(dspHeaderWin, "IRFL", 4) == 0)  // <--- Add this
+        {
+
+          dspState = DSP_GET_LENGTH;
+          dspByteCount = 0;
+          // Serial.println("[DSP] Sync Found");
         }
         break;
 
-      case WAIT_LEN:
-        if (dspSerial.available() >= 4) {
-          dspSerial.readBytes((char*)&dspPayloadLen, 4);
+      // ---------------------------------------------------------
+      // 2. READ LENGTH (4 Bytes)
+      // ---------------------------------------------------------
+      case DSP_GET_LENGTH:
+        dspLenBuf[dspByteCount++] = b;
+        if (dspByteCount == 4) {
+          memcpy(&dspTargetLen, dspLenBuf, 4);
 
-          // Safety Check: Max payload size
-          if (dspPayloadLen > 4096) {
-            Serial.printf("[DSP] Sync Error: Huge Payload (%u). Resetting.\n", dspPayloadLen);
-            dspState = WAIT_HEADER;  // Go back to finding a valid header
-
-            // Critical: Flush buffer to prevent reading the same garbage
-            while (dspSerial.available()) dspSerial.read();
+          // Safety Check: Payload too big?
+          if (dspTargetLen > MAX_DSP_BUFFER) {
+            Serial.printf("[DSP] Error: Payload too big (%d). Resetting.\n", dspTargetLen);
+            dspState = DSP_FIND_HEADER;  // Drop and hunt for next header
           } else {
-            if (dspBuffer) free(dspBuffer);
-            dspBuffer = (uint8_t*)malloc(dspPayloadLen);
-            dspBytesRead = 0;
-            dspState = READ_PAYLOAD;
+            dspState = DSP_GET_PAYLOAD;
+            dspByteCount = 0;
           }
         }
         break;
 
-      case READ_PAYLOAD:
-        // ... (Keep existing READ_PAYLOAD logic) ...
-        if (millis() - dspTimeout > MAX_WAIT_MS) {
-          Serial.println("[DSP] Timeout.");
-          dspState = WAIT_HEADER;
-          break;
+      // ---------------------------------------------------------
+      // 3. READ PAYLOAD (Bridge & Parse)
+      // ---------------------------------------------------------
+      case DSP_GET_PAYLOAD:
+        if (dspByteCount < MAX_DSP_BUFFER) {
+          dspRxBuffer[dspByteCount] = b;
         }
-        while (dspSerial.available() && dspBytesRead < dspPayloadLen) {
-          dspBuffer[dspBytesRead++] = dspSerial.read();  // Use dspBuffer (malloc'd) or dspBuffer_static
-        }
-        if (dspBytesRead >= dspPayloadLen) {
-          processDSPPacket(dspHeader, dspBuffer, dspPayloadLen);
-          dspState = WAIT_HEADER;
+        dspByteCount++;
+
+        // Packet Complete?
+        if (dspByteCount >= dspTargetLen) {
+          processDSPPacket((char*)dspHeaderWin, dspRxBuffer, dspTargetLen);
+          dspState = DSP_FIND_HEADER;  // Reset to hunt mode
         }
         break;
     }
@@ -306,35 +315,78 @@ void checkDSPIncoming() {
 }
 
 void processDSPPacket(const char* header, uint8_t* data, uint32_t len) {
-  //Serial.print(header);
-  //Serial.print(" , ");
-  //Serial.println(data);
-  int tuneFactor=0;
-  if (strcmp(header, "TUNE") == 0 && len == 4) {
-    if (tuneFactor++ < 7)
-      return;
-      
-    tuneFactor = 0;  
-    float freq; 
+
+  //Serial.println(header);
+  // 1. TUNER BRIDGE
+  if (strncmp(header, "TUNE", 4) == 0 && len == 4) {
+    float freq;
     memcpy(&freq, data, 4);
 
+    // Bridge to BLE (Priority)
     uint8_t packet[7];
-    packet[0] = 0x35;
-    packet[1] = 4;
-    packet[2] = 0;
+    packet[0] = 0x35;  // TUNER_DATA ID
+    packet[1] = 4;     // Len L
+    packet[2] = 0;     // Len H
     memcpy(&packet[3], data, 4);
     btManager.sendBLEData(packet, 7);
-
-    // --- NEW: Update Display ---
+    //Serial.printf("[DSP] TunerFreq: %3.3f\n", freq);
+    // Parse Local
     if (display.isTunerActive()) {
-        display.updateTuner(freq);
+      display.updateTuner(freq);
     }
-
-
-  } else if (strcmp(header, "LOAD") == 0) {
+  }
+  // 2. LOAD MONITOR
+  else if (strncmp(header, "LOAD", 4) == 0 && len == 4) {
     float load;
     memcpy(&load, data, 4);
-    Serial.printf("[DSP] CPU Load: %.1f%%\n", load * 100.0f);
+    // Optional: Send to BLE debug char if you have one
+    //Serial.printf("[DSP] Load: %.1f%%\n", load * 100.0f);
+  }
+  // [NEW] NAM List Packet
+  // Header: "NAML"
+  // Payload from DSP: [Index (1b)] [Name String (Nb)...]
+  else if (strncmp(header, "NAML", 4) == 0) {
+    // Create BLE Packet
+    // CMD ID: 0x45 (NAM_LIST_DATA)
+    uint8_t packet[len + 2];
+    packet[0] = 0x45;               // New Protocol ID for List Item
+    memcpy(&packet[1], data, len);  // Copy Payload
+
+    // Forward to WebApp
+    btManager.sendBLEData(packet, len + 1);
+
+    // Optional: Store in internal ESP array if you want to show it on the LCD later
+    /*
+      uint8_t idx = data[0];
+      if (idx < 255) {
+         char name[32] = {0};
+         memcpy(name, &data[1], len-1);
+         // strncpy(display.namList[idx], name, 32); 
+      }
+      */
+  } else if (strncmp(header, "IRFL", 4) == 0) {
+    // Create BLE Packet
+    // CMD ID: 0x46 (NAM_LIST_DATA)
+    uint8_t packet[len + 2];
+    packet[0] = 0x46;               // New Protocol ID for List Item
+    memcpy(&packet[1], data, len);  // Copy Payload
+
+    // Forward to WebApp
+    btManager.sendBLEData(packet, len + 1);
+
+    // Optional: Store in internal ESP array if you want to show it on the LCD later
+    /*
+      uint8_t idx = data[0];
+      if (idx < 255) {
+         char name[32] = {0};
+         memcpy(name, &data[1], len-1);
+         // strncpy(display.namList[idx], name, 32); 
+      }
+      */
+  }
+
+  else {
+    Serial.printf("[DSP] Unknown Packet: %.4s (%d bytes)\n", header, len);
   }
 }
 
@@ -408,7 +460,7 @@ void onBLEDataReceived(uint8_t* data, size_t len) {
         sendToDSP("UTIL", p, 5);
 
         if (t == 2) {
-            display.toggleTuner(en > 0);
+          display.toggleTuner(en > 0);
         }
 
 

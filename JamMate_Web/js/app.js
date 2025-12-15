@@ -99,7 +99,7 @@ export const app = {
       View.updateConnectionStatus(status);
     };
 
-    BLEService.onDataReceived = (packet) => {
+    /*BLEService.onDataReceived = (packet) => {
       if (packet && typeof packet === 'object' && packet.cmd !== undefined) {
         const cmd = packet.cmd;
         const dataView = packet.dataView;
@@ -111,6 +111,23 @@ export const app = {
           const freq = dataView.getFloat32(0, true);
           View.updateTuner(freq);
         }
+		if (cmd === Protocol.CMD.NAM_LIST_DATA) {
+			const index = dataView.getUint8(0);
+			
+			// Index 255 means "CLEAR LIST" (Start of new scan)
+			if (index === 255) {
+				console.log("[NAM] Clearing Model List");
+				this.clearNamModels();
+				return;
+			}
+
+			// Decode Name
+			const nameBytes = new Uint8Array(dataView.buffer.slice(1));
+			const name = new TextDecoder().decode(nameBytes);
+			
+			console.log(`[NAM] File ${index}: ${name}`);
+			this.addNamModel(index, name);
+		}
       }
       else if (packet instanceof DataView) {
         const cmd = packet.getUint8(0);
@@ -118,6 +135,76 @@ export const app = {
           const freq = packet.getFloat32(3, true);
           View.updateTuner(freq);
         }
+      }
+	  
+    };*/
+	
+	BLEService.onDataReceived = (packet) => {
+      // ---------------------------------------------------------
+      // CASE A: Reassembled Packet (from BLEService._finalizePacket)
+      // Object format: { cmd: 0xXX, dataView: DataView }
+      // ---------------------------------------------------------
+      if (packet && typeof packet === 'object' && packet.cmd !== undefined) {
+        const cmd = packet.cmd;
+        const dataView = packet.dataView;
+
+        if (cmd === 0x31 || cmd === 0x34) {
+          console.log(`[BLE] Received Preset Data (cmd: 0x${cmd.toString(16)})`);
+          this.loadStateFromBlob(dataView.buffer);
+        } 
+      }
+      
+      // ---------------------------------------------------------
+      // CASE B: Single Packet (Raw DataView)
+      // ---------------------------------------------------------
+      else if (packet instanceof DataView) {
+        const cmd = packet.getUint8(0);
+
+        // --- TUNER ---
+        if (cmd === 0x35) {
+          const freq = packet.getFloat32(3, true);
+          View.updateTuner(freq);
+        }
+
+        // --- FIX: ADD NAM LIST HANDLER HERE ---
+        if (cmd === Protocol.CMD.NAM_LIST_DATA) { // 0x45
+            const index = packet.getUint8(1); // Byte 1 is index
+            
+            // Index 255 means "CLEAR LIST"
+            if (index === 255) {
+                console.log("[NAM] Clearing Model List");
+                this.clearNamModels();
+                return;
+            }
+
+            // Decode Name (Start at byte 2)
+            // Packet: [0x45, Index, Char, Char, ...]
+            const nameBytes = new Uint8Array(packet.buffer.slice(2));
+            const name = new TextDecoder().decode(nameBytes);
+            
+            console.log(`[NAM] File ${index}: ${name}`);
+            this.addNamModel(index, name);
+        }
+		
+		if (cmd === Protocol.CMD.IR_LIST_DATA) { // Ensure this is defined as 0x46 in Protocol.js
+			const index = packet.getUint8(1);
+			
+			// Index 255 means "Clear List"
+			if (index === 255) {
+				console.log("[IR] Clearing IR List");
+				this.clearIrFiles();
+				return;
+			}
+
+			// Decode Name
+			const nameBytes = new Uint8Array(packet.buffer.slice(2));
+			const name = new TextDecoder().decode(nameBytes);
+			
+			console.log(`[IR] File ${index}: ${name}`);
+			this.addIrFile(index, name);
+		}
+		
+
       }
     };
 
@@ -332,6 +419,99 @@ export const app = {
       this.isUpdatingUI = false;
     }, 100);
   },
+  
+  // Helper functions in app object
+	clearNamModels() {
+		// 1. Find the NAM effect in Config (usually ID 15, "NAM")
+		const namFx = this.config.tabs.find(t => t.short_name.includes("NAM") || t.short_name.includes("Nam"));
+		if (namFx) {
+			// Reset the "dropdowns" config source
+			// Assuming NAM has 1 dropdown (Model) at index 0 of dropdowns array
+			// We modify the 'config.js' structure dynamically
+			if (!this.namModelsArray) this.namModelsArray = [];
+			this.namModelsArray = []; 
+		}
+	},
+
+	addNamModel(index, name) {
+      // 1. Update Internal Array
+      if (!this.namModelsArray) this.namModelsArray = [];
+      this.namModelsArray[index] = name;
+
+      // 2. Update the Config Source of Truth
+      // Find the NAM effect configuration
+      const namFx = this.config.tabs.find(t => t.short_name.includes("NAM") || t.title === "NAM");
+      
+      if (namFx) {
+          // Identify the dropdown key used by NAM (e.g., "NAM Models")
+          // We assume the first dropdown defined in the NAM effect is the model selector
+          const dropdownName = namFx.params.dropdowns[0]; 
+          
+          if (dropdownName) {
+              // Ensure the dropdown array exists in global config
+              if (!this.config.dropdowns[dropdownName]) {
+                  this.config.dropdowns[dropdownName] = [];
+              }
+              // Update the global config
+              this.config.dropdowns[dropdownName][index] = name;
+          }
+      }
+
+      // 3. Live DOM Update (Only if the user is currently looking at it)
+      // (This matches the ID generated by View.js: "dropdown0" for the first dropdown)
+      // Note: We need to find the ID of the NAM effect to target the correct select element
+      const namFxIdx = this.config.tabs.findIndex(t => t.short_name.includes("NAM") || t.title === "NAM");
+      
+      if (namFxIdx !== -1 && this.currentEffect === namFxIdx) {
+          // Re-render controls to reflect the new list safely
+          // Or verify specific selector:
+          // In View.js, dropdowns are not given IDs based on FX ID easily. 
+          // It's safer to just refresh the view if we are on the active tab:
+          this.selectEffect(this.currentEffect);
+      }
+	},
+	
+	clearIrFiles() {
+		// 1. Update Internal Array (Optional, if you want to store it)
+		this.irFilesArray = [];
+
+		// 2. Find the Amp/Cab effect in Config (Short name "_FIR")
+		const irFx = this.config.tabs.find(t => t.short_name === "_FIR");
+		if (irFx) {
+			// We need to clear the specific dropdown for "ir_file"
+			// In your config, "ir_file" is likely the 5th item (index 4) based on your provided JSON
+			// "dropdowns": ["amp_type", "tone_type", "ir_points", "ir_type","ir_file"] 
+			
+			if (!this.config.dropdowns["ir_file"]) this.config.dropdowns["ir_file"] = [];
+			this.config.dropdowns["ir_file"] = [];
+		}
+	},
+
+	addIrFile(index, name) {
+		// 1. Update Global Config
+		if (!this.config.dropdowns["ir_file"]) this.config.dropdowns["ir_file"] = [];
+		this.config.dropdowns["ir_file"][index] = name;
+
+		// 2. Live Update (If the user is currently looking at the Amp/Cab tab)
+		const irFxIdx = this.config.tabs.findIndex(t => t.short_name === "_FIR");
+		
+		// Check if we are currently viewing the Amp/Cab effect
+		if (irFxIdx !== -1 && this.currentEffect === irFxIdx) {
+			// Find the specific dropdown element for "ir_file"
+			// Based on your config, "ir_file" is the last dropdown (index 4)
+			const dropdownEl = document.querySelector(`select[data-param="dropdown4"][data-fx-id="${irFxIdx}"]`);
+			
+			if (dropdownEl) {
+				// If clearing (index 0 implies start of new list usually), clear options
+				if (index === 0) dropdownEl.innerHTML = "";
+				
+				const option = document.createElement("option");
+				option.value = index;
+				option.text = name;
+				dropdownEl.appendChild(option);
+			}
+		}
+	},
 
   // ========================================================
   // Get Current State for Save

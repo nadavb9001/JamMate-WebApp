@@ -134,7 +134,7 @@ private:
               
               // 1. Scan for 3 seconds (Polite Scan)
               // Serial.println("[MIDI Task] Scanning...");
-              BLEScanResults foundDevices = pBLEScan->start(3, false);
+              BLEScanResults foundDevices = pBLEScan->start(1, false);
               
               bool targetFound = false;
               BLEAdvertisedDevice* targetDevice = nullptr;
@@ -158,7 +158,7 @@ private:
               } else {
                    pBLEScan->clearResults(); // Clean up memory
                    // Wait 2 seconds before scanning again to save radio time
-                   vTaskDelay(2000 / portTICK_PERIOD_MS);
+                   vTaskDelay(5000 / portTICK_PERIOD_MS);
                    
                    // CRITICAL: Ensure advertising is still running!
                    // Sometimes scanning stops advertising on certain ESP32 libraries.

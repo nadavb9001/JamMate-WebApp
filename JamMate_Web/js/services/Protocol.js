@@ -14,7 +14,9 @@ export const Protocol = {
     TUNER_DATA: 0x35,
     SET_GLOBAL: 0x25,
     SET_DRUM_PATTERN: 0x40,
-    SET_DRUM_UPDATE: 0x41 
+    SET_DRUM_UPDATE: 0x41,
+	NAM_LIST_DATA: 0x45,
+	IR_LIST_DATA: 0x46
   },
 
   // ========================================================

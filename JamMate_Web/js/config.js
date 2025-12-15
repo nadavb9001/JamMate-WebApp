@@ -123,7 +123,7 @@ export const APP_CONFIG = {
       "params": { 
         "checkbox": "enable", 
         "knobs": ["level", "treble", "mid", "bass", "presence", "gain"], 
-        "dropdowns": ["amp_type", "tone_type", "ir_points", "ir_type"] 
+        "dropdowns": ["amp_type", "tone_type", "ir_points", "ir_type","ir_file"] 
       } 
     },
     { 
@@ -189,7 +189,8 @@ export const APP_CONFIG = {
 	"harm_wet2": ["2", "3", "4", "5","6"],
 	"tremolo_mode": ["vintage","harmonic"],
 	"waveform": ["Sine","Triangle","Saw","Square"],
-	"delay-multi": ["1", "2", "3"]
+	"delay-multi": ["1", "2", "3"],
+	"ir_file": ["1", "2", "3"]
 	
   }
 };

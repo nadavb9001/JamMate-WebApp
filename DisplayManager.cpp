@@ -26,7 +26,7 @@ const char* DisplayManager::fxLabels[TOTAL_FX] = {
 };
 
 const uint16_t DisplayManager::fxColors[7] = { 
-    TFT_DARKGREEN, TFT_BROWN, TFT_NAVY, TFT_DARKCYAN, TFT_MAROON, TFT_PURPLE, TFT_ORANGE 
+    TFT_DARKGREEN, TFT_BROWN, TFT_PINK, TFT_DARKCYAN, TFT_MAROON, TFT_PURPLE, TFT_ORANGE 
 };
 
 const char* DisplayManager::extraLabels[TOTAL_EXTRA_BUTTONS] = { "Setup", "Looper", "Drum" };

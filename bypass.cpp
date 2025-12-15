@@ -19,10 +19,13 @@
 #include "nam_model.hpp"
 #include "harmonizer_effect.h"
 #include "readWav.hpp"
-#include "drum_midi_effect.h"
+#include "LOOPER.hpp"
+//#include "drum_midi_effect.hpp"
+#include "DRUM_MIDI_EFFECT.hpp"
 
-size_t loopSize = 0;
-
+float          DelayReverbSerialParallel = 0.0f;
+size_t         loopSize                  = 0;
+JM_Looper      looper;
 MidiDrumPlayer drum_player;
 int            SampleCounter = 0;
 char filepath[50] = {0}, currentfilepath[50] = {0}; // Buffer to hold the result
@@ -30,7 +33,7 @@ MyCpuLoadMeter      cpuMeter;
 OnePole             env;
 DSY_SDRAM_BSS char  nam_file_list[MAX_NAM_FILES][MAX_NAM_PATH_LENGTH];
 DSY_SDRAM_BSS float loaded_weights[1024]; // Example weights array.
-
+int num_nam_files_found=0,num_ir_files_found=0;
 // 1. Define the duration for a "long press" in seconds
 constexpr float kLongPressDurationSeconds = 2.0f;
 // 2. Define the delay in the main loop (in milliseconds)
@@ -63,7 +66,7 @@ flanger_effect                        jm_flanger;
 chorus_effect                         jm_chorus;
 pitchshifter_effect DSY_DTCMRAM       jm_pitchshifter;
 WhiteNoise                            IRnoise;
-harmonizer_effect DSY_DTCMRAM         jm_harmonizer;
+harmonizer_effect                     jm_harmonizer;
 
 #include "presets.h"
 
@@ -89,14 +92,16 @@ static uint8_t DMA_BUFFER_MEM_SECTION tx_buff[BytesTran];
 static uint8_t DMA_BUFFER_MEM_SECTION bfr[5];
 FLOATUNION_t                          a, b;
 
-uint32_t       last_action_time = 0;
-const uint32_t interval_ms      = 2000; // 1 second interval
+uint32_t       last_action_time  = 0;
+uint32_t       last_action_time2 = 0;
+const uint32_t interval_ms       = 5000; // 1 second interval
 
 constexpr int buffer_size = 1024.0 / 4.0;
 
 int OscCnt = 0, frameCounter = 0;
 
-
+void SendNamList();
+void SendIRList();
 static void AudioCallback(AudioHandle::InputBuffer  in,
                           AudioHandle::OutputBuffer out,
                           size_t                    size);
@@ -112,7 +117,7 @@ int   pitch_index, old_pitch_index;
 DaisySeed   hw;
 TimerHandle timer;
 UartHandler uart;
-uint8_t     tx;
+uint8_t     tx, comMIDI;
 float       Semitones1 = 0.0f;
 float       Semitones2 = 0.0f;
 void        UpdateParam(uint8_t* data);
@@ -133,6 +138,10 @@ int         IR_FileIndex  = 0;
 bool updateNAM = false;
 bool enableNAM = false;
 
+
+
+
+
 // ===================================================================
 // DSP Communication Protocol v4
 // ===================================================================
@@ -148,19 +157,21 @@ void RestartUartRx(void* state, UartHandler::Result res)
 void sendDataPacket(const char* header, const void* data, uint32_t len)
 {
     // 1. Send Header (4 bytes)
+    // Using hw.uart for DaisySeed, adjust if using a different handle
     uart.BlockingTransmit((uint8_t*)header, 4, 10);
-    //uart.DmaTransmit((uint8_t*)header, 4, NULL, NULL, NULL);
+
     // 2. Send Length (4 bytes, Little Endian)
     uart.BlockingTransmit((uint8_t*)&len, 4, 10);
-    //uart.DmaTransmit((uint8_t*)&len, 4, NULL, NULL, NULL);
+
     // 3. Send Payload
     if(len > 0 && data != nullptr)
     {
-        uart.BlockingTransmit(
-            (uint8_t*)data, len, 100); // Higher timeout for data
-        //uart.DmaTransmit((uint8_t*)data, len, NULL, NULL, NULL);
+        // Higher timeout for data to ensure complete transfer
+        uart.BlockingTransmit((uint8_t*)data, len, 100);
     }
 }
+
+
 // ===== DMA TX Manager =====
 struct DmaTxManager
 {
@@ -244,6 +255,57 @@ void sendCPULoad(float load)
     sendDataPacket("LOAD", &load, sizeof(float));
 }
 
+// ===================================================================
+// HELPER: Send NAM List
+// ===================================================================
+void SendNamList() {
+    // 1. Send Clear Command first (tell App to empty the list)
+    // We send index 255 as a flag for "Clear List"
+    uint8_t clearPayload[1] = { 255 }; 
+    sendDataPacket("NAML", clearPayload, sizeof(uint8_t));
+    System::Delay(20);
+
+    // 2. Loop and Send Files
+    for (int i = 0; i < num_nam_files_found; i++) {
+        if (strlen(nam_file_list[i]) == 0) break; // Stop at empty string
+
+        uint8_t len = strlen(nam_file_list[i]);
+        if (len > 30) len = 30; // Safety cap
+
+        // Payload: [Index] [String...]
+        uint8_t payload[32];
+        payload[0] = (uint8_t)i;
+        memcpy(&payload[1], nam_file_list[i], len);
+        hw.PrintLine("Sending NAM File[%d]: %s", i, nam_file_list[i]);
+        sendDataPacket("NAML", payload, (len + 1));
+        System::Delay(30); // Small delay to prevent buffer flood
+    }
+}
+
+void SendIRList() {
+    // 1. Send Clear Command first (tell App to empty the list)
+    // We send index 255 as a flag for "Clear List"
+    uint8_t clearPayload[1] = { 255 }; 
+    sendDataPacket("IRFL", clearPayload, sizeof(uint8_t));
+    System::Delay(20);
+
+    // 2. Loop and Send Files
+    for (int i = 0; i < num_ir_files_found; i++) {
+        if (strlen(ir_file_list[i]) == 0) break; // Stop at empty string
+
+        uint8_t len = strlen(ir_file_list[i]);
+        if (len > 30) len = 30; // Safety cap
+
+        // Payload: [Index] [String...]
+        uint8_t payload[32];
+        payload[0] = (uint8_t)i;
+        memcpy(&payload[1], ir_file_list[i], len);
+        hw.PrintLine("Sending IR File[%d]: %s", i, ir_file_list[i]);
+        sendDataPacket("IRFL", payload, (len + 1));
+        System::Delay(30); // Small delay to prevent buffer flood
+    }
+}
+
 // Future: Send FFT Data
 // void sendSpectralData(float* bins, int count) {
 //    sendDataPacket("SPEC", bins, count * sizeof(float));
@@ -310,11 +372,11 @@ void TimerCallback(void* data)
         if(sw1.FallingEdge())
         {
             sw1_pressed = 1;
-            looper.undo();
+            looper.TriggerUndo(); // .undo();
             if(looper.cur_layer == 0)
             {
-                looper.stop();
-                looper.clear();
+                looper.TriggerStop();
+                looper.TriggerClear();
             }
         }
 
@@ -322,10 +384,10 @@ void TimerCallback(void* data)
         {
             sw2_pressed = 1;
             //if(jm_drummer.enable == 0)
-            looper.record();
+            looper.TriggerRecord();
             //else armLooper = 1;
 
-            hw.SetLed(looper.recording);
+            //hw.SetLed(looper.recording);
 
             //if ( ==0) {armLooper = 1; hw.PrintLine("arm=1");}
             //if (armLooper ==2) {armLooper = 0; hw.PrintLine("arm=0");}
@@ -334,15 +396,25 @@ void TimerCallback(void* data)
     if(jm_harmonizer.enable)
     {
         jm_harmonizer.calc_pitch();
-        //hw.PrintLine("Freq: %3.3f Hz, Closest Note Index: %d, Semitones1: %f",
-        //             jm_harmonizer.frq,
-        //             jm_harmonizer.closeIndex,
-        //             jm_harmonizer.Semitones1);
+        /*hw.PrintLine(
+            "Freq: %3.3f Hz, Closest Note Index: %d, Semitones1: %f, Mode: %f, "
+            "Scale: %f",
+            jm_harmonizer.frq,
+            jm_harmonizer.closeIndex,
+            jm_harmonizer.Semitones1,
+            jm_harmonizer.mode,
+            jm_harmonizer.scale);*/
     }
     if(util_tuner_enabled)
     {
         jm_harmonizer.calc_pitch();
-        sendTunerFreq(jm_harmonizer.frq);
+        
+        //if(cntTune++ > 10)
+        //{
+            //cntTune = 0;
+            hw.PrintLine("Freq: %3.3f Hz", jm_harmonizer.frq);
+            sendDataPacket("TUNE", &jm_harmonizer.frq, sizeof(float));
+        //}
     }
 }
 
@@ -354,11 +426,25 @@ void UpdateParam(uint8_t* data)
     sprintf(Header, "%c%c%c%c", data[0], data[1], data[2], data[3]);
     char Header2[3];
     sprintf(Header2, "%c%c", data[0], data[1]);
-    if(strncmp(Header, "GEN ", 4) == 0)
+
+    if(strncmp(Header, "MIDI", 4) == 0)
+    {
+        comMIDI = data[8];
+    }
+
+    // If ESP/WebApp sends "REQL", we resend the NAM list
+    else if(strncmp(Header, "REQL", 4) == 0) {
+        SendNamList();
+        return;
+    }
+
+
+    else if(strncmp(Header, "GEN ", 4) == 0)
     {
         MasterVol = data[4] / 100.0f;
         BPM       = data[6];
     }
+    
     else if(strncmp(Header, "UTIL", 4) == 0)
     {
         uint8_t  type = data[4];
@@ -383,11 +469,13 @@ void UpdateParam(uint8_t* data)
                 util_tuner_enabled = (en > 0);
                 if(util_tuner_enabled)
                 {
-                    timer.SetPeriod(10000);
+                    hw.PrintLine("Tuner Enabled");
+                    timer.SetPeriod(3000);
                     timer.Start();
                 }
                 else
                 {
+                    hw.PrintLine("Tuner Disabled");
                     timer.Stop();
                 }
                 break;
@@ -449,17 +537,21 @@ void UpdateParam(uint8_t* data)
     {
         enableBypass = data[4] > 0;
     }
-    
+
     else if(strcmp(Header, "NAM ") == 0) // Enable Bypass
     {
-        if(data[15] != NAM_FileIndex)
+        if(data[7] != NAM_FileIndex)
         {
-            NAM_FileIndex = data[15];
+            NAM_FileIndex = data[7];
             updateNAM     = true;
         }
         enableNAM = data[4] > 0;
         levelNAM  = data[5] / 100.0f;
-        preLevenNAM = data[6] / 100.0f;
+        //preLevenNAM = data[6];
+        preLevenNAM = data[6] / 100.0f;  // normalize to [0,1]
+        preLevenNAM =  expm1f(-5.0f * preLevenNAM) / expm1f(-5.0f);
+        //SendNamList();
+        
         return;
     }
 
@@ -526,8 +618,9 @@ void UpdateParam(uint8_t* data)
 
     else if(strcmp(Header, "PRES") == 0)
     {
-        MasterVol = data[7] / 127.0f;
-        BPM       = (int)data[8];
+        if(data[7] < 101)
+            MasterVol = data[7] / 100.0f;
+        BPM = (int)data[8];
         if((data[5]) == CurrentBank && (data[6]) == CurrentPreset)
             return;
 
@@ -538,7 +631,9 @@ void UpdateParam(uint8_t* data)
 
     else if(strcmp(Header, "AWAH") == 0)
     {
-        jm_autowah.update_param(data);
+        //jm_autowah.update_param(data);
+        jm_autowah.enable = data[4];
+        jm_autowah.setPreset(data[5]);
         return;
     }
     else if(strcmp(Header, "GATE") == 0)
@@ -763,6 +858,11 @@ static void AudioCallback(AudioHandle::InputBuffer  in,
     memcpy(in1, in[0], size * sizeof(float));
     memcpy(out1, in[0], size * sizeof(float));
 
+    if(util_tuner_enabled)
+    {
+        ringBuf.pushBlock(in[0], size);
+    }
+
     if(enPulse == 1)
     {
         for(size_t i = 0; i < size; i++)
@@ -794,10 +894,6 @@ static void AudioCallback(AudioHandle::InputBuffer  in,
         }
     }
 
-    if(util_tuner_enabled)
-    {
-        ringBuf.pushBlock(in[0], size);
-    }
 
     if(jm_noisegate.enable == 1)
     {
@@ -812,6 +908,7 @@ static void AudioCallback(AudioHandle::InputBuffer  in,
     if(jm_autowah.enable == 1)
     {
         jm_autowah.processBlock(in1, out1, size);
+        memcpy(in1, out1, size * sizeof(float));
     }
 
     if(jm_overdrive.enable == 1)
@@ -826,7 +923,11 @@ static void AudioCallback(AudioHandle::InputBuffer  in,
 
     if(enableNAM == 1)
     {
-        levelNAM * rtneural_wavenet.forward(preLevenNAM * in1, out1, size);
+        float temp_in1[BLOCK_SIZE];
+
+        arm_scale_f32(in1, preLevenNAM, temp_in1, size);
+        rtneural_wavenet.forward(temp_in1, out1, size);
+        arm_scale_f32(out1, levelNAM, out1, size);
         memcpy(in1, out1, size * sizeof(float));
     }
 
@@ -839,7 +940,7 @@ static void AudioCallback(AudioHandle::InputBuffer  in,
     if(jm_harmonizer.enable == 1)
 
     {
-        ringBuf.pushBlock(in[0], size);
+        ringBuf.pushBlock(in1, size);
         jm_harmonizer.processBlock(in1, out1, size);
     }
 
@@ -883,7 +984,7 @@ static void AudioCallback(AudioHandle::InputBuffer  in,
     {
         // Process looper
         float temp = 0;
-        if(LooperParam.en == 1)
+        /*if(LooperParam.en == 1)
         {
             hw.SetLed(looper.recording);
             looper.process(out1[i], temp);
@@ -895,12 +996,16 @@ static void AudioCallback(AudioHandle::InputBuffer  in,
 
 
             out1[i] = temp;
-        }
-
+        }*/
+        //temp = looper.Process(out1[i], 0.0f);
+        //out1[i] = temp;
         if(drum_player.enable == 1)
         {
-            temp = drum_player.Process();
-            out1[i] += temp;
+            temp    = out1[i];
+            temp    = drum_player.Process(out1[i]);
+            out1[i] = temp;
+            // temp = out1[i];
+            // out1[i] += looper.Process(temp, 0.0f);
         }
 
         envRMS    = env.Process(fabsf(out1[i]));
@@ -987,8 +1092,8 @@ int main(void)
 
     System::Delay(100);
 
-    looper.init();
-
+    looper.Init();
+    looper.ClearMem();
 
     //Initialize utilities
     noise.Init();
@@ -1005,7 +1110,7 @@ int main(void)
     jm_distortion.gain_factor = 1.0f;
     jm_delay.init();
     jm_fir.init();
-    jm_autowah.init();
+    jm_autowah.init(sample_rate);
     jm_equalizer.init();
     jm_compressor.init();
     jm_noisegate.init();
@@ -1025,7 +1130,7 @@ int main(void)
 
     //Setup UART
 
-    
+
     UARTconfig.baudrate      = 115200;
     UARTconfig.periph        = UartHandler::Config::Peripheral::USART_1;
     UARTconfig.stopbits      = UartHandler::Config::StopBits::BITS_1;
@@ -1067,19 +1172,28 @@ int main(void)
     load_nano_weights(BossOD3_weights_data);
     hw.PrintLine("Read: %d weights", readWeights);
     System::Delay(500);
-    int num_files_found = browse_nam_files(nam_file_list);
-    hw.PrintLine("Found %d .nam files in NAM", num_files_found);
+    num_nam_files_found = browse_nam_files(nam_file_list);
+    hw.PrintLine("Found %d .nam files in NAM", num_nam_files_found);
     hw.PrintLine("Filename: %s", nam_file_list[0]);
     hw.PrintLine("Filename: %s", nam_file_list[1]);
     hw.PrintLine("Filename: %s", nam_file_list[2]);
     hw.PrintLine("Filename: %s", nam_file_list[3]);
+
+    // [NEW] Broadcast List on Startup
+    SendNamList();
+    System::Delay(100);
+
     rtneural_wavenet.prewarm();
-    num_files_found = browse_ir_files(ir_file_list);
-    hw.PrintLine("Found %d .wav files in IR", num_files_found);
+    num_ir_files_found = browse_ir_files(ir_file_list);
+    hw.PrintLine("Found %d .wav files in IR", num_ir_files_found);
     hw.PrintLine("Filename: %s", ir_file_list[0]);
     hw.PrintLine("Filename: %s", ir_file_list[1]);
     hw.PrintLine("Filename: %s", ir_file_list[2]);
     hw.PrintLine("Filename: %s", ir_file_list[3]);
+
+    SendIRList();
+
+    System::Delay(100);
 
     hw.SetAudioSampleRate(daisy::SaiHandle::Config::SampleRate::SAI_48KHZ);
     hw.SetAudioBlockSize(BLOCK_SIZE); // 256 for smbpitchshift
@@ -1116,20 +1230,46 @@ int main(void)
         uint32_t now = System::GetNow();
         if(now - last_action_time >= interval_ms)
         {
+            /*if(util_tuner_enabled)
+            {
+                jm_harmonizer.calc_pitch();
+                sendTunerFreq(jm_harmonizer.frq);
+            }*/
             float  avgLoad = cpuMeter.GetAvgCpuLoad();
             size_t bSize   = hw.AudioBlockSize();
-            hw.PrintLine(
+            /*hw.PrintLine(
                 "CPU Load: %2.2f%% , Audio Block Size: %u, Signal Level: "
                 "%3.3f%",
                 avgLoad * 100.0f,
                 bSize,
-                envRMS * 1000.0);
-
+                envRMS * 1000.0);*/
+            sendDataPacket("LOAD", &avgLoad, sizeof(float));
             last_action_time = now;
+            /*hw.PrintLine(
+                "Looper: State=%d (0:Idle,1:Wait,2:Rec,3:Play), PendingAct=%d, "
+                "Layer=%d, Pos=%d",
+                looper.state,
+                looper.pending_action,
+                looper.cur_layer,
+                looper.cur_pos);*/
+           
+            //sendDataPacket("NAML",  &avgLoad, sizeof(float));
+        }
+        if(now - last_action_time2 >= 500)
+        {
+            /*hw.PrintLine(
+                "Freq: %3.3f Hz, Closest Note Index: %d, Semitones1: %f, Mode: "
+                "%f, Scale: %f",
+                jm_harmonizer.frq,
+                jm_harmonizer.closeIndex,
+                jm_harmonizer.Semitones1,
+                jm_harmonizer.mode,
+                jm_harmonizer.scale);*/
+
+            last_action_time2 = now;
         }
 
 
-       
         // Update file name and load the MIDI in the main while(1) loop
         // Only way it works !?!
         if(strcmp(filepath, currentfilepath) != 0)
@@ -1251,6 +1391,39 @@ int main(void)
             jm_fir.changeIR = false;
         }
 
+        sw1.Debounce();
+        sw2.Debounce();
+
+        //hw.PrintLine("%1.3f",envRMS*1000.0f);
+
+        if(sw1.FallingEdge() || comMIDI == 0)
+        {
+            sw1_pressed = 1;
+            hw.PrintLine("SW1 Pressed");
+            looper.TriggerUndo(); // .undo();
+            if(looper.cur_layer == 0)
+            {
+                looper.TriggerStop();
+                looper.ClearMem();
+            }
+            comMIDI = 255;
+        }
+
+        if(sw2.FallingEdge() || comMIDI == 1)
+        {
+            sw2_pressed = 1;
+            hw.PrintLine("SW2 Pressed");
+            //if(jm_drummer.enable == 0)
+            looper.TriggerRecord();
+            //else armLooper = 1;
+
+            //hw.SetLed(looper.recording);
+
+            //if ( ==0) {armLooper = 1; hw.PrintLine("arm=1");}
+            //if (armLooper ==2) {armLooper = 0; hw.PrintLine("arm=0");}
+            comMIDI = 255;
+        }
+
         /*if(ir_measurement.IsMeasurementComplete())
         {
             // Measurement complete - access results
@@ -1264,7 +1437,18 @@ int main(void)
             //ir_measurement.StartMeasurement(10); // Start again
         }*/
         //hw.PrintLine(progress);
-
+        if(looper.state == looper.STATE_RECORDING)
+        {
+            hw.SetLed(1);
+        }
+        else if(looper.state == looper.STATE_PLAYING)
+        {
+            hw.SetLed(0);
+        }
+        else
+        {
+            hw.SetLed(0);
+        }
         System::Delay(1);
     }
 }

@@ -23,17 +23,17 @@
 //#include "drum_midi_effect.hpp"
 #include "DRUM_MIDI_EFFECT.hpp"
 
-float          DelayReverbSerialParallel = 0.0f;
-size_t         loopSize                  = 0;
-JM_Looper      looper;
-MidiDrumPlayer drum_player;
-int            SampleCounter = 0;
+float                     DelayReverbSerialParallel = 0.0f;
+size_t                    loopSize                  = 0;
+JM_Looper                 looper;
+DSY_RAM_D3 MidiDrumPlayer drum_player;
+int                       SampleCounter = 0;
 char filepath[50] = {0}, currentfilepath[50] = {0}; // Buffer to hold the result
 MyCpuLoadMeter      cpuMeter;
 OnePole             env;
 DSY_SDRAM_BSS char  nam_file_list[MAX_NAM_FILES][MAX_NAM_PATH_LENGTH];
 DSY_SDRAM_BSS float loaded_weights[1024]; // Example weights array.
-int num_nam_files_found=0,num_ir_files_found=0;
+int                 num_nam_files_found = 0, num_ir_files_found = 0;
 // 1. Define the duration for a "long press" in seconds
 constexpr float kLongPressDurationSeconds = 2.0f;
 // 2. Define the delay in the main loop (in milliseconds)
@@ -64,7 +64,7 @@ tremolo_effect                        jm_tremolo;
 phaser_effect DSY_RAM_D2              jm_phaser;
 flanger_effect                        jm_flanger;
 chorus_effect                         jm_chorus;
-pitchshifter_effect DSY_DTCMRAM       jm_pitchshifter;
+pitchshifter_effect                   jm_pitchshifter;
 WhiteNoise                            IRnoise;
 harmonizer_effect                     jm_harmonizer;
 
@@ -100,8 +100,8 @@ constexpr int buffer_size = 1024.0 / 4.0;
 
 int OscCnt = 0, frameCounter = 0;
 
-void SendNamList();
-void SendIRList();
+void        SendNamList();
+void        SendIRList();
 static void AudioCallback(AudioHandle::InputBuffer  in,
                           AudioHandle::OutputBuffer out,
                           size_t                    size);
@@ -138,9 +138,197 @@ int         IR_FileIndex  = 0;
 bool updateNAM = false;
 bool enableNAM = false;
 
+// Forward Declaration
+void ParseRobustCommand(uint8_t* data, uint8_t len);
 
+// ===================================================================
+// ROBUST PROTOCOL & DMA DEFINITIONS
+// ===================================================================
+const uint8_t  SYNC_BYTE                = 0xAA;
+const uint32_t UART_WATCHDOG_TIMEOUT_MS = 5000;
 
+enum ProtocolState
+{
+    WAIT_FOR_SYNC,
+    WAIT_FOR_LEN,
+    WAIT_FOR_PAYLOAD
+};
 
+// Buffers
+// DMA buffers must be in specific memory sections for Daisy/STM32
+uint8_t DMA_BUFFER_MEM_SECTION rx_dma_byte;         // For Sync and Len
+uint8_t DMA_BUFFER_MEM_SECTION rx_dma_payload[256]; // For Payload
+uint8_t DMA_BUFFER_MEM_SECTION tx_dma_buffer[256];  // For Transmit
+
+// State Variables
+volatile ProtocolState uartState      = WAIT_FOR_SYNC;
+volatile uint8_t       expectedLen    = 0;
+volatile bool          packetReceived = false;
+volatile bool          tx_busy        = false;
+
+uint32_t last_uart_activity_time = 0;
+uint32_t uart_errors             = 0;
+
+// Forward Declarations
+void UartRxCallback(void* state, UartHandler::Result res);
+void UartTxCallback(void* state, UartHandler::Result res);
+void ResetUartState();
+
+// ===================================================================
+// DMA RX STATE MACHINE
+// ===================================================================
+void UartRxCallback(void* state, UartHandler::Result res)
+{
+    // Update Watchdog timer
+    last_uart_activity_time = System::GetNow();
+
+    if(res != UartHandler::Result::OK)
+    {
+        // Handle errors (hardware noise, framing, etc.)
+        uart_errors++;
+        ResetUartState();
+        return;
+    }
+
+    switch(uartState)
+    {
+        case WAIT_FOR_SYNC:
+            if(rx_dma_byte == SYNC_BYTE)
+            {
+                // Found Sync, now get Length
+                uartState = WAIT_FOR_LEN;
+                uart.DmaReceive(&rx_dma_byte, 1, NULL, UartRxCallback, NULL);
+            }
+            else
+            {
+                // Not Sync, keep hunting
+                //hw.Print("Rx: %x ", rx_dma_byte);
+                uart.DmaReceive(&rx_dma_byte, 1, NULL, UartRxCallback, NULL);
+            }
+            break;
+
+        case WAIT_FOR_LEN:
+            expectedLen = rx_dma_byte;
+            if(expectedLen > 0 && expectedLen < 255)
+            {
+                // Valid Length, get Payload
+                uartState = WAIT_FOR_PAYLOAD;
+                uart.DmaReceive(
+                    rx_dma_payload, expectedLen, NULL, UartRxCallback, NULL);
+            }
+            else
+            {
+                // Invalid length (0 or too big), reset
+                ResetUartState();
+            }
+            break;
+
+        case WAIT_FOR_PAYLOAD:
+            // Payload received completely via DMA
+            packetReceived = true; // Signal Main Loop
+
+            // Go back to hunting for the next Sync byte
+            uartState = WAIT_FOR_SYNC;
+            uart.DmaReceive(&rx_dma_byte, 1, NULL, UartRxCallback, NULL);
+            break;
+    }
+}
+
+// Watchdog / Reset Function
+void ResetUartState()
+{
+    uartState = WAIT_FOR_SYNC;
+    // Cancel any pending DMA actions just in case (optional, but good for robust resets)
+    //uart.DmaListenStop();
+    // Restart listening for Sync
+    // 1. Get the Raw HAL Handle
+    // Get the handle via the new public method
+    USART1->ICR = USART_ICR_ORECF | USART_ICR_NECF | USART_ICR_FECF
+                  | USART_ICR_PECF | USART_ICR_LBDCF;
+
+    //hw.PrintLine("UART Reset");
+    uart.DmaReceive(&rx_dma_byte, 1, NULL, UartRxCallback, NULL);
+}
+
+// ===================================================================
+// DMA TX WRAPPER
+// ===================================================================
+void UartTxCallback(void* state, UartHandler::Result res)
+{
+    tx_busy = false; // DMA finished, release lock
+}
+
+void SendDataRobust(const char* header, const void* data, uint32_t len)
+{
+    if(tx_busy)
+    {
+        // Drop packet if previous DMA is still running (avoids corruption)
+        return;
+    }
+
+    uint32_t totalPacketSize = 1 + 1 + 4 + len; // Sync + Len + Header(4) + Data
+    if(totalPacketSize > 256)
+        return; // Safety check
+
+    tx_busy = true;
+
+    // 1. Construct Packet in DMA Buffer
+    tx_dma_buffer[0] = SYNC_BYTE;          // Sync
+    tx_dma_buffer[1] = (uint8_t)(4 + len); // Len (Header + Data)
+
+    // Copy Header (4 bytes)
+    memcpy(&tx_dma_buffer[2], header, 4);
+
+    // Copy Data (if any)
+    if(len > 0 && data != nullptr)
+    {
+        memcpy(&tx_dma_buffer[6], data, len);
+    }
+
+    // 2. Start DMA Transmit
+    uart.DmaTransmit(
+        tx_dma_buffer, totalPacketSize, NULL, UartTxCallback, NULL);
+}
+
+// Helper wrappers for your existing code structure
+void sendTunerFreq(float freq)
+{
+    SendDataRobust("TUNE", &freq, sizeof(float));
+}
+
+void sendCPULoad(float load)
+{
+    SendDataRobust("LOAD", &load, sizeof(float));
+}
+
+void SendNamList()
+{
+    uint8_t clearPayload[1] = {255};
+    SendDataRobust("NAML", clearPayload, 1);
+    System::Delay(10);
+
+    for(int i = 0; i < num_nam_files_found; i++)
+    {
+        if(strlen(nam_file_list[i]) == 0)
+            break;
+        uint8_t len = strlen(nam_file_list[i]);
+        if(len > 30)
+            len = 30;
+
+        uint8_t payload[32];
+        payload[0] = (uint8_t)i;
+        memcpy(&payload[1], nam_file_list[i], len);
+
+        SendDataRobust("NAML", payload, len + 1);
+        System::Delay(5); // Shorter delay allowed thanks to DMA
+    }
+}
+
+// Replace your old sendDataPacket with the new robust one
+void sendDataPacket(const char* header, const void* data, uint32_t len)
+{
+    SendDataRobust(header, data, len);
+}
 
 // ===================================================================
 // DSP Communication Protocol v4
@@ -148,13 +336,29 @@ bool enableNAM = false;
 void RestartUartRx(void* state, UartHandler::Result res)
 {
     updtParam = true;
-
-
+    hw.PrintLine("%c%c%c%c,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d",
+                 rx_buff[0],
+                 rx_buff[1],
+                 rx_buff[2],
+                 rx_buff[3],
+                 rx_buff[4],
+                 rx_buff[5],
+                 rx_buff[6],
+                 rx_buff[7],
+                 rx_buff[8],
+                 rx_buff[9],
+                 rx_buff[10],
+                 rx_buff[11],
+                 rx_buff[12],
+                 rx_buff[13],
+                 rx_buff[14],
+                 rx_buff[15],
+                 rx_buff[16]);
     uart.DmaReceive(rx_buff, BytestRecv, NULL, RestartUartRx, NULL);
 }
 
 // Generic Sender
-void sendDataPacket(const char* header, const void* data, uint32_t len)
+/*void sendDataPacket(const char* header, const void* data, uint32_t len)
 {
     // 1. Send Header (4 bytes)
     // Using hw.uart for DaisySeed, adjust if using a different handle
@@ -170,7 +374,7 @@ void sendDataPacket(const char* header, const void* data, uint32_t len)
         uart.BlockingTransmit((uint8_t*)data, len, 100);
     }
 }
-
+*/
 
 // ===== DMA TX Manager =====
 struct DmaTxManager
@@ -241,7 +445,7 @@ uint32_t GetDmaTxErrors()
 
 // Specific Senders (Wrappers)
 
-void sendTunerFreq(float freq)
+/*void sendTunerFreq(float freq)
 {
     // Payload: [Freq (4 bytes)]
     // Header: "TUNE"
@@ -258,19 +462,23 @@ void sendCPULoad(float load)
 // ===================================================================
 // HELPER: Send NAM List
 // ===================================================================
-void SendNamList() {
+void SendNamList()
+{
     // 1. Send Clear Command first (tell App to empty the list)
     // We send index 255 as a flag for "Clear List"
-    uint8_t clearPayload[1] = { 255 }; 
+    uint8_t clearPayload[1] = {255};
     sendDataPacket("NAML", clearPayload, sizeof(uint8_t));
     System::Delay(20);
 
     // 2. Loop and Send Files
-    for (int i = 0; i < num_nam_files_found; i++) {
-        if (strlen(nam_file_list[i]) == 0) break; // Stop at empty string
+    for(int i = 0; i < num_nam_files_found; i++)
+    {
+        if(strlen(nam_file_list[i]) == 0)
+            break; // Stop at empty string
 
         uint8_t len = strlen(nam_file_list[i]);
-        if (len > 30) len = 30; // Safety cap
+        if(len > 30)
+            len = 30; // Safety cap
 
         // Payload: [Index] [String...]
         uint8_t payload[32];
@@ -281,20 +489,24 @@ void SendNamList() {
         System::Delay(30); // Small delay to prevent buffer flood
     }
 }
-
-void SendIRList() {
+*/
+void SendIRList()
+{
     // 1. Send Clear Command first (tell App to empty the list)
     // We send index 255 as a flag for "Clear List"
-    uint8_t clearPayload[1] = { 255 }; 
+    uint8_t clearPayload[1] = {255};
     sendDataPacket("IRFL", clearPayload, sizeof(uint8_t));
     System::Delay(20);
 
     // 2. Loop and Send Files
-    for (int i = 0; i < num_ir_files_found; i++) {
-        if (strlen(ir_file_list[i]) == 0) break; // Stop at empty string
+    for(int i = 0; i < num_ir_files_found; i++)
+    {
+        if(strlen(ir_file_list[i]) == 0)
+            break; // Stop at empty string
 
         uint8_t len = strlen(ir_file_list[i]);
-        if (len > 30) len = 30; // Safety cap
+        if(len > 30)
+            len = 30; // Safety cap
 
         // Payload: [Index] [String...]
         uint8_t payload[32];
@@ -310,20 +522,6 @@ void SendIRList() {
 // void sendSpectralData(float* bins, int count) {
 //    sendDataPacket("SPEC", bins, count * sizeof(float));
 // }
-
-
-/*void RestartUart(void* state, UartHandler::Result res);
-// dma end callback, will start a new DMA transfer
-void RestartUart(void* state, UartHandler::Result res)
-{
-    //if(res != UartHandler::Result::ERR)
-    //{
-
-    uart.DmaTransmit(bfr, 1, NULL, RestartUart, NULL);
-
-    //}
-}*/
-
 
 void TimerCallback(void* data)
 {
@@ -408,12 +606,12 @@ void TimerCallback(void* data)
     if(util_tuner_enabled)
     {
         jm_harmonizer.calc_pitch();
-        
+
         //if(cntTune++ > 10)
         //{
-            //cntTune = 0;
-            hw.PrintLine("Freq: %3.3f Hz", jm_harmonizer.frq);
-            sendDataPacket("TUNE", &jm_harmonizer.frq, sizeof(float));
+        //cntTune = 0;
+        hw.PrintLine("Freq: %3.3f Hz", jm_harmonizer.frq);
+        sendDataPacket("TUNE", &jm_harmonizer.frq, sizeof(float));
         //}
     }
 }
@@ -433,7 +631,8 @@ void UpdateParam(uint8_t* data)
     }
 
     // If ESP/WebApp sends "REQL", we resend the NAM list
-    else if(strncmp(Header, "REQL", 4) == 0) {
+    else if(strncmp(Header, "REQL", 4) == 0)
+    {
         SendNamList();
         return;
     }
@@ -444,7 +643,7 @@ void UpdateParam(uint8_t* data)
         MasterVol = data[4] / 100.0f;
         BPM       = data[6];
     }
-    
+
     else if(strncmp(Header, "UTIL", 4) == 0)
     {
         uint8_t  type = data[4];
@@ -540,21 +739,51 @@ void UpdateParam(uint8_t* data)
 
     else if(strcmp(Header, "NAM ") == 0) // Enable Bypass
     {
-        if(data[7] != NAM_FileIndex)
+        if(data[7] < num_nam_files_found)
         {
-            NAM_FileIndex = data[7];
-            updateNAM     = true;
+            if(data[7] != NAM_FileIndex)
+            {
+                NAM_FileIndex = data[7];
+                updateNAM     = true;
+            }
+        }
+        else
+        {
+            hw.PrintLine("Error: NAM Index %d out of bounds (Max %d)",
+                         data[7],
+                         num_nam_files_found);
         }
         enableNAM = data[4] > 0;
         levelNAM  = data[5] / 100.0f;
         //preLevenNAM = data[6];
-        preLevenNAM = data[6] / 100.0f;  // normalize to [0,1]
-        preLevenNAM =  expm1f(-5.0f * preLevenNAM) / expm1f(-5.0f);
+        preLevenNAM = data[6] / 100.0f; // normalize to [0,1]
+        preLevenNAM = expm1f(-5.0f * preLevenNAM) / expm1f(-5.0f);
         //SendNamList();
-        
+
         return;
     }
 
+    else if(strcmp(Header, "DRM1") == 0) // Drum Pattern Chunk 1 (Steps 0-9)
+    {
+        uint8_t row = data[4];
+        // data[5] to data[14] are velocities for steps 0-9
+        for(int i = 0; i < 10; i++)
+        {
+            drum_player.SetSequencerNote(row, i, data[5 + i]);
+        }
+        return;
+    }
+
+    else if(strcmp(Header, "DRM2") == 0) // Drum Pattern Chunk 2 (Steps 10-15)
+    {
+        uint8_t row = data[4];
+        // data[5] to data[10] are velocities for steps 10-15
+        for(int i = 0; i < 6; i++)
+        {
+            drum_player.SetSequencerNote(row, 10 + i, data[5 + i]);
+        }
+        return;
+    }
 
     else if(strcmp(Header, "DRMP") == 0) // Drum Pattern
     {
@@ -739,7 +968,7 @@ void UpdateParam(uint8_t* data)
 
     else if(strcmp(Header, "DRUM") == 0)
     {
-        // Style array - matches your selection box
+        // ... (Styles array) ...
         const char* styles[] = {"rock",
                                 "blues",
                                 "jazz",
@@ -751,40 +980,29 @@ void UpdateParam(uint8_t* data)
                                 "country",
                                 "funk",
                                 "swing"};
-        //jm_drummer.update_param(data);
-        //drum_machine.enable = (data[4] > 0);
-        //drum_machine.set_pattern(data[5]);
-        //drum_machine.set_bpm(data[6]);
-        //drum_machine.reset();
+
         drum_player.SetBPM(data[6]);
-        drum_player.enable = (data[4] > 0);
-        drum_player.level  = data[5] / 100.0f;
+        drum_player.enable       = (data[4] > 0);
+        drum_player.level        = data[5] / 100.0f;
+        drum_player.reverb_level = data[8] / 100.0f;
+        // READ STYLE
+        int style_idx = data[14];
 
-        int         style_idx     = min((int)data[14], 6);
-        const char* selectedStyle = styles[style_idx];
-        int         number_idx    = min((int)data[13], 6);
+        // Update Player Mode
+        drum_player.SetStyle(style_idx);
 
-        // Update file name and load the MIDI in the main while(1) loop
-        // Only way it works !?!
-        sprintf(filepath, "0:/DrumMidi/%s%d.mid", selectedStyle, number_idx);
-        //hw.PrintLine(filepath);
-        /*if(drum_player.LoadFromSD(filepath))
+        // ONLY LOAD MIDI IF NOT PATTERN MODE (Style 10)
+        if(style_idx < 10)
         {
-            hw.PrintLine("MIDI loaded");
-            
+            // Safety clamp for array access
+            int         safe_style_idx = min(style_idx, 9);
+            const char* selectedStyle  = styles[safe_style_idx];
+            int         number_idx     = min((int)data[13], 6);
+
+            sprintf(
+                filepath, "0:/DrumMidi/%s%d.mid", selectedStyle, number_idx);
+            // Flag to load in main loop
         }
-        else
-        {
-            hw.PrintLine("MIDI not loaded");
-            drum_player.LoadFromSD("0:/DrumMidi/blues1.mid");
-        }*/
-        //drum_player.LoadFromSD(filepath);
-
-        //if(data[6] < 100)
-        //    drum_player.LoadFromSD("0:/DrumMidi/blues1.mid");
-        //else
-        //    drum_player.LoadFromSD("0:/DrumMidi/blues1.mid");
-
 
         en_drummer = (data[4] > 0);
         BPM        = (int)data[6];
@@ -826,6 +1044,7 @@ void UpdateParam(uint8_t* data)
     }
 }
 //************************* */
+
 
 int debounceCounter = 0;
 
@@ -982,30 +1201,13 @@ static void AudioCallback(AudioHandle::InputBuffer  in,
 
     for(size_t i = 0; i < size; i++)
     {
-        // Process looper
         float temp = 0;
-        /*if(LooperParam.en == 1)
-        {
-            hw.SetLed(looper.recording);
-            looper.process(out1[i], temp);
-            if(armLooper == 1)
-            {
-                looper.record();
-                armLooper = 0;
-            }
 
-
-            out1[i] = temp;
-        }*/
-        //temp = looper.Process(out1[i], 0.0f);
-        //out1[i] = temp;
         if(drum_player.enable == 1)
         {
             temp    = out1[i];
             temp    = drum_player.Process(out1[i]);
             out1[i] = temp;
-            // temp = out1[i];
-            // out1[i] += looper.Process(temp, 0.0f);
         }
 
         envRMS    = env.Process(fabsf(out1[i]));
@@ -1142,10 +1344,13 @@ int main(void)
 
     uart.Init(UARTconfig);
 
+    // [IMPORTANT] Start the State Machine
+    ResetUartState();
+    last_uart_activity_time = System::GetNow();
 
     //UART DMA
 
-    uart.DmaReceive(rx_buff, BytestRecv, NULL, RestartUartRx, NULL);
+    //uart.DmaReceive(rx_buff, BytestRecv, NULL, RestartUartRx, NULL);
     //uart.DmaTransmit(bfr, 5, NULL, RestartUart, NULL);
 
 
@@ -1158,7 +1363,6 @@ int main(void)
     timer.SetPrescaler(10000);
     timer.Start();
 
-    //updatePreset(Preset_Bypass);
 
     // Initialize IR measurement
     IRnoise.Init();
@@ -1179,11 +1383,6 @@ int main(void)
     hw.PrintLine("Filename: %s", nam_file_list[2]);
     hw.PrintLine("Filename: %s", nam_file_list[3]);
 
-    // [NEW] Broadcast List on Startup
-    SendNamList();
-    System::Delay(100);
-
-    rtneural_wavenet.prewarm();
     num_ir_files_found = browse_ir_files(ir_file_list);
     hw.PrintLine("Found %d .wav files in IR", num_ir_files_found);
     hw.PrintLine("Filename: %s", ir_file_list[0]);
@@ -1191,10 +1390,15 @@ int main(void)
     hw.PrintLine("Filename: %s", ir_file_list[2]);
     hw.PrintLine("Filename: %s", ir_file_list[3]);
 
-    SendIRList();
 
+    //if (isESPConeccted)
+    // [NEW] Broadcast List on Startup
+    //SendNamList();
+    System::Delay(100);
+    //SendIRList();
     System::Delay(100);
 
+    rtneural_wavenet.prewarm();
     hw.SetAudioSampleRate(daisy::SaiHandle::Config::SampleRate::SAI_48KHZ);
     hw.SetAudioBlockSize(BLOCK_SIZE); // 256 for smbpitchshift
     cpuMeter.Init(hw.AudioSampleRate(), hw.AudioBlockSize());
@@ -1203,11 +1407,50 @@ int main(void)
 
     while(1)
     {
+        uint32_t now = System::GetNow();
+        // 1. Process Received Packet (Decoupled from DMA ISR)
+        if(packetReceived)
+        {
+            // rx_dma_payload now contains: [Header(4)][Data...]
+            // We pass it to your existing parser
+            UpdateParam(rx_dma_payload);
+            hw.PrintLine("%c%c%c%c,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d",
+                         rx_dma_payload[0],
+                         rx_dma_payload[1],
+                         rx_dma_payload[2],
+                         rx_dma_payload[3],
+                         rx_dma_payload[4],
+                         rx_dma_payload[5],
+                         rx_dma_payload[6],
+                         rx_dma_payload[7],
+                         rx_dma_payload[8],
+                         rx_dma_payload[9],
+                         rx_dma_payload[10],
+                         rx_dma_payload[11],
+                         rx_dma_payload[12],
+                         rx_dma_payload[13],
+                         rx_dma_payload[14],
+                         rx_dma_payload[15],
+                         rx_dma_payload[16]);
+            packetReceived = false; // Ack
+
+            // Debug print (Optional)
+            hw.PrintLine("RX: %.24s", rx_dma_payload);
+        }
+
+        // 2. Watchdog Check
+        // If we haven't seen a byte in X seconds, reset logic
+        /*if (now - last_uart_activity_time > UART_WATCHDOG_TIMEOUT_MS) {
+            // hw.PrintLine("UART Watchdog Triggered! Resetting...");
+            ResetUartState();
+            last_uart_activity_time = now; // Reset timer to avoid looping resets
+        }*/
+
         if(updtParam)
         {
             UpdateParam(rx_buff);
 
-            hw.PrintLine("%c%c%c%c,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d",
+            /*hw.PrintLine("%c%c%c%c,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d",
                          rx_buff[0],
                          rx_buff[1],
                          rx_buff[2],
@@ -1224,10 +1467,10 @@ int main(void)
                          rx_buff[13],
                          rx_buff[14],
                          rx_buff[15],
-                         rx_buff[16]);
+                         rx_buff[16]);*/
             updtParam = false;
         }
-        uint32_t now = System::GetNow();
+
         if(now - last_action_time >= interval_ms)
         {
             /*if(util_tuner_enabled)
@@ -1252,26 +1495,10 @@ int main(void)
                 looper.pending_action,
                 looper.cur_layer,
                 looper.cur_pos);*/
-           
+
             //sendDataPacket("NAML",  &avgLoad, sizeof(float));
         }
-        if(now - last_action_time2 >= 500)
-        {
-            /*hw.PrintLine(
-                "Freq: %3.3f Hz, Closest Note Index: %d, Semitones1: %f, Mode: "
-                "%f, Scale: %f",
-                jm_harmonizer.frq,
-                jm_harmonizer.closeIndex,
-                jm_harmonizer.Semitones1,
-                jm_harmonizer.mode,
-                jm_harmonizer.scale);*/
 
-            last_action_time2 = now;
-        }
-
-
-        // Update file name and load the MIDI in the main while(1) loop
-        // Only way it works !?!
         if(strcmp(filepath, currentfilepath) != 0)
         {
             drum_player.LoadFromSD(filepath);
@@ -1396,9 +1623,9 @@ int main(void)
 
         //hw.PrintLine("%1.3f",envRMS*1000.0f);
 
-        if(sw1.FallingEdge() || comMIDI == 0)
+        if(sw2.FallingEdge() || comMIDI == 0)
         {
-            sw1_pressed = 1;
+            sw2_pressed = 1;
             hw.PrintLine("SW1 Pressed");
             looper.TriggerUndo(); // .undo();
             if(looper.cur_layer == 0)
@@ -1409,9 +1636,9 @@ int main(void)
             comMIDI = 255;
         }
 
-        if(sw2.FallingEdge() || comMIDI == 1)
+        if(sw1.FallingEdge() || comMIDI == 1)
         {
-            sw2_pressed = 1;
+            sw1_pressed = 1;
             hw.PrintLine("SW2 Pressed");
             //if(jm_drummer.enable == 0)
             looper.TriggerRecord();

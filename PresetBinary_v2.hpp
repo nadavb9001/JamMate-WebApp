@@ -10,15 +10,15 @@
 #define PRESET_MAGIC_BYTE_1     0x50
 #define PRESET_MAGIC_BYTE_2     0x4D
 #define PRESET_PROTOCOL_VERSION 0x02
-#define MAX_EFFECTS             17
+#define MAX_EFFECTS             18
 #define MAX_EFFECT_KNOBS        10
-#define MAX_EFFECT_DROPDOWNS    4
+#define MAX_EFFECT_DROPDOWNS    5
 #define PRESET_NAME_LENGTH      32
 
 static const char* EFFECT_NAMES[MAX_EFFECTS] = {
     "GATE", "COMP", "AWAH", "OVRD", "DIST", "EQUL", "HARM",
     "VIBR", "CHOR", "OCTV", "FLNG", "PHAS", "TREM", "FIR ",
-    "DELY", "NAM ", "RVRB"
+    "DELY", "NAM ", "RVRB","GNRC"
 };
 
 struct EffectParams {
@@ -63,7 +63,7 @@ struct PresetBinary {
     uint16_t checksum;
 } __attribute__((packed));
 
-static_assert(sizeof(PresetBinary) == 297, "PresetBinary must be exactly 297 bytes");
+static_assert(sizeof(PresetBinary) == 330, "PresetBinary must be exactly 297 bytes");
 
 class PresetBinaryCodec {
 public:

@@ -13,7 +13,7 @@ import { BLEService } from './services/BLEService.js';
 import { Protocol } from './services/Protocol.js';
 
 const PRESETS_LOCKED = false;
-const DRUM_FX_ID = 17;
+const DRUM_FX_ID = 18;
 
 export const app = {
   config: APP_CONFIG,
@@ -346,7 +346,7 @@ export const app = {
       const state = Protocol.deserializeState(blob);
 
       // Ensure all effectStates initialized (safety check)
-      for (let i = 0; i < 17; i++) {
+      for (let i = 0; i < 18; i++) {
         if (!this.effectStates[i]) {
           this.effectStates[i] = { enabled: false, selected: false };
         }
@@ -358,7 +358,7 @@ export const app = {
       // Now safe to update from loaded state
       Object.keys(state.effectStates).forEach(idx => {
         const i = parseInt(idx);
-        if (i < 17 && this.effectStates[i]) {
+        if (i < 18 && this.effectStates[i]) {
           this.effectStates[i].enabled = state.effectStates[i].enabled;
           if (state.effectParams[i]) {
             this.effectParams[i] = { ...this.effectParams[i], ...state.effectParams[i] };
@@ -546,6 +546,8 @@ export const app = {
   // ========================================================
   // Preset Listeners
   // ========================================================
+  
+  
   setupPresetListeners() {
     const onPresetSelect = () => {
       const bankIndex = document.getElementById('presetBank').selectedIndex;
@@ -556,16 +558,50 @@ export const app = {
 
     document.getElementById('presetBank').addEventListener('change', onPresetSelect);
     document.getElementById('presetNum').addEventListener('change', onPresetSelect);
-
+	// Function to handle Flash Button Click
+	
     const modal = document.getElementById('saveModal');
 
     document.getElementById('btnSavePreset').onclick = () => {
       modal.classList.add('active');
     };
+	
+	// --------------------------------------------------------
+	// ROBUST SAVE MODAL HANDLER (Event Delegation)
+	// Works even if the Header/HTML is refreshed dynamically.
+	// --------------------------------------------------------
+	document.body.addEventListener('click', (e) => {
+		
+		// 1. OPEN MODAL (Check if clicked element is the Save Button or its icon)
+		if (e.target.closest('#btnSavePreset')) {
+			const modal = document.getElementById('saveModal');
+			if (modal) modal.style.display = 'flex';
+		}
+
+		// 2. CLOSE MODAL (Cancel Button)
+		if (e.target.closest('#btnCancelSave')) {
+			const modal = document.getElementById('saveModal');
+			if (modal) modal.style.display = 'none';
+		}
+	});
 
     document.getElementById('btnCancelSave').onclick = () => {
       modal.classList.remove('active');
     };
+	document.getElementById('flash-btn').addEventListener('click', () => {
+		if (confirm("Enter Bootloader Mode? The DSP will stop audio.")) {
+			console.log("[APP] Sending FLSH command...");
+			const packet = Protocol.createSystemPacket(Protocol.CMD.FLASH_DSP);
+			BLEService.send(packet);
+		}
+	});
+
+	// Function to handle Reset Button Click
+	document.getElementById('reset-btn').addEventListener('click', () => {
+		console.log("[APP] Sending RSTD command...");
+		const packet = Protocol.createSystemPacket(Protocol.CMD.RESET_DSP);
+		BLEService.send(packet);
+	});
 
     document.getElementById('btnConfirmSave').onclick = () => {
       const bankIndex = document.getElementById('saveBankSelect').selectedIndex;
@@ -834,7 +870,7 @@ export const app = {
 				}
 			};
 		}
-
+		
 		const btnConnect = document.getElementById('btnConnect');
 		if (btnConnect) {
 			btnConnect.onclick = () => {
@@ -865,6 +901,8 @@ export const app = {
 				}
 			});
 		};
+		
+		
 
 		setupDoubleClickHandler('whiteNoiseBtn', () => {
 			this.utilState.noise.enabled = !this.utilState.noise.enabled;
@@ -981,6 +1019,7 @@ export const app = {
 				View.updateStatus(isEnabled ? "Tuner ON" : "Tuner OFF");
 			});
 		}
+		
 		
 		
 			

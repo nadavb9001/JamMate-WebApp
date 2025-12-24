@@ -28,7 +28,7 @@
 #define MAX_BLOB_SIZE 1024  // Max preset size
 
 // Configuration
-const int FRAME_COUNT = 50;  // Change this to match your total number of frames
+const int FRAME_COUNT = 45;  // Change this to match your total number of frames
 const int FPS_DELAY = 0;     // Delay between frames (0 = max speed)
 
 // =========================================================================
@@ -45,7 +45,30 @@ bool tft_output(int16_t x, int16_t y, uint16_t w, uint16_t h, uint16_t* bitmap) 
   // Return 1 to decode the next block
   return 1;
 }
-
+// ===================================================================
+// FX LAYOUT TABLE (Knob Count, Dropdown Count)
+// Match order in config.js
+// ===================================================================
+const uint8_t FX_LAYOUT[18][2] = {
+  { 5, 0 },   // 0: Gate
+  { 8, 0 },   // 1: Comp
+  { 7, 0 },   // 2: Awah
+  { 10, 2 },  // 3: Ovrd
+  { 10, 2 },  // 4: Dist
+  { 10, 2 },  // 5: Equl
+  { 6, 4 },   // 6: Harm
+  { 3, 0 },   // 7: Vibr
+  { 7, 0 },   // 8: Chor
+  { 5, 2 },   // 9: Octv
+  { 5, 0 },   // 10: Flng
+  { 7, 1 },   // 11: Phas
+  { 4, 2 },   // 12: Trem
+  { 6, 5 },   // 13: FIR  (6 Knobs, 5 Drops: amp, tone, points, type, file)
+  { 9, 3 },   // 14: Dely (9 Knobs, 3 Drops: type, div, multi)
+  { 2, 1 },   // 15: NAM  (2 Knobs, 1 Drop: model)
+  { 10, 2 },  // 16: Rvrb
+  { 10, 2 }   // 17: Gnrc (Generic)
+};
 
 // ===================================================================
 // DEVELOPMENT MODE
@@ -98,7 +121,6 @@ void updateDSPFromPreset();
 // Convert Internal Struct -> Protocol v3 Blob
 size_t serializeStructToBlob(const Preset& p, uint8_t* buf) {
   size_t offset = 0;
-
   // 1. Header
   buf[offset++] = 0x03;  // Version
   buf[offset++] = p.bpm;
@@ -111,30 +133,30 @@ size_t serializeStructToBlob(const Preset& p, uint8_t* buf) {
 
   // 2. Effects Loop
   for (int i = 0; i < MAX_EFFECTS; i++) {
-    buf[offset++] = i;  // ID
+    buf[offset++] = i; // ID
     buf[offset++] = p.effects[i].enabled ? 1 : 0;
 
-    buf[offset++] = 10;  // Knob Count
-    memcpy(&buf[offset], p.effects[i].knobs, 10);
-    offset += 10;
+    // [FIX] Use Macro instead of hardcoded '10'
+    buf[offset++] = MAX_EFFECT_KNOBS; 
+    memcpy(&buf[offset], p.effects[i].knobs, MAX_EFFECT_KNOBS);
+    offset += MAX_EFFECT_KNOBS;
 
-    buf[offset++] = 4;  // Drop Count
-    memcpy(&buf[offset], p.effects[i].dropdowns, 4);
-    offset += 4;
+    // [FIX] Use Macro instead of hardcoded '4' (This was causing the FIR bug)
+    buf[offset++] = MAX_EFFECT_DROPDOWNS; 
+    memcpy(&buf[offset], p.effects[i].dropdowns, MAX_EFFECT_DROPDOWNS);
+    offset += MAX_EFFECT_DROPDOWNS;
   }
 
   // 3. EQ Data
-  // Tag 0xFE indicates EQ block start
-  buf[offset++] = 0xFE;
-  buf[offset++] = 12;  // Count (Always 12 bands)
+  buf[offset++] = 0xFE; // Tag
+  buf[offset++] = 12;   // Count
 
   for (int i = 0; i < 12; i++) {
-    // Write 5 bytes per band: [FreqL, FreqH, Gain, Q, Enabled]
     buf[offset++] = (uint8_t)(p.eqPoints[i].freq & 0xFF);
     buf[offset++] = (uint8_t)(p.eqPoints[i].freq >> 8);
     buf[offset++] = (uint8_t)p.eqPoints[i].gain;
     buf[offset++] = p.eqPoints[i].q;
-    buf[offset++] = p.eqPoints[i].enabled ? 1 : 0;  // <--- ADDED THIS BYTE
+    buf[offset++] = p.eqPoints[i].enabled ? 1 : 0;
   }
 
   return offset;
@@ -200,23 +222,30 @@ void parseBlobToStruct(const uint8_t* buf, size_t len, Preset& p) {
     uint8_t enabled = buf[offset++];
     uint8_t kCount = buf[offset++];
 
-    if (id < MAX_EFFECTS) {
+   if (id < MAX_EFFECTS) {
       p.effects[id].enabled = (enabled != 0);
+      
+      // Parse Knobs
       for (int k = 0; k < kCount; k++) {
         if (offset < len) {
           uint8_t val = buf[offset++];
-          if (k < 10) p.effects[id].knobs[k] = val;
+          // [FIX] Use Macro
+          if (k < MAX_EFFECT_KNOBS) p.effects[id].knobs[k] = val;
         }
       }
+      
+      // Parse Dropdowns
       if (offset < len) {
         uint8_t dCount = buf[offset++];
         for (int d = 0; d < dCount; d++) {
           if (offset < len) {
             uint8_t val = buf[offset++];
-            if (d < 4) p.effects[id].dropdowns[d] = val;
+            // [FIX] Use Macro (Was hardcoded to 4, now 5)
+            if (d < MAX_EFFECT_DROPDOWNS) p.effects[id].dropdowns[d] = val;
           }
         }
       }
+    
     } else {
       // Unknown ID - skip over it
       offset += kCount;  // Skip knobs
@@ -393,30 +422,80 @@ void processDSPPacket(const char* header, uint8_t* data, uint32_t len) {
 // ===================================================================
 // BLE Handler
 // ===================================================================
+// ===================================================================
+// BLE Handler (Fixed for 1-byte commands)
+// ===================================================================
 void onBLEDataReceived(uint8_t* data, size_t len) {
-  if (len < 3) return;
+
+  // 1. Debug Log
+  Serial.printf("[BLE-DEBUG] Data received! Len: %d, Cmd: 0x%02X\n", len, data[0]);
+
+  // 2. Safety Check (Must have at least a Command ID)
+  if (len < 1) return;
+
   uint8_t cmd = data[0];
-  uint16_t payloadLen = data[1] | (data[2] << 8);
-  if (len < payloadLen + 3) return;
-  uint8_t* payload = &data[3];
-  Serial.println(cmd);
+
+  // 3. Payload Extraction (Only if len >= 3)
+  // We don't return yet, because some commands (0x60, 0x61) don't have payloads.
+  uint16_t payloadLen = 0;
+  uint8_t* payload = nullptr;
+
+  if (len >= 3) {
+    payloadLen = data[1] | (data[2] << 8);
+    // Safety: Ensure advertised payload length matches actual buffer
+    if (len >= payloadLen + 3) {
+      payload = &data[3];
+    }
+  }
+
+  // 4. Command Router
   switch (cmd) {
     // --- LIVE CONTROLS ---
-    case 0x20:
-      {  // Param
+   // --- LIVE CONTROLS ---
+    // --- LIVE CONTROLS ---
+    case 0x20:  // Param
+      {
+        if (!payload) break;
         uint8_t fx = payload[0];
         uint8_t pid = payload[1];
         uint8_t val = payload[2];
-        if (fx < MAX_EFFECTS) {
-          if (pid < 10) currentPreset.effects[fx].knobs[pid] = val;
-          else currentPreset.effects[fx].dropdowns[pid - 10] = val;
+
+        // [FIX 1] Allow access to Effect 17 (Generic)
+        if (fx < MAX_EFFECTS) { 
+          
+          uint8_t actualKnobs = FX_LAYOUT[fx][0];
+          
+          // [FIX 2] REMOVED "&& pid < 10" check.
+          // This allows params 10, 11, etc. (used by FIR) to be processed.
+          if (pid >= actualKnobs) {
+             uint8_t dropdownIdx = pid - actualKnobs;
+             
+             // Remap to internal storage index (10+)
+             pid = 10 + dropdownIdx;
+             
+             Serial.printf("[BLE] Remapped FX %d PID %d -> %d (Drop %d)\n", fx, payload[1], pid, dropdownIdx);
+          }
+
+          // Store in Struct
+          if (pid < 10) {
+             currentPreset.effects[fx].knobs[pid] = val;
+          } else {
+             // Map 10->0, 11->1...
+             // Safety check for array bounds
+             uint8_t dIdx = pid - 10;
+             if(dIdx < MAX_EFFECT_DROPDOWNS) {
+                currentPreset.effects[fx].dropdowns[dIdx] = val;
+             }
+          }
+          
           sendEffectChangeToDSP(fx, currentPreset.effects[fx].enabled,
                                 currentPreset.effects[fx].knobs, currentPreset.effects[fx].dropdowns);
         }
         break;
       }
-    case 0x21:
-      {  // Toggle
+    case 0x21:  // Toggle
+      {
+        if (!payload) break;
         uint8_t fx = payload[0];
         uint8_t en = payload[1];
         if (fx < MAX_EFFECTS) {
@@ -425,19 +504,15 @@ void onBLEDataReceived(uint8_t* data, size_t len) {
         }
         break;
       }
-    // ============================================================
-    // 0x22: SET_EQ_BAND (IIR Update)
-    // Payload: [BandIdx(1), En(1), Freq(2), Gain(1), Q(1)]
-    // ============================================================
-    case 0x22:
+    case 0x22:  // SET_EQ_BAND
       {
+        if (!payload) break;
         uint8_t bandIdx = payload[0];
         uint8_t enabled = payload[1];
         uint16_t freq = payload[2] | (payload[3] << 8);
         int8_t gain = (int8_t)payload[4];
         uint8_t q = payload[5];
 
-        // --- FIX: Update Internal RAM so we don't lose this change if we save later ---
         if (bandIdx < 12) {
           currentPreset.eqPoints[bandIdx].freq = freq;
           currentPreset.eqPoints[bandIdx].gain = gain;
@@ -446,11 +521,11 @@ void onBLEDataReceived(uint8_t* data, size_t len) {
         }
         delay(10);
         sendEQBandToDSP(bandIdx, enabled, freq, gain, q);
-
         break;
       }
-    case 0x23:
-      {  // Util
+    case 0x23:  // Util
+      {
+        if (!payload) break;
         uint8_t t = payload[0];
         uint8_t en = payload[1];
         uint8_t lv = payload[2];
@@ -462,13 +537,11 @@ void onBLEDataReceived(uint8_t* data, size_t len) {
         if (t == 2) {
           display.toggleTuner(en > 0);
         }
-
-
         break;
       }
-    case 0x25:
-      {  // Global
-        if (payloadLen < 4) break;
+    case 0x25:  // Global
+      {
+        if (!payload || payloadLen < 4) break;
         uint8_t master = payload[0];
         uint8_t btVol = payload[1];
         uint8_t bpm = payload[2];
@@ -494,8 +567,8 @@ void onBLEDataReceived(uint8_t* data, size_t len) {
         sendToDSP("GEN ", dspPayload, 4);
         break;
       }
-    case 0x30:
-      {  // Handshake
+    case 0x30:  // Handshake
+      {
         size_t size = serializeStructToBlob(currentPreset, blobBuffer);
         uint8_t head[3] = { 0x31, (uint8_t)(size & 0xFF), (uint8_t)(size >> 8) };
         btManager.sendBLEData(head, 3);
@@ -503,8 +576,9 @@ void onBLEDataReceived(uint8_t* data, size_t len) {
         Serial.println("[BLE] Sent Handshake State");
         break;
       }
-    case 0x32:
-      {  // SAVE_PRESET
+    case 0x32:  // SAVE_PRESET
+      {
+        if (!payload) break;
         uint8_t bank = payload[0];
         uint8_t num = payload[1];
         uint8_t* blob = &payload[2];
@@ -529,8 +603,9 @@ void onBLEDataReceived(uint8_t* data, size_t len) {
         }
         break;
       }
-    case 0x33:
-      {  // LOAD_REQ
+    case 0x33:  // LOAD_REQ
+      {
+        if (!payload) break;
         uint8_t bank = payload[0];
         uint8_t num = payload[1];
         char fname[32];
@@ -557,51 +632,87 @@ void onBLEDataReceived(uint8_t* data, size_t len) {
         }
         break;
       }
+    // --- DRUM PATTERN EDIT (0x40) ---
+    // Payload: [RowIndex, V0, V1, ... V15] (17 bytes)
+    case 0x40:
+      {
+        if (payloadLen < 17) break;
+        uint8_t row = payload[0];
+        uint8_t* vels = &payload[1];
+
+        // Use the new helper to split and send via robust protocol
+        sendDrumPatternToDSP(row, vels);
+        break;
+      }
+
+    // --- DRUM SETTINGS UPDATE (0x41) ---
+    // Fixes the raw write issue
     case 0x41:
-      {  // SET_DRUM_UPDATE
-        if (payloadLen < 14) {
-          Serial.println("[BLE] ✗ Drum packet too short");
-          break;
-        }
+      {
+        // App sends: [Header(4), En, Lvl, BPM, LoopEn, LoopLvl... Fill, Style, LoopNum, Sync]
+        // We verify header but strip it for the Robust Payload
+        if (payloadLen < 14) break;
+        if (payload[0] != 0x44) break;  // Check 'D' of DRUM
 
-        if (payload[0] != 0x44 || payload[1] != 0x52 || payload[2] != 0x55 || payload[3] != 0x4D) {
-          Serial.printf("[BLE] ✗ Invalid drum header\n");
-          break;
-        }
+        // Mapping App Payload -> Daisy "DRUM" Handler indices
+        // App Payload Index:
+        // 4: En, 5: Lvl, 6: BPM, 8: ReverbLvl, 13: LoopNum, 14: Style
 
-        uint8_t drumEnable = payload[4];
-        uint8_t drumLevel = payload[5];
-        uint8_t drumBpmDiv = payload[6];
-        uint8_t looperEnable = payload[7];
-        uint8_t looperLevel = payload[8];
-        uint8_t drumFill = payload[13];
-        uint8_t drumStyle = payload[14];
-        uint8_t loopNumber = payload[15];
-        uint8_t loopSync = payload[16];
+        uint8_t dspP[16] = { 0 };  // Clear buffer
 
-        Serial.printf("[BLE] ✓ Drum: En=%d Lvl=%d BPM=%d Fill=%d Style=%d\n loop num=%d loop sync=%d\n",
-                      drumEnable, drumLevel, drumBpmDiv * 10, drumFill, drumStyle, loopNumber, loopSync);
+        dspP[0] = payload[4];  // Enable  -> Daisy data[4]
+        dspP[1] = payload[5];  // Level   -> Daisy data[5]
+        dspP[2] = payload[6];  // BPM     -> Daisy data[6]
+        dspP[3] = 0;           // Spare   -> Daisy data[7]
+        dspP[4] = payload[8];  // Rev Lvl -> Daisy data[8] (Looper lvl in app, Reverb in Daisy?)
 
-        uint8_t dspPacket[17];
-        dspPacket[0] = 0x44;
-        dspPacket[1] = 0x52;
-        dspPacket[2] = 0x55;
-        dspPacket[3] = 0x4D;
-        dspPacket[4] = drumEnable;
-        dspPacket[5] = drumLevel;
-        dspPacket[6] = drumBpmDiv;
-        dspPacket[7] = looperEnable;
-        dspPacket[8] = looperLevel;
-        dspPacket[9] = 0;
-        dspPacket[10] = dspPacket[11] = dspPacket[12] = 0;
-        dspPacket[13] = drumFill;
-        dspPacket[14] = drumStyle;
-        dspPacket[15] = loopNumber;
-        dspPacket[16] = loopSync;
+        // Indices 9-12 Spares
 
-        dspSerial.write(dspPacket, 17);
-        Serial.println("[DSP] ✓ Drum packet forwarded (17 bytes)");
+        dspP[9] = payload[15];   // LoopNum -> Daisy data[13]
+        dspP[10] = payload[14];  // Style   -> Daisy data[14]
 
+        // Send via Robust Protocol
+        sendDataRobust("DRUM", dspP, 11);
+        break;
+      }
+
+    // =================================================================
+    // SYSTEM COMMANDS (Safe Version)
+    // =================================================================
+    case 0x60:  // CMD: FLASH_DSP
+      {
+        Serial.println("[BLE] Processing FLASH command...");
+
+        // 1. Create explicit buffer for header (Safe memory)
+        char header[] = "FLSH";
+
+        // 2. Create dummy payload so we never pass nullptr
+        uint8_t dummy = 0;
+
+        // 3. Call with valid pointers
+        sendToDSP(header, &dummy, 0);
+        break;
+      }
+
+    case 0x61:  // CMD: RESET_DSP
+      {
+        Serial.println("[BLE] Processing RESET command...");
+
+        // 1. Create explicit buffer
+        char header[] = "RSTD";
+
+        // 2. Dummy payload
+        uint8_t dummy = 0;
+
+        // 3. Call with valid pointers
+        sendToDSP(header, &dummy, 0);
+        break;
+      }
+    // NEW COMMAND: START MIDI SCAN
+    case 0x62:
+      {
+        Serial.println("[BLE] Received MIDI Scan Request.");
+        btManager.startMidiScan();  // <--- Wakes up the background task
         break;
       }
   }
@@ -611,58 +722,87 @@ void onBLEDataReceived(uint8_t* data, size_t len) {
 // DSP Helpers
 // ===================================================================
 // ===================================================================
-// DSP Helpers - 17-Byte Uniform Packet
+// HELPER: Send Drum Pattern (Splits into 2 Robust Packets)
 // ===================================================================
-
-void sendToDSP(const char cmd[4], uint8_t* payload, size_t len) {
-  uint8_t buf[17] = { 0 };  // Initialize to zeros (padding)
-  memcpy(buf, cmd, 4);
-  if (payload && len > 0) {
-    memcpy(buf + 4, payload, min(len, (size_t)13));
-  }
-  dspSerial.write(buf, 17);
+void sendDrumPatternToDSP(uint8_t rowIdx, uint8_t* velocities) {
+    // Daisy expects "DRM1" for steps 0-9 (10 bytes) + Row Index
+    // Daisy expects "DRM2" for steps 10-15 (6 bytes) + Row Index
+    
+    // --- Chunk 1: DRM1 ---
+    uint8_t p1[11];
+    p1[0] = rowIdx;                  // Byte 0: Row Index
+    memcpy(&p1[1], &velocities[0], 10); // Bytes 1-10: Velocities 0-9
+    sendDataRobust("DRM1", p1, 11);
+    
+    delay(5); // Small safety gap for DMA
+    
+    // --- Chunk 2: DRM2 ---
+    uint8_t p2[7];
+    p2[0] = rowIdx;                  // Byte 0: Row Index
+    memcpy(&p2[1], &velocities[10], 6); // Bytes 1-6: Velocities 10-15
+    sendDataRobust("DRM2", p2, 7);
 }
 
-// -----------------------------------------------------------
-// Unified Effect Sender
-// Flattens [Knobs] + [Dropdowns] into Bytes 5-16
-// -----------------------------------------------------------
+
+/*
 void sendEffectChangeToDSP(uint8_t idx, uint8_t en, const uint8_t* k, const uint8_t* d) {
   const char* name;
   if (idx < MAX_EFFECTS) name = EFFECT_NAMES[idx];
   else name = "GEN ";
 
-  uint8_t buf[17] = { 0 };  // Zero initialize (handles padding automatically)
+  uint8_t buf[17] = { 0 };
 
-  // 1. Header (0-3)
+  // 1. Header & Enable
   memcpy(buf, name, 4);
-
-  // 2. Enable (4)
   buf[4] = en ? 1 : 0;
 
-  // 3. Payload (5-16): Concatenate Knobs then Dropdowns
+  // 2. Determine Valid Data Counts
+  uint8_t kCount = (idx < 17) ? FX_LAYOUT[idx][0] : 10;
+  uint8_t dCount = (idx < 17) ? FX_LAYOUT[idx][1] : 2;
+
+  // 3. Pack Payload (Max 12 Bytes)
   int offset = 5;
-  int maxOffset = 17;
 
-  // Note: Preset struct sizes are fixed (10 knobs, 4 drops)
-  // We simply fill the buffer until it's full.
-
-  // Copy Knobs (Struct has 10)
+  // Write ONLY the valid knobs (skipping unused ones)
   if (k) {
-    for (int i = 0; i < 10 && offset < maxOffset; i++) {
+    for (int i = 0; i < kCount && offset < 17; i++) {
       buf[offset++] = k[i];
     }
   }
 
-  // Copy Dropdowns (Struct has 4)
+  // Write Dropdowns immediately after valid knobs
   if (d) {
-    for (int i = 0; i < 4 && offset < maxOffset; i++) {
+    for (int i = 0; i < dCount && offset < 17; i++) {
       buf[offset++] = d[i];
     }
   }
 
-  // Send exactly 17 bytes
-  delay(10);  // Small delay for DSP UART stability
+  // 4. Send
+  dspSerial.write(buf, 17);
+
+  // Debug to Serial Monitor to verify
+
+  Serial.print("[DSP] Sent: ");
+  Serial.print(name);
+  for (int i = 0; i < 17; i++) {
+    Serial.printf(" %02X", buf[i]);
+  }
+  Serial.println();
+}
+
+void sendToDSP(const char cmd[4], uint8_t* payload, size_t len) {
+  uint8_t buf[17] = { 0 };
+  memcpy(buf, cmd, 4);
+  // Byte 4 is usually Enable/Flag, payload starts at 5 in standard packets
+  // But for raw commands, we just copy payload to 4
+  // Note: Standard FX packets handle byte 4 manually in the function below.
+  // This helper is for GENERIC cmds like "UTIL".
+  if (payload && len > 0) {
+    memcpy(buf + 4, payload, min(len, (size_t)13));
+  }
+  //if (len == 0) {
+  //  memcpy(buf + 4, 0, 13);
+  //}
   dspSerial.write(buf, 17);
 }
 
@@ -677,7 +817,7 @@ void sendEQBandToDSP(uint8_t b, uint8_t enabled, uint16_t f, int8_t g, uint8_t q
 }
 
 void updateDSPFromPreset() {
-  uint8_t p[13] = { currentPreset.bank, currentPreset.number, 255 /*currentPreset.masterVolume*/, currentPreset.bpm };
+  uint8_t p[13] = { currentPreset.bank, currentPreset.number, 255 , currentPreset.bpm };
   sendToDSP("PRES", p, 13);
 
   for (int i = 0; i < MAX_EFFECTS; i++) {
@@ -695,6 +835,156 @@ void updateDSPFromPreset() {
                     currentPreset.eqPoints[i].gain,
                     currentPreset.eqPoints[i].q);
     delay(10);  // Short delay to prevent buffer overflow
+  }
+}*/
+
+// ===================================================================
+// NEW: Helper for Robust Protocol (Sync + Length + Header + Data)
+// ===================================================================
+void sendDataRobust(const char* header, const uint8_t* payload, size_t len) {
+  uint8_t sync = 0xAA;
+  uint8_t totalLen = 4 + len; 
+
+  if (totalLen > 255) return; 
+
+  // 1. Send Sync
+  dspSerial.write(sync);      
+  dspSerial.flush();    // Force byte out to wire
+  delay(2);             // Wait 2ms for Daisy ISR to wake up and switch state
+
+  // 2. Send Length
+  dspSerial.write(totalLen);  
+  dspSerial.flush();    // Force byte out to wire
+  delay(2);             // Wait 2ms for Daisy to allocate buffer
+
+  // 3. Send Header + Data (These can be burst sent)
+  dspSerial.write(header, 4); 
+  if (len > 0 && payload != NULL) {
+    dspSerial.write(payload, len); 
+  }
+  // dspSerial.flush(); // Optional: wait for packet to finish
+}
+
+// ===================================================================
+// UPDATED: Effect Sender
+// ===================================================================
+/*void sendEffectChangeToDSP(uint8_t idx, uint8_t en, const uint8_t* k, const uint8_t* d) {
+  const char* name;
+  if (idx < MAX_EFFECTS) name = EFFECT_NAMES[idx];
+  else name = "GEN ";
+
+  // Buffer: Enable(1) + Knobs(10) + Drops(4) = 15 bytes max payload
+  uint8_t payload[20];
+  int offset = 0;
+
+  // 1. Enable Flag
+  payload[offset++] = en ? 1 : 0;
+
+  // 2. Determine Valid Data Counts
+  uint8_t kCount = (idx < 17) ? FX_LAYOUT[idx][0] : 10;
+  uint8_t dCount = (idx < 17) ? FX_LAYOUT[idx][1] : 4; // Allow up to 4 drops
+
+  // 3. Pack Knobs (Limit to 10)
+  if (k) {
+    for (int i = 0; i < kCount && i < 10; i++) {
+      payload[offset++] = k[i];
+    }
+  }
+
+  // 4. Pack Dropdowns (Limit to 4)
+  // [FIX 2] Removed "&& i < 2" limit. Now sends all valid drops.
+  if (d) {
+    for (int i = 0; i < dCount && i < 4; i++) {
+      payload[offset++] = d[i];
+    }
+  }
+
+  // 5. Send via Robust Protocol
+  // The payload length is now dynamic (e.g., NAM = 1+2+1 = 4 bytes)
+  sendDataRobust(name, payload, offset);
+}*/
+
+// ===================================================================
+// UPDATED: Effect Sender (Dynamic Payload - No Padding)
+// ===================================================================
+void sendEffectChangeToDSP(uint8_t idx, uint8_t en, const uint8_t* k, const uint8_t* d) {
+  const char* name;
+  if (idx < MAX_EFFECTS) name = EFFECT_NAMES[idx];
+  else name = "GEN ";
+
+  uint8_t kCount = (idx < MAX_EFFECTS) ? FX_LAYOUT[idx][0] : 0;
+  uint8_t dCount = (idx < MAX_EFFECTS) ? FX_LAYOUT[idx][1] : 0;
+
+  // [FIX] Increase buffer size (20 is safe, strictly needs 16)
+  uint8_t payload[32]; 
+  int offset = 0;
+
+  payload[offset++] = en ? 1 : 0;
+
+  // Pack ACTIVE Knobs
+  if (k) {
+    for (int i = 0; i < kCount; i++) {
+      payload[offset++] = k[i];
+    }
+  }
+
+  // Pack ACTIVE Dropdowns
+  if (d) {
+    for (int i = 0; i < dCount; i++) {
+      payload[offset++] = d[i];
+    }
+  }
+
+  sendDataRobust(name, payload, offset);
+}
+
+// ===================================================================
+// UPDATED: Generic Sender
+// ===================================================================
+void sendToDSP(const char cmd[4], uint8_t* payload, size_t len) {
+  // Simple wrapper around the robust sender
+  sendDataRobust(cmd, payload, len);
+}
+
+// ===================================================================
+// UPDATED: EQ Sender
+// ===================================================================
+void sendEQBandToDSP(uint8_t b, uint8_t enabled, uint16_t f, int8_t g, uint8_t q) {
+  char h[5];
+  if (b == 0) strcpy(h, "EQHP");
+  else if (b == 11) strcpy(h, "EQLP");
+  else snprintf(h, 5, "EQ%02d", b);
+
+  // Pack the 5 payload bytes
+  uint8_t p[5] = { enabled, (uint8_t)(f >> 8), (uint8_t)(f & 0xFF), (uint8_t)g, q };
+
+  // Send
+  sendDataRobust(h, p, 5);
+}
+
+// ===================================================================
+// UPDATED: Full Preset Update
+// ===================================================================
+void updateDSPFromPreset() {
+  uint8_t p[13] = { currentPreset.bank, currentPreset.number, 255 /*currentPreset.masterVolume*/, currentPreset.bpm };
+  sendToDSP("PRES", p, 4);  // Note: Payload length is 4 based on array init above
+
+  for (int i = 0; i < MAX_EFFECTS; i++) {
+    sendEffectChangeToDSP(i, currentPreset.effects[i].enabled,
+                          currentPreset.effects[i].knobs, currentPreset.effects[i].dropdowns);
+    // With the robust protocol + DMA, we can reduce delays,
+    // but keeping a small one ensures the buffer handles ring processing.
+    delay(5);
+  }
+
+  // Update EQ Bands
+  for (int i = 0; i < 12; i++) {
+    sendEQBandToDSP(i,
+                    currentPreset.eqPoints[i].enabled ? 1 : 0,
+                    currentPreset.eqPoints[i].freq,
+                    currentPreset.eqPoints[i].gain,
+                    currentPreset.eqPoints[i].q);
+    delay(5);
   }
 }
 
@@ -1078,7 +1368,7 @@ void setup() {
 
   // 5. Run Boot Animation (Now safe to run while BT advertises in background)
   playBootAnimation();
-
+  delay(2000);
   // 6. REMOVE BLOCKING DELAY
   // delay(2000);  <-- Delete this line. It makes the GUI unresponsive for no reason.
 

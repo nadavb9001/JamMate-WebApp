@@ -16,7 +16,18 @@ export const Protocol = {
     SET_DRUM_PATTERN: 0x40,
     SET_DRUM_UPDATE: 0x41,
 	NAM_LIST_DATA: 0x45,
-	IR_LIST_DATA: 0x46
+	IR_LIST_DATA: 0x46,
+	FLASH_DSP: 0x60,  // Command to trigger "FLSH"
+    RESET_DSP: 0x61,   // Command to trigger "RSTD"
+	CMD_START_MIDI_SCAN: 0x62
+  },
+  
+  // Helper to create the packet (Simple command, no payload)
+  createSystemPacket(cmdId) {
+    const buffer = new ArrayBuffer(1);
+    const view = new DataView(buffer);
+    view.setUint8(0, cmdId);
+    return buffer;
   },
 
   // ========================================================
@@ -49,7 +60,7 @@ export const Protocol = {
     parts.push(nameBytes);
     
     // Serialize Effects using Config counts
-    for (let i = 0; i < 17; i++) {
+    for (let i = 0; i < 18; i++) {
       const fxState = state.effectStates[i] || { enabled: false };
       const fxParams = state.effectParams[i] || {};
       

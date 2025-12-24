@@ -15,7 +15,7 @@ extern Preset currentPreset;   // Reference to global preset
 // --- UI Constants ---
 constexpr int SCREEN_WIDTH = 240;
 constexpr int SCREEN_HEIGHT = 320;
-constexpr int TOTAL_FX = 17; 
+constexpr int TOTAL_FX = 18; 
 constexpr int TOTAL_EXTRA_BUTTONS = 3; 
 constexpr int TOTAL_MAIN_MENU_RECTS = 23; 
 constexpr int HIGHLIGHT_BORDER_THICKNESS = 3;
@@ -28,7 +28,8 @@ enum RectButtonType { RECT_BUTTON, RECT_SELECTION, RECT_PROGRESS };
 enum DisplayState {
     STATE_MAIN_MENU,
     STATE_LOOPER,
-    STATE_TUNER // <--- ADDED
+    STATE_TUNER,
+    STATE_FX_EDIT // <--- ADDED
 };
 
 // --- Base Button Class ---
@@ -46,6 +47,16 @@ public:
           progressColor(TFT_GREEN), progressValue(0), selected(false), enabled(true), highlighted(false) {}
 
     virtual void draw(TFT_eSPI& tft) {}
+};
+
+// --- Helper Struct for FX Layout ---
+struct FxLayout {
+    uint8_t knobCount;
+    const char** knobLabels;
+    uint8_t dropCount;
+    const char** dropLabels;
+    const char*** dropOptions;      // <--- NEW: Pointer to array of string arrays
+    const uint8_t* dropOptionCounts;// <--- NEW: Pointer to array of counts
 };
 
 // --- Manager Class ---
@@ -125,6 +136,20 @@ private:
     static const GFXfont& FONT_LOOPER_BIG;
     // You might want a larger font for the Note Name
     // static const GFXfont& FONT_TUNER_NOTE; 
+
+    // --- FX Edit State ---
+    int fxEditIndex;         // Which effect are we editing (0-17)
+    int fxParamIndex;        // Which parameter is selected
+    bool fxParamAdjusting;   // Are we currently changing the value?
+    
+    // Layout Data Definitions
+    static const FxLayout fxLayouts[TOTAL_FX];
+
+    // Helpers
+    void handleFxEditMode();
+    void drawFxEditScreen(bool fullRedraw = true, int prevParamIndex = -1);
+    void drawFxParamSlider(int index, const char* label, uint8_t value, bool selected, bool adjusting, bool partialUpdate = false);
+    void drawFxParamDropdown(int index, const char* label, uint8_t value, bool selected, bool adjusting, bool partialUpdate = false);
 
     // Helpers
     void drawMainScreen();

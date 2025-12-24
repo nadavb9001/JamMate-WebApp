@@ -77,7 +77,7 @@
                     <select id="drumStyle" style="width: 100%;">
                         <option value="0">Rock</option><option value="1">Blues</option><option value="2">Jazz</option>
                         <option value="3">Shuffle</option><option value="4">Pop</option><option value="5">Metal</option>
-                        <option value="6">Latin</option><option value="7">R&amp;B</option><option value="8">Country</option><option value="9">Funk</option>
+                        <option value="6">Latin</option><option value="7">R&amp;B</option><option value="8">Country</option><option value="9">Funk</option><option value="10">Pattern</option>
                     </select>
                 </div>
                 <div>
@@ -138,9 +138,10 @@
         <div class="preset-controls">
             <h2 style="text-align: center; color: var(--color-accent); margin-bottom: 20px;">Daisy Control</h2>
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 20px;">
-                <button style="background: #f44; height: 60px;">Reset Daisy</button>
-                <button style="background: #f80; height: 60px;">Flash Daisy</button>
-            </div>
+				<button id="reset-btn" style="background: #f44; height: 60px;">Reset Daisy</button>
+				
+				<button id="flash-btn" style="background: #f80; height: 60px;">Flash Daisy</button>
+			</div>
             <div style="display: grid; grid-template-columns: 1fr 1fr auto; gap: 15px; align-items: center;">
                 <label class="checkbox"><input type="checkbox" id="btEnable"><span>Enable Bluetooth</span></label>
                 <label class="checkbox"><input type="checkbox" id="bleEnable"><span>Enable BLE</span></label>

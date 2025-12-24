@@ -40,7 +40,7 @@ public:
     // 2. Setup Client (MIDI Controller)
     pMidiClient = BLEDevice::createClient();
     pMidiClient->setClientCallbacks(new MidiClientCallbacks(this));
-
+    _scanEnabled = false;
     // 3. START BACKGROUND TASK
     // Runs on Core 0 to keep main loop (Core 1) free
     xTaskCreatePinnedToCore(
@@ -73,6 +73,13 @@ public:
     }
   }
 
+  void startMidiScan() {
+        if (!_scanEnabled) {
+            _scanEnabled = true;
+            Serial.println("[BT-MGR] MIDI Scanning Enabled!");
+        }
+    }
+
   void setA2DPvolume(uint8_t volume) {
     if (a2dpEnabled) a2dp_sink.set_volume(volume);
   }
@@ -100,6 +107,8 @@ public:
     }
   }
 
+  bool _scanEnabled;
+
 private:
   BLEServer* pServer;
   BLECharacteristic* pControlChar;
@@ -122,13 +131,20 @@ private:
       
       // Setup Polite Scanner
       BLEScan* pBLEScan = BLEDevice::getScan();
-      pBLEScan->setActiveScan(true);
+      pBLEScan->setActiveScan(false);
       // Interval 100ms, Window 50ms = 50% Duty Cycle
       // This allows Advertising packets to slip out during the 50ms gaps!
-      pBLEScan->setInterval(100); 
-      pBLEScan->setWindow(50);   
+      pBLEScan->setInterval(5000); 
+      pBLEScan->setWindow(25);   
 
       for(;;) {
+
+          if (!instance->_scanEnabled) {
+              // Sleep for 1 second to avoid hogging CPU while idle
+              vTaskDelay(1000 / portTICK_PERIOD_MS);
+              continue; // Skip the rest of the loop
+          }
+          
           // If NOT connected, search for the pedal
           if (!instance->midiConnected) {
               
@@ -229,7 +245,7 @@ private:
   }
   
   void setupA2DP() {
-    a2dp_sink.start("JamMate_Audio");
+    a2dp_sink.start("JamMate");
     a2dpEnabled = true;
   }
 

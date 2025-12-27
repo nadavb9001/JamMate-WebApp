@@ -1,87 +1,77 @@
 #pragma once
 
+#include "BluetoothA2DPSink.h"
 #include <BLEDevice.h>
 #include <BLEServer.h>
 #include <BLEUtils.h>
 #include <BLE2902.h>
-#include <BLEClient.h> 
-#include <BLEScan.h> // Required for scanning
-#include "BluetoothA2DPSink.h"
+#include "esp_bt_main.h"
+#include "esp_bt_device.h"
+#include "esp_gap_bt_api.h"
+#include "driver/i2s.h"
 
+// UUIDs for WebApp Control
 #define BLE_SERVICE_UUID        "6e400001-b5a3-f393-e0a9-e50e24dcca9f"
 #define BLE_CHARACTERISTIC_UUID "6e400002-b5a3-f393-e0a9-e50e24dcca9f"
 
-// --- MIDI CONTROLLER CONFIG ---
-static BLEAddress midiTargetAddress("34:DE:45:D8:6B:A6");
-static BLEUUID    midiServiceUUID("03B80E5A-EDE8-4B33-A751-6CE34EC4C700");
-static BLEUUID    midiCharUUID("7772E5DB-3868-4112-A1A9-F2669D106BF3");
-
 class BluetoothManager {
 public:
-  typedef void (*MidiCallbackFunction)(uint8_t* data, size_t len);
   typedef void (*BLEDataCallback)(uint8_t* data, size_t len);
-
-  static MidiCallbackFunction onMidiReceive;
+  typedef void (*MidiCallbackFunction)(uint8_t* data, size_t len); // Dummy for compatibility
 
   BluetoothManager()
     : pServer(nullptr), pControlChar(nullptr), pAdvertising(nullptr),
       bleControlConnected(false), a2dpEnabled(false), bleDataCallback(nullptr),
-      pCurrentPreset(nullptr), 
-      pMidiClient(nullptr), pRemoteMidiChar(nullptr), midiConnected(false) {}
+      pCurrentPreset(nullptr) {}
 
-  void begin(const char* deviceName = "JamMate", bool enableA2DP = false) {
-    Serial.println("[BT] Initializing Bluetooth...");
-    BLEDevice::init(deviceName);
+  void begin(const char* deviceName = "JamMate", bool enableA2DP = true) {
+    Serial.println("[BT] Initializing Hybrid Mode...");
+
+    // ---------------------------------------------------------
+    // STEP 1: Start A2DP (Audio) FIRST
+    // ---------------------------------------------------------
+    // This forces the ESP32 Controller into "Classic/Dual" mode.
+    if (enableA2DP) {
+      setupA2DP("JamMate Audio"); // Distinct name for Audio
+    }
+
+    // ---------------------------------------------------------
+    // STEP 2: Initialize BLE Stack
+    // ---------------------------------------------------------
+    // Attaches to the existing controller started by A2DP.
+    BLEDevice::init(deviceName); 
     BLEDevice::setMTU(517);
-    
-    // 1. Setup Server (Web App)
+
+    // ---------------------------------------------------------
+    // STEP 3: Setup WebApp Server (GATT)
+    // ---------------------------------------------------------
     setupBLEGATT();
 
-    // 2. Setup Client (MIDI Controller)
-    pMidiClient = BLEDevice::createClient();
-    pMidiClient->setClientCallbacks(new MidiClientCallbacks(this));
-    _scanEnabled = false;
-    // 3. START BACKGROUND TASK
-    // Runs on Core 0 to keep main loop (Core 1) free
-    xTaskCreatePinnedToCore(
-        midiConnectionTask,   
-        "MidiTask",           
-        8192,                 // Increased stack size just in case
-        this,                 
-        1,                    
-        NULL,                 
-        0                     
-    );
+    // ---------------------------------------------------------
+    // STEP 4: FORCE CLASSIC BLUETOOTH VISIBILITY
+    // ---------------------------------------------------------
+    // Explicitly make the device discoverable for Audio connections.
+    esp_bt_gap_set_scan_mode(ESP_BT_CONNECTABLE, ESP_BT_GENERAL_DISCOVERABLE);
 
-    if (enableA2DP) {
-      setupA2DP();
-    }
-    Serial.println("[BT] ✓ Bluetooth initialized");
+    Serial.println("[BT] ✓ Hybrid Mode Ready");
+    Serial.println("[BT] Look for 'JamMate Audio' in Bluetooth Settings");
   }
 
-  // ... [Standard Setters - No Changes] ...
-  void setA2DPPinConfig(const i2s_pin_config_t& pinConfig) { a2dp_sink.set_pin_config(pinConfig); }
+  // --- Configuration ---
+  void setA2DPPinConfig(const i2s_pin_config_t& pinConfig) { 
+      a2dp_sink.set_pin_config(pinConfig); 
+  }
+  
   void setBLEDataCallback(BLEDataCallback callback) { bleDataCallback = callback; }
-  void setMidiCallback(MidiCallbackFunction callback) { onMidiReceive = callback; } 
+  void setMidiCallback(MidiCallbackFunction callback) {} // Empty (MIDI Removed)
   void setCurrentPreset(Preset* preset) { pCurrentPreset = preset; }
+  void startMidiScan() {} 
 
+  // --- A2DP Control ---
   void enableA2DP() {
     if (!a2dpEnabled) {
-      Serial.println("[A2DP] Enabling...");
-      a2dp_sink.start("JamMate_Audio"); 
-      a2dpEnabled = true;
+      setupA2DP("JamMate Audio"); 
     }
-  }
-
-  void startMidiScan() {
-        if (!_scanEnabled) {
-            _scanEnabled = true;
-            Serial.println("[BT-MGR] MIDI Scanning Enabled!");
-        }
-    }
-
-  void setA2DPvolume(uint8_t volume) {
-    if (a2dpEnabled) a2dp_sink.set_volume(volume);
   }
 
   void disableA2DP() {
@@ -91,9 +81,17 @@ public:
     }
   }
 
+  void setA2DPvolume(uint8_t volume) {
+    if (a2dpEnabled) a2dp_sink.set_volume(volume);
+  }
+
+  // --- Data Sending ---
   void sendBLEData(const uint8_t* data, size_t len) {
     if (!pControlChar || !bleControlConnected || len == 0) return;
-    if (len <= 514) { pControlChar->setValue((uint8_t*)data, len); pControlChar->notify(); }
+    if (len <= 514) { 
+        pControlChar->setValue((uint8_t*)data, len); 
+        pControlChar->notify(); 
+    }
   }
 
   void sendBLEDataChunked(const uint8_t* data, size_t totalLen, size_t chunkSize = 512) {
@@ -103,11 +101,9 @@ public:
       size_t toSend = (remaining < chunkSize) ? remaining : chunkSize;
       pControlChar->setValue((uint8_t*)(data + offset), toSend);
       pControlChar->notify();
-      delay(20);
+      delay(20); 
     }
   }
-
-  bool _scanEnabled;
 
 private:
   BLEServer* pServer;
@@ -119,123 +115,24 @@ private:
   BLEDataCallback bleDataCallback;
   Preset* pCurrentPreset; 
 
-  // MIDI Client
-  BLEClient* pMidiClient;
-  BLERemoteCharacteristic* pRemoteMidiChar;
-  bool midiConnected;
-
-  // --- BACKGROUND TASK ---
-  static void midiConnectionTask(void* param) {
-      BluetoothManager* instance = (BluetoothManager*)param;
-      Serial.println("[MIDI Task] Started on Core 0");
-      
-      // Setup Polite Scanner
-      BLEScan* pBLEScan = BLEDevice::getScan();
-      pBLEScan->setActiveScan(false);
-      // Interval 100ms, Window 50ms = 50% Duty Cycle
-      // This allows Advertising packets to slip out during the 50ms gaps!
-      pBLEScan->setInterval(5000); 
-      pBLEScan->setWindow(25);   
-
-      for(;;) {
-
-          if (!instance->_scanEnabled) {
-              // Sleep for 1 second to avoid hogging CPU while idle
-              vTaskDelay(1000 / portTICK_PERIOD_MS);
-              continue; // Skip the rest of the loop
-          }
-          
-          // If NOT connected, search for the pedal
-          if (!instance->midiConnected) {
-              
-              // 1. Scan for 3 seconds (Polite Scan)
-              // Serial.println("[MIDI Task] Scanning...");
-              BLEScanResults foundDevices = pBLEScan->start(1, false);
-              
-              bool targetFound = false;
-              BLEAdvertisedDevice* targetDevice = nullptr;
-
-              // 2. Check if our pedal is in the results
-              for(int i=0; i<foundDevices.getCount(); i++) {
-                  BLEAdvertisedDevice device = foundDevices.getDevice(i);
-                  if (device.getAddress().equals(midiTargetAddress)) {
-                       targetFound = true;
-                       // Serial.println("[MIDI Task] Pedal Found!");
-                       break;
-                  }
-              }
-
-              // 3. Connect ONLY if found
-              if (targetFound) {
-                   pBLEScan->clearResults(); // Clean up memory
-                   if (instance->connectToMidiController()) {
-                       Serial.println("[MIDI Task] Connected!");
-                   }
-              } else {
-                   pBLEScan->clearResults(); // Clean up memory
-                   // Wait 2 seconds before scanning again to save radio time
-                   vTaskDelay(5000 / portTICK_PERIOD_MS);
-                   
-                   // CRITICAL: Ensure advertising is still running!
-                   // Sometimes scanning stops advertising on certain ESP32 libraries.
-                   if (instance->pAdvertising) instance->pAdvertising->start();
-              }
-          }
-          
-          // Loop Check Interval
-          vTaskDelay(1000 / portTICK_PERIOD_MS);
-      }
-  }
-
-  static void midiNotifyCallback(BLERemoteCharacteristic* pChar, uint8_t* data, size_t length, bool isNotify) {
-      if (onMidiReceive) {
-          onMidiReceive(data, length);
-          //Serial.println(data);
-      }
-  }
-
-  bool connectToMidiController() {
-    // Standard connection logic
-    if (!pMidiClient->connect(midiTargetAddress)) return false;
-
-    BLERemoteService* pRemoteService = pMidiClient->getService(midiServiceUUID);
-    if (!pRemoteService) { pMidiClient->disconnect(); return false; }
-
-    pRemoteMidiChar = pRemoteService->getCharacteristic(midiCharUUID);
-    if (!pRemoteMidiChar) { pMidiClient->disconnect(); return false; }
-
-    if(pRemoteMidiChar->canNotify()) {
-        pRemoteMidiChar->registerForNotify(midiNotifyCallback);
-        Serial.println("[MIDI] ✓ Notifications Registered");
-    }
-
-    midiConnected = true;
-    return true;
-  }
-
-  class MidiClientCallbacks : public BLEClientCallbacks {
-      BluetoothManager* mgr;
-  public:
-      MidiClientCallbacks(BluetoothManager* m) : mgr(m) {}
-      void onConnect(BLEClient* client) override {}
-      void onDisconnect(BLEClient* client) override {
-          Serial.println("[MIDI] Disconnected");
-          mgr->midiConnected = false;
-      }
-  };
-
   void setupBLEGATT() {
     pServer = BLEDevice::createServer();
     pServer->setCallbacks(new ServerCallbacks(this));
+    
     BLEService* pService = pServer->createService(BLE_SERVICE_UUID);
     pControlChar = pService->createCharacteristic(
       BLE_CHARACTERISTIC_UUID,
-      BLECharacteristic::PROPERTY_WRITE | BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_NOTIFY | BLECharacteristic::PROPERTY_WRITE_NR);
+      BLECharacteristic::PROPERTY_WRITE | 
+      BLECharacteristic::PROPERTY_READ | 
+      BLECharacteristic::PROPERTY_NOTIFY | 
+      BLECharacteristic::PROPERTY_WRITE_NR
+    );
     pControlChar->setCallbacks(new CharacteristicCallbacks(this));
     pControlChar->addDescriptor(new BLE2902());
     const char* initMsg = "JamMate_Ready";
     pControlChar->setValue((uint8_t*)initMsg, strlen(initMsg));
     pService->start();
+    
     pAdvertising = BLEDevice::getAdvertising();
     pAdvertising->addServiceUUID(BLE_SERVICE_UUID);
     pAdvertising->setScanResponse(true);
@@ -244,9 +141,36 @@ private:
     BLEDevice::startAdvertising();
   }
   
-  void setupA2DP() {
-    a2dp_sink.start("JamMate");
+  void setupA2DP(const char* name) {
+    // 1. Task Config: Core 1 (App Core) to avoid BLE/System conflict
+    a2dp_sink.set_task_core(1);
+    a2dp_sink.set_task_priority(10); 
+
+    // 2. I2S Config (Moderate Buffering for Stability)
+    i2s_config_t i2s_config = {
+        .mode = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_TX),
+        .sample_rate = 44100,
+        .bits_per_sample = I2S_BITS_PER_SAMPLE_16BIT,
+        .channel_format = I2S_CHANNEL_FMT_RIGHT_LEFT,
+        .communication_format = I2S_COMM_FORMAT_STAND_I2S,
+        .intr_alloc_flags = 0,
+        .dma_buf_count = 16,   
+        .dma_buf_len = 128,    
+        .use_apll = false,
+        .tx_desc_auto_clear = true
+    };
+    a2dp_sink.set_i2s_config(i2s_config);
+
+    // 3. Start A2DP
+    a2dp_sink.start(name);
     a2dpEnabled = true;
+
+    // 4. Force "Loudspeaker" Class of Device
+    esp_bt_cod_t cod;
+    cod.major = 0b00100;        
+    cod.minor = 0b000100;       
+    cod.service = 0b0010000000; 
+    esp_bt_gap_set_cod(cod, ESP_BT_INIT_COD);
   }
 
   class ServerCallbacks : public BLEServerCallbacks {
@@ -254,11 +178,12 @@ private:
     ServerCallbacks(BluetoothManager* mgr) : manager(mgr) {}
     void onConnect(BLEServer* pServer) override {
       manager->bleControlConnected = true;
-      Serial.println("[BLE-CTRL] ✓ WebApp connected");
+      Serial.println("[BLE] WebApp connected");
+      // updateConnParams removed to fix compilation error
     }
     void onDisconnect(BLEServer* pServer) override {
       manager->bleControlConnected = false;
-      Serial.println("[BLE-CTRL] ✗ WebApp disconnected");
+      Serial.println("[BLE] WebApp disconnected");
       delay(100);
       manager->pAdvertising->start();
     }
@@ -279,5 +204,3 @@ private:
     BluetoothManager* manager;
   };
 };
-
-inline BluetoothManager::MidiCallbackFunction BluetoothManager::onMidiReceive = nullptr;

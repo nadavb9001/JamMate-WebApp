@@ -17,7 +17,7 @@ constexpr int SCREEN_WIDTH = 240;
 constexpr int SCREEN_HEIGHT = 320;
 constexpr int TOTAL_FX = 18; 
 constexpr int TOTAL_EXTRA_BUTTONS = 3; 
-constexpr int TOTAL_MAIN_MENU_RECTS = 23; 
+constexpr int TOTAL_MAIN_MENU_RECTS = 24; 
 constexpr int HIGHLIGHT_BORDER_THICKNESS = 3;
 constexpr int TOTAL_BANKS = 7;
 

@@ -286,20 +286,22 @@ DisplayManager::DisplayManager()
         mainMenuButtons[i + 1] = new EnhancedRectButton(x, y, FX_BUTTON_W, FX_BUTTON_H, 6, fxColors[i % 7], TFT_WHITE, fxLabels[i], RECT_BUTTON);
     }
 
-    // 3. Extra Buttons
+    // 3. Extra Buttons (Indices 19, 20, 21)
     const int EXTRA_START_Y = 230; 
     const int EXTRA_BUTTON_H = 28;
+    // Index 19=Setup, 20=Looper, 21=Drum
     for (int i = 0; i < TOTAL_EXTRA_BUTTONS; ++i) {
         int x = 5 + i * (73 + 5); 
         int y = EXTRA_START_Y;
-        mainMenuButtons[i + 18] = new EnhancedRectButton(x, y, 73, EXTRA_BUTTON_H, 6, extraColors[i], TFT_WHITE, extraLabels[i], RECT_BUTTON);
+        // Use 19 (TOTAL_FX + 1) as the offset
+        mainMenuButtons[i + 19] = new EnhancedRectButton(x, y, 73, EXTRA_BUTTON_H, 6, extraColors[i], TFT_WHITE, extraLabels[i], RECT_BUTTON);
     }
 
-    // 4. Util Bars
+    // 4. Util Bars (Indices 22, 23)
     int barW = (SCREEN_WIDTH - 30) / 2;
     int barY = SCREEN_HEIGHT - 35;
-    mainMenuButtons[21] = new EnhancedRectButton(10, barY, barW, 28, 5, TFT_BLACK, TFT_WHITE, "Vol", RECT_PROGRESS);
-    mainMenuButtons[22] = new EnhancedRectButton(10 + barW + 10, barY, barW, 28, 5, TFT_BLACK, TFT_WHITE, "BPM", RECT_PROGRESS);
+    mainMenuButtons[22] = new EnhancedRectButton(10, barY, barW, 28, 5, TFT_BLACK, TFT_WHITE, "Vol", RECT_PROGRESS);
+    mainMenuButtons[23] = new EnhancedRectButton(10 + barW + 10, barY, barW, 28, 5, TFT_BLACK, TFT_WHITE, "BPM", RECT_PROGRESS);
 }
 
 void DisplayManager::begin() {
@@ -328,6 +330,19 @@ void DisplayManager::refresh() {
 // ===================================================================
 
 void DisplayManager::toggleTuner(bool enable) {
+    // 1. Send Command to DSP (Enable/Disable Tuner)
+    // UTIL Packet: [Type=2 (Tuner), Enable, Level, FreqH, FreqL]
+    // We map: Type 2 = Tuner (matches bypass.cpp logic)
+    uint8_t payload[5];
+    payload[0] = 2;              // Type: TUNER
+    payload[1] = enable ? 1 : 0; // Enable
+    payload[2] = 0;              // Level (Ignored)
+    payload[3] = 0;              // Freq H (Ignored)
+    payload[4] = 0;              // Freq L (Ignored)
+    
+    sendToDSP("UTIL", payload, 5);
+
+    // 2. Update Display State
     if (enable) {
         currentState = STATE_TUNER;
         currentFreq = 0;
@@ -386,6 +401,11 @@ void DisplayManager::handleTunerMode() {
     // but we can also safety check here if needed.
     // The actual triggering happens in the main loop, so this function 
     // mostly just keeps the screen updated or handles other inputs if desired.
+    // Exit Condition: Click or Long Click on either encoder
+    if (encoder1.isLongClick()) {
+        
+        toggleTuner(false); // Returns to Main Menu
+    }
 }
 
 void DisplayManager::drawTunerScreen() {
@@ -444,11 +464,11 @@ void DisplayManager::checkExternalChanges() {
 
     if (currentPreset.masterVolume != volumeValue) {
         volumeValue = currentPreset.masterVolume;
-        highlightRect(21, (currentRectIndex == 21));
+        highlightRect(22, (currentRectIndex == 22));
     }
     if (currentPreset.bpm != bpmValue) {
         bpmValue = currentPreset.bpm;
-        highlightRect(22, (currentRectIndex == 22));
+        highlightRect(23, (currentRectIndex == 23));
     }
     for (int i = 0; i < TOTAL_FX; ++i) {
         if (currentPreset.effects[i].enabled != fxEnabled[i]) {
@@ -820,8 +840,13 @@ void DisplayManager::handleMainMenu() {
             fxEnabled[fxIdx] = newState;
             
             sendEffectChangeToDSP(fxIdx, newState, currentPreset.effects[fxIdx].knobs, currentPreset.effects[fxIdx].dropdowns);
-            uint8_t packet[2] = { (uint8_t)fxIdx, (uint8_t)(newState ? 1 : 0) };
-            btManager.sendBLEData(packet, 2); 
+            uint8_t blePacket[5];
+            blePacket[0] = 0x21; // CMD: SET_TOGGLE
+            blePacket[1] = 0x02; // Len L
+            blePacket[2] = 0x00; // Len H
+            blePacket[3] = (uint8_t)fxIdx;
+            blePacket[4] = (uint8_t)(newState ? 1 : 0);
+            btManager.sendBLEData(blePacket, 5);
             highlightRect(currentRectIndex, true); 
         } 
         else if (currentRectIndex == 19) { 
@@ -875,6 +900,11 @@ void DisplayManager::handleMainMenu() {
             updateDSPFromPreset();
             refresh();
         }
+    }
+
+    if (encoder2.isLongClick()) {
+        toggleTuner(true);
+        return;
     }
     
     if (switch2.isButtonPressed()) {
@@ -1095,7 +1125,7 @@ void DisplayManager::setVolume(uint8_t vol) {
     sendToDSP("GEN ", dspPayload, 4);
     uint8_t blePacket[5] = { 0x25, vol, 0, currentPreset.bpm, 0 };
     btManager.sendBLEData(blePacket, 5);
-    highlightRect(21, (currentRectIndex == 21)); 
+    highlightRect(22, (currentRectIndex == 22)); 
 }
 
 void DisplayManager::drawMainScreen() {
@@ -1119,18 +1149,19 @@ void DisplayManager::highlightRect(int index, bool highlight) {
         b->bgColor = isEnabled ? fxColors[(index - 1) % 7] : TFT_BLACK;
         static_cast<EnhancedRectButton*>(b)->drawWithFont(tft, &FONT_GENERAL_BOLD);
     } 
-    else if (index >= 18 && index <= 20) {
-        if (index == 19) b->bgColor = looperEnabled ? TFT_DARKGREEN : extraColors[index - 18];
-        else if (index == 20) b->bgColor = drumEnabled ? TFT_DARKGREEN : extraColors[index - 18];
-        else b->bgColor = extraColors[index - 18]; 
+    else if (index >= 19 && index <= 21) {
+      int extraIdx = index - 19; // 0, 1, 2
+        if (index == 20) b->bgColor = looperEnabled ? TFT_DARKGREEN : extraColors[extraIdx];
+        else if (index == 21) b->bgColor = drumEnabled ? TFT_DARKGREEN : extraColors[extraIdx];
+        else b->bgColor = extraColors[extraIdx]; 
         static_cast<EnhancedRectButton*>(b)->drawWithFont(tft, &FONT_GENERAL_NORMAL);
     } 
-    else if (index == 21) {
+    else if (index == 22) {
         b->progressValue = volumeValue; 
         b->label = "Vol: " + String(volumeValue);
         static_cast<EnhancedRectButton*>(b)->drawWithFont(tft, &FONT_GENERAL_NORMAL);
     } 
-    else if (index == 22) {
+    else if (index == 23) {
         b->progressValue = bpmValue;
         b->label = "BPM: " + String(bpmValue);
         static_cast<EnhancedRectButton*>(b)->drawWithFont(tft, &FONT_GENERAL_NORMAL);

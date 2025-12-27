@@ -259,23 +259,20 @@ void parseBlobToStruct(const uint8_t* buf, size_t len, Preset& p) {
 
 
 // ===================================================================
-// ROBUST DSP COMMUNICATION BRIDGE
+// ROBUST DSP COMMUNICATION BRIDGE (FIXED)
 // ===================================================================
 
 enum DSPState {
-  DSP_FIND_HEADER,
-  DSP_GET_LENGTH,
+  DSP_FIND_SYNC,
+  DSP_GET_LEN,
   DSP_GET_PAYLOAD
 };
 
-DSPState dspState = DSP_FIND_HEADER;
-uint8_t dspHeaderWin[4] = { 0 };  // Sliding window buffer
-uint8_t dspLenBuf[4];
+DSPState dspState = DSP_FIND_SYNC;
 uint32_t dspTargetLen = 0;
 uint32_t dspByteCount = 0;
 
 // Static buffer to avoid malloc fragmentation
-// Size this according to your largest expected packet (e.g. presets)
 #define MAX_DSP_BUFFER 4096
 uint8_t dspRxBuffer[MAX_DSP_BUFFER];
 
@@ -284,59 +281,48 @@ void checkDSPIncoming() {
     uint8_t b = dspSerial.read();
 
     switch (dspState) {
-      // ---------------------------------------------------------
-      // 1. SLIDING WINDOW: Hunt for Valid Headers
-      // ---------------------------------------------------------
-      case DSP_FIND_HEADER:
-        // Shift buffer left
-        dspHeaderWin[0] = dspHeaderWin[1];
-        dspHeaderWin[1] = dspHeaderWin[2];
-        dspHeaderWin[2] = dspHeaderWin[3];
-        dspHeaderWin[3] = b;
-
-        // Check for Known Headers
-        // Add any new future headers here (e.g., "FILE", "DATA")
-        if (memcmp(dspHeaderWin, "TUNE", 4) == 0 || memcmp(dspHeaderWin, "LOAD", 4) == 0 || memcmp(dspHeaderWin, "NAML", 4) == 0 || memcmp(dspHeaderWin, "IRFL", 4) == 0)  // <--- Add this
-        {
-
-          dspState = DSP_GET_LENGTH;
-          dspByteCount = 0;
-          // Serial.println("[DSP] Sync Found");
+      // 1. Wait for SYNC Byte (0xAA)
+      case DSP_FIND_SYNC:
+        if (b == 0xAA) {
+          dspState = DSP_GET_LEN;
         }
         break;
 
-      // ---------------------------------------------------------
-      // 2. READ LENGTH (4 Bytes)
-      // ---------------------------------------------------------
-      case DSP_GET_LENGTH:
-        dspLenBuf[dspByteCount++] = b;
-        if (dspByteCount == 4) {
-          memcpy(&dspTargetLen, dspLenBuf, 4);
-
-          // Safety Check: Payload too big?
-          if (dspTargetLen > MAX_DSP_BUFFER) {
-            Serial.printf("[DSP] Error: Payload too big (%d). Resetting.\n", dspTargetLen);
-            dspState = DSP_FIND_HEADER;  // Drop and hunt for next header
-          } else {
-            dspState = DSP_GET_PAYLOAD;
-            dspByteCount = 0;
-          }
+      // 2. Read Length (1 Byte)
+      // Note: DSP sends (4 + PayloadLen) as the total length
+      case DSP_GET_LEN:
+        dspTargetLen = b;
+        
+        // Sanity Check: Minimum 4 bytes (Header) required
+        if (dspTargetLen < 4 || dspTargetLen > 255) { 
+           dspState = DSP_FIND_SYNC; // Invalid, reset
+        } else {
+           dspState = DSP_GET_PAYLOAD;
+           dspByteCount = 0;
         }
         break;
 
-      // ---------------------------------------------------------
-      // 3. READ PAYLOAD (Bridge & Parse)
-      // ---------------------------------------------------------
+      // 3. Read Header + Payload
       case DSP_GET_PAYLOAD:
-        if (dspByteCount < MAX_DSP_BUFFER) {
-          dspRxBuffer[dspByteCount] = b;
-        }
-        dspByteCount++;
+        dspRxBuffer[dspByteCount++] = b;
 
-        // Packet Complete?
         if (dspByteCount >= dspTargetLen) {
-          processDSPPacket((char*)dspHeaderWin, dspRxBuffer, dspTargetLen);
-          dspState = DSP_FIND_HEADER;  // Reset to hunt mode
+          // Packet Complete!
+          
+          // 1. Extract Header (First 4 bytes)
+          char header[5];
+          memcpy(header, dspRxBuffer, 4);
+          header[4] = 0; // Null terminate for safety
+
+          // 2. Extract Payload (Remaining bytes)
+          uint8_t* payload = &dspRxBuffer[4];
+          uint32_t payloadLen = dspTargetLen - 4;
+
+          // 3. Process
+          processDSPPacket(header, payload, payloadLen);
+
+          // 4. Reset
+          dspState = DSP_FIND_SYNC;
         }
         break;
     }
@@ -345,12 +331,12 @@ void checkDSPIncoming() {
 
 void processDSPPacket(const char* header, uint8_t* data, uint32_t len) {
 
-  //Serial.println(header);
+  Serial.println(header);
   // 1. TUNER BRIDGE
   if (strncmp(header, "TUNE", 4) == 0 && len == 4) {
     float freq;
     memcpy(&freq, data, 4);
-
+    Serial.println(freq);
     // Bridge to BLE (Priority)
     uint8_t packet[7];
     packet[0] = 0x35;  // TUNER_DATA ID

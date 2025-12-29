@@ -326,8 +326,9 @@ body.light-theme #statusMessage {
     display: flex !important;
 }
 
-* ========================================
+/* ========================================
    Global Master/BPM Knob Row - Mobile Fix
+   NO STACKING - Always Keep in One Row
    ======================================== */
 
 #globalKnobRow {
@@ -335,10 +336,11 @@ body.light-theme #statusMessage {
   flex-direction: row;
   justify-content: center;
   align-items: center;
-  gap: 2px;
-  margin: 2px 0;
-  padding: 0 2px;
+  gap: 6px;
+  margin: 4px 0;
+  padding: 0 4px;
   max-width: 100%;
+  flex-wrap: nowrap;  /* CRITICAL: Never stack vertically */
 }
 
 /* Ensure knob containers don't overflow */
@@ -347,15 +349,18 @@ body.light-theme #statusMessage {
   min-width: 0;
 }
 
-/* Mobile: extra tight for phones */
+/* Mobile: extra tight for phones - NO STACKING */
 @media (max-width: 480px) {
   #globalKnobRow {
     gap: 2px;
     padding: 0 2px;
+    flex-wrap: nowrap;  /* PREVENT STACKING - CRITICAL */
   }
   
   #globalKnobRow .knob-container {
-    max-width: 48vw;
+    flex: 1 1 auto;     /* Equal width, shrinks together */
+    min-width: 0;       /* Allow shrinking below natural size */
+    max-width: 50%;     /* Each knob ~half the container */
   }
 }
 
@@ -398,5 +403,4 @@ body.light-theme #statusMessage {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-
 }

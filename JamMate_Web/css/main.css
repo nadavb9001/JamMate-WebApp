@@ -335,9 +335,9 @@ body.light-theme #statusMessage {
   flex-direction: row;
   justify-content: center;
   align-items: center;
-  gap: 6px;
-  margin: 4px 0;
-  padding: 0 4px;
+  gap: 2px;
+  margin: 2px 0;
+  padding: 0 2px;
   max-width: 100%;
 }
 
@@ -398,4 +398,5 @@ body.light-theme #statusMessage {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+
 }

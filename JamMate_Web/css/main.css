@@ -329,7 +329,7 @@ body.light-theme #statusMessage {
 /* ========================================
    Global Master/BPM Knob Row - Mobile Fix
    NO STACKING - Always Keep in One Row
-   BPM Fully Visible with Responsive Scaling
+   BPM Fully Visible with Container Overflow Fix
    ======================================== */
 
 #globalKnobRow {
@@ -337,68 +337,89 @@ body.light-theme #statusMessage {
   flex-direction: row;
   justify-content: center;
   align-items: center;
-  gap: 6px;
+  gap: 3px;           /* Reduced gap */
   margin: 4px 0;
-  padding: 0 4px;
-  max-width: 100%;
-  flex-wrap: nowrap;  /* CRITICAL: Never stack vertically */
-  width: 100%;        /* Take full parent width */
+  padding: 0 2px;
+  width: calc(100% - 4px);  /* Account for padding */
+  flex-wrap: nowrap;  /* Never stack vertically */
+  overflow: hidden;   /* Clip content if needed */
 }
 
-/* Ensure knob containers don't overflow */
+/* Master and BPM knob containers */
 #globalKnobRow .knob-container {
-  flex: 1 1 auto;     /* Equal share of space */
-  min-width: 0;       /* Allow shrinking */
+  flex: 1 1 50%;      /* Each takes 50% */
+  min-width: 0;       /* Allow shrinking below content */
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  overflow: visible;  /* Don't clip knobs */
+  overflow: hidden;   /* Clip knob if it exceeds container */
 }
 
-/* Scale the knob canvas on mobile */
+/* The knob div itself */
 #globalKnobRow .knob-container .knob {
   width: 100%;
-  max-width: 95px;    /* Slightly larger than canvas 90px */
-  aspect-ratio: 1;    /* Keep square */
+  aspect-ratio: 1 / 1;
   display: flex;
   align-items: center;
   justify-content: center;
+  overflow: hidden;   /* Clip canvas overflow */
 }
 
+/* Canvas - responsive sizing */
 #globalKnobRow .knob-container .knob canvas {
   width: 100%;
   height: 100%;
-  max-width: 90px;
-  max-height: 90px;
+  object-fit: contain;
 }
 
+/* Label styling */
 #globalKnobRow .knob-label {
-  font-size: 12px;
-  margin-top: 2px;
+  font-size: 11px;
+  margin-top: 1px;
   white-space: nowrap;
   text-align: center;
+  width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-/* Tablet: 768px and below */
-@media (max-width: 768px) {
+/* Desktop: 1024px and above */
+@media (min-width: 1024px) {
   #globalKnobRow {
-    gap: 4px;
-    padding: 0 2px;
-    flex-wrap: nowrap;
+    gap: 6px;
+    padding: 0 4px;
+    width: auto;
   }
-  
+
   #globalKnobRow .knob-container {
-    flex: 1 1 auto;
-    min-width: 0;
-    max-width: none;    /* No max-width, take equal space */
+    flex: 0 1 auto;
+    width: auto;
   }
 
   #globalKnobRow .knob-container .knob {
-    max-width: 85px;    /* Scale down for tablets */
+    width: 95px;
+    height: 95px;
   }
 
-  #globalKnobRow .knob-container .knob canvas {
+  #globalKnobRow .knob-label {
+    font-size: 12px;
+    margin-top: 2px;
+  }
+}
+
+/* Tablet: 768px - 1023px */
+@media (max-width: 1023px) and (min-width: 481px) {
+  #globalKnobRow {
+    gap: 4px;
+    padding: 0 2px;
+  }
+
+  #globalKnobRow .knob-container {
+    flex: 1 1 50%;
+  }
+
+  #globalKnobRow .knob-container .knob {
     max-width: 85px;
     max-height: 85px;
   }
@@ -413,19 +434,22 @@ body.light-theme #statusMessage {
   #globalKnobRow {
     gap: 2px;
     padding: 0 1px;
+    width: calc(100% - 2px);
+  }
+
+  #globalKnobRow .knob-container {
+    flex: 1 1 50%;
+    min-width: 0;
   }
 
   #globalKnobRow .knob-container .knob {
-    max-width: 75px;    /* Even smaller for tiny phones */
-  }
-
-  #globalKnobRow .knob-container .knob canvas {
-    max-width: 75px;
-    max-height: 75px;
+    max-width: 70px;
+    max-height: 70px;
   }
 
   #globalKnobRow .knob-label {
-    font-size: 10px;
+    font-size: 9px;
+    margin-top: 0px;
   }
 }
 
@@ -450,6 +474,7 @@ body.light-theme #statusMessage {
   row-gap: 4px;
   margin-top: 8px;
   max-width: 100%;
+  overflow: hidden;
 }
 
 /* Tighten knob containers inside popup */
@@ -460,6 +485,7 @@ body.light-theme #statusMessage {
   margin: 0;
   padding: 2px 0;
   min-width: 0;
+  overflow: hidden;
 }
 
 .solo-effect-container .knob-label {
@@ -469,5 +495,6 @@ body.light-theme #statusMessage {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
 
 

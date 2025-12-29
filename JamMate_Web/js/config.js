@@ -23,8 +23,8 @@ export const APP_CONFIG = {
       "short_name": "Awah", 
       "params": { 
         "checkbox": "enable", 
-        "knobs": ["level", "wah", "dry", "wet", "rate", "start freq", "stop freq"], 
-        "dropdowns": [] 
+        "knobs": ["dry", "wet", "sensitivity", "Q", "freq_center", "freq_min", "freq_max","attack","decay"], 
+        "dropdowns":  ["awah_filter","awah_mode","awah_direction"]
       } 
     },
     { 
@@ -190,7 +190,10 @@ export const APP_CONFIG = {
 	"tremolo_mode": ["vintage","harmonic"],
 	"waveform": ["Sine","Triangle","Saw","Square"],
 	"delay-multi": ["1", "2", "3"],
-	"ir_file": ["1", "2", "3"]
+	"ir_file": ["1", "2", "3"],
+	"awah_filter": ["LowPass", "BandPass", "HighPass"],
+	"awah_mode": ["Envelope", "Humanizer"],
+	"awah_direction": ["Up", "Down"]
 	
   }
 };

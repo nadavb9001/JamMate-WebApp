@@ -860,6 +860,16 @@ export const app = {
 			};
 		}
 
+		// SD Card Read Button Handler
+		const btnReadSDCard = document.getElementById('btnReadSDCard');
+		if (btnReadSDCard) {
+		    btnReadSDCard.onclick = () => {
+		        console.log("[APP] Sending SD Card Read command...");
+		        BLEService.send(Protocol.createSDCardReadCommand());
+		        View.updateStatus("SD Card Read command sent");
+		    };
+		}
+
 		const btnFullscreen = document.getElementById('btnFullscreen');
 		if (btnFullscreen) {
 			btnFullscreen.onclick = () => {
@@ -1139,3 +1149,4 @@ export const app = {
 	
 
 };
+

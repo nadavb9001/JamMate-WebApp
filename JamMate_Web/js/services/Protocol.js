@@ -31,6 +31,12 @@ export const Protocol = {
     return buffer;
   },
 
+	// Helper to create SD card read command
+createSDCardReadCommand() {
+    console.log("[Protocol] Creating SD Card Read command");
+    return this.createSystemPacket(this.CMD.READ_SD_CARD);
+},
+
   // ========================================================
   // Parameter Update
   // Sends: [fxId, absoluteParamIndex, value]
@@ -312,3 +318,4 @@ export const Protocol = {
   }
 
 };
+

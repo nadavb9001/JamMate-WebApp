@@ -19,7 +19,8 @@ export const Protocol = {
 	IR_LIST_DATA: 0x46,
 	FLASH_DSP: 0x60,  // Command to trigger "FLSH"
     RESET_DSP: 0x61,   // Command to trigger "RSTD"
-	CMD_START_MIDI_SCAN: 0x62
+	CMD_START_MIDI_SCAN: 0x62,
+	READ_SD_CARD: 0x63  // Command to re-read SD card
   },
   
   // Helper to create the packet (Simple command, no payload)
@@ -309,4 +310,5 @@ export const Protocol = {
     }
     return buffer;
   }
+
 };

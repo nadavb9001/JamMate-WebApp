@@ -34,6 +34,7 @@
         <div class="tab" data-tab="tuner">Tuner</div>
         <div class="tab" data-tab="setup">Setup</div>
         <div class="tab" data-tab="loader">Files</div>
+		<div class="tab" data-tab="youtube">YouTube</div>
     </div>
     
     <div class="tab-content active" id="effects-tab">
@@ -60,7 +61,25 @@
         <div class="effects-scroll"><div class="effects-grid" id="effectsGrid"></div></div>
         <div id="effectControls"></div>
     </div>
-    
+   <div class="tab-content" id="youtube-tab">
+    <div class="preset-controls">
+        <h2 style="text-align: center; color: var(--color-accent); margin-bottom: 10px;">
+            YouTube Browser
+        </h2>
+    </div>
+
+    <div class="youtube-wrapper">
+        <iframe
+            class="youtube-frame"
+            src="https://www.youtube.com"
+            title="YouTube Browser"
+            frameborder="0"
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+            allowfullscreen
+            referrerpolicy="strict-origin-when-cross-origin">
+        </iframe>
+    </div>
+</div>
    <div class="tab-content" id="drum-tab">
         <div class="preset-controls">
             <div class="knobs-grid" style="grid-template-columns: repeat(2, 1fr); justify-items: center; margin-bottom: 15px;">
@@ -235,4 +254,5 @@
 </body>
 
 </html>
+
 

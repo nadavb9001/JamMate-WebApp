@@ -9,11 +9,12 @@ export const BLEService = {
     characteristic: null,
     isConnected: false,
     isSyncing: false,
+    shouldReconnect: false, // [NEW] Flag to distinguish intentional vs accidental disconnects
 
     // Reassembly State
-    rxBuffer: null,      // Uint8Array to hold incoming payload
-    rxExpectedLen: 0,    // Total bytes expected
-    rxCmd: 0,            // The command ID we are waiting for
+    rxBuffer: null,      
+    rxExpectedLen: 0,    
+    rxCmd: 0,            
 
     onStatusChange: null,
     onDataReceived: null,
@@ -26,35 +27,49 @@ export const BLEService = {
 
         try {
             this._setStatus('connecting');
+            this.shouldReconnect = true; // [NEW] User wants to be connected
 
+            // 1. Request Device (User Gesture Required)
             this.device = await navigator.bluetooth.requestDevice({
                 filters: [{ namePrefix: 'JamMate' }],
                 optionalServices: [this.SERVICE_UUID]
             });
 
+            // 2. Setup Disconnect Listener (Once per device instance)
             this.device.addEventListener('gattserverdisconnected', this._handleDisconnect.bind(this));
-            this.server = await this.device.gatt.connect();
-            
-            const service = await this.server.getPrimaryService(this.SERVICE_UUID);
-            this.characteristic = await service.getCharacteristic(this.CHARACTERISTIC_UUID);
 
-            await this.characteristic.startNotifications();
-            this.characteristic.addEventListener('characteristicvaluechanged', this._handleData.bind(this));
-
-            this.isConnected = true;
-            this._setStatus('connected');
-            
-            // Handshake
-            console.log("[BLE] Requesting state...");
-            this.send(Protocol.createGetState());
+            // 3. Connect GATT
+            await this._connectGatt();
 
         } catch (error) {
             console.error("BLE Connection Failed:", error);
+            this.shouldReconnect = false; // Reset flag on initial failure
             this._handleDisconnect(); 
         }
     },
 
+    // [NEW] Extracted internal connection logic for reuse
+    async _connectGatt() {
+        if (!this.device) return;
+
+        this.server = await this.device.gatt.connect();
+        
+        const service = await this.server.getPrimaryService(this.SERVICE_UUID);
+        this.characteristic = await service.getCharacteristic(this.CHARACTERISTIC_UUID);
+
+        await this.characteristic.startNotifications();
+        this.characteristic.addEventListener('characteristicvaluechanged', this._handleData.bind(this));
+
+        this.isConnected = true;
+        this._setStatus('connected');
+        
+        // Handshake
+        console.log("[BLE] Requesting state...");
+        this.send(Protocol.createGetState());
+    },
+
     async disconnect() {
+        this.shouldReconnect = false; // [NEW] Intentional disconnect
         if (this.device && this.device.gatt.connected) {
             this.device.gatt.disconnect();
         } else {
@@ -74,7 +89,7 @@ export const BLEService = {
     },
 
     _handleDisconnect() {
-        this.device = null;
+        // Clear handles (But keep this.device if we want to reconnect)
         this.server = null;
         this.characteristic = null;
         this.isConnected = false;
@@ -84,7 +99,45 @@ export const BLEService = {
         this.rxBuffer = null;
         this.rxExpectedLen = 0;
         
+        // [NEW] Auto-Reconnect Logic
+        if (this.shouldReconnect && this.device) {
+            console.log("[BLE] Connection lost unexpectedly. Attempting reconnect...");
+            this._setStatus('reconnecting');
+            this._attemptReconnectLoop();
+        } else {
+            // Intentional disconnect or fatal error
+            this.device = null;
+            this._setStatus('disconnected');
+        }
+    },
+
+    // [NEW] Retry Loop
+    async _attemptReconnectLoop() {
+        const maxRetries = 5;
+        const retryDelay = 1500; // 1.5s delay to let ESP32 stack recover
+
+        for (let i = 0; i < maxRetries; i++) {
+            if (!this.shouldReconnect || !this.device) break; // Stop if user cancelled
+
+            try {
+                console.log(`[BLE] Reconnect attempt ${i + 1}/${maxRetries}...`);
+                await new Promise(resolve => setTimeout(resolve, retryDelay));
+                
+                await this._connectGatt();
+                
+                console.log("[BLE] Reconnected successfully!");
+                return; // Exit loop on success
+            } catch (err) {
+                console.log(`[BLE] Reconnect attempt ${i + 1} failed:`, err);
+            }
+        }
+
+        // If we reach here, all retries failed
+        console.error("[BLE] Max reconnect attempts reached.");
+        this.shouldReconnect = false;
+        this.device = null;
         this._setStatus('disconnected');
+        alert("Connection lost. Please reconnect manually.");
     },
 
     _handleData(event) {
@@ -148,8 +201,8 @@ export const BLEService = {
 		this.rxExpectedLen = 0;
 		this.rxCmd = 0;
 		this.rxBuffer = null;
-		this.rxBufferOffset = 0;
-	},
+    },
+    
     _setStatus(status) {
         if (this.onStatusChange) this.onStatusChange(status);
     }

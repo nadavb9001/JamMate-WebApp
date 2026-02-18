@@ -53,60 +53,64 @@ export class Knob {
     }
     
 bindEvents() {
-    const onStart = (e) => {
+    // ── TOUCH (mobile) ─────────────────────────────────────────
+    this.element.addEventListener('touchstart', (e) => {
         this.isDragging = true;
         this.startY = e.touches[0].clientY;
         this.startValue = this.value;
         e.preventDefault();
-    };
+    }, { passive: false });
 
-    const onMove = (e) => {
+    this.element.addEventListener('touchmove', (e) => {
         if (!this.isDragging) return;
-        const currentY = e.touches[0].clientY;
-        const deltaY = this.startY - currentY;
+        const deltaY = this.startY - e.touches[0].clientY;
         const sensitivity = (this.max <= 10) ? 0.01 : 0.5;
-        let newValue = this.startValue + deltaY * sensitivity;
-        this.value = Math.max(this.min, Math.min(this.max, newValue));
+        this.value = Math.max(this.min, Math.min(this.max, this.startValue + deltaY * sensitivity));
         if (this.max <= 10) this.value = Math.round(this.value * 10) / 10;
         this.draw();
         if (this.onchange) this.onchange();
         if (this.onInteract) this.onInteract(this.value);
         e.preventDefault();
-    };
+    }, { passive: false });
 
-    const onEnd = () => {
+    this.element.addEventListener('touchend', () => {
         if (!this.isDragging) return;
         this.isDragging = false;
         if (this.onrelease) this.onrelease();
-    };
+    }, { passive: false });
 
-    // Touch: all three on the ELEMENT, not document
-    this.element.addEventListener('touchstart', onStart, { passive: false });
-    this.element.addEventListener('touchmove',  onMove,  { passive: false });
-    this.element.addEventListener('touchend',   onEnd,   { passive: false });
-
-    // Mouse: keep document for mouse (desktop works fine)
-    this.element.addEventListener('mousedown', (e) => {
-        this.isDragging = true;
-        this.startY = e.clientY;
-        this.startValue = this.value;
-    });
-    document.addEventListener('mousemove', (e) => {
+    // ── MOUSE (desktop) — listeners added/removed per drag ─────
+    const onMouseMove = (e) => {
         if (!this.isDragging) return;
         const deltaY = this.startY - e.clientY;
         const sensitivity = (this.max <= 10) ? 0.01 : 0.5;
-        let newValue = this.startValue + deltaY * sensitivity;
-        this.value = Math.max(this.min, Math.min(this.max, newValue));
+        this.value = Math.max(this.min, Math.min(this.max, this.startValue + deltaY * sensitivity));
         if (this.max <= 10) this.value = Math.round(this.value * 10) / 10;
         this.draw();
         if (this.onchange) this.onchange();
         if (this.onInteract) this.onInteract(this.value);
-    });
-    document.addEventListener('mouseup', () => {
+    };
+
+    const onMouseUp = () => {
         if (!this.isDragging) return;
         this.isDragging = false;
         if (this.onrelease) this.onrelease();
+        // Remove listeners — no overhead until next drag
+        document.removeEventListener('mousemove', onMouseMove);
+        document.removeEventListener('mouseup', onMouseUp);
+    };
+
+    this.element.addEventListener('mousedown', (e) => {
+        this.isDragging = true;
+        this.startY = e.clientY;
+        this.startValue = this.value;
+        // Only attach while dragging
+        document.addEventListener('mousemove', onMouseMove);
+        document.addEventListener('mouseup', onMouseUp);
     });
 }
 
 }
+
+}
+

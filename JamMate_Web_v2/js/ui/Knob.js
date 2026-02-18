@@ -52,37 +52,61 @@ export class Knob {
         ctx.fillText(displayValue, cx, cy + 20);
     }
     
-    bindEvents() {
-        const onStart = (e) => {
-            this.isDragging = true;
-            this.startY = e.type.includes('touch') ? e.touches[0].clientY : e.clientY;
-            this.startValue = this.value; e.preventDefault();
-        };
-        const onMove = (e) => {
-            if (!this.isDragging) return;
-            const currentY = e.type.includes('touch') ? e.touches[0].clientY : e.clientY;
-            const deltaY = this.startY - currentY;
-            const sensitivity = (this.max <= 10) ? 0.01 : 0.5;
-            let newValue = this.startValue + deltaY * sensitivity;
-            this.value = Math.max(this.min, Math.min(this.max, newValue));
-            if (this.max <= 10) this.value = Math.round(this.value * 10) / 10;
-            
-            this.draw(); 
-            if (this.onchange) this.onchange();
-            
-            // TRIGGER STATUS UPDATE
-            if (this.onInteract) {
-                this.onInteract(this.value);
-            }
-            
-            e.preventDefault();
-        };
-        const onEnd = () => {
-            if (this.isDragging && this.onrelease) this.onrelease();
-            this.isDragging = false;
-        };
-        this.element.addEventListener('mousedown', onStart); this.element.addEventListener('touchstart', onStart, {passive: false});
-        document.addEventListener('mousemove', onMove); document.addEventListener('touchmove', onMove, {passive: false});
-        document.addEventListener('mouseup', onEnd); document.addEventListener('touchend', onEnd);
-    }
+bindEvents() {
+    const onStart = (e) => {
+        this.isDragging = true;
+        this.startY = e.touches[0].clientY;
+        this.startValue = this.value;
+        e.preventDefault();
+    };
+
+    const onMove = (e) => {
+        if (!this.isDragging) return;
+        const currentY = e.touches[0].clientY;
+        const deltaY = this.startY - currentY;
+        const sensitivity = (this.max <= 10) ? 0.01 : 0.5;
+        let newValue = this.startValue + deltaY * sensitivity;
+        this.value = Math.max(this.min, Math.min(this.max, newValue));
+        if (this.max <= 10) this.value = Math.round(this.value * 10) / 10;
+        this.draw();
+        if (this.onchange) this.onchange();
+        if (this.onInteract) this.onInteract(this.value);
+        e.preventDefault();
+    };
+
+    const onEnd = () => {
+        if (!this.isDragging) return;
+        this.isDragging = false;
+        if (this.onrelease) this.onrelease();
+    };
+
+    // Touch: all three on the ELEMENT, not document
+    this.element.addEventListener('touchstart', onStart, { passive: false });
+    this.element.addEventListener('touchmove',  onMove,  { passive: false });
+    this.element.addEventListener('touchend',   onEnd,   { passive: false });
+
+    // Mouse: keep document for mouse (desktop works fine)
+    this.element.addEventListener('mousedown', (e) => {
+        this.isDragging = true;
+        this.startY = e.clientY;
+        this.startValue = this.value;
+    });
+    document.addEventListener('mousemove', (e) => {
+        if (!this.isDragging) return;
+        const deltaY = this.startY - e.clientY;
+        const sensitivity = (this.max <= 10) ? 0.01 : 0.5;
+        let newValue = this.startValue + deltaY * sensitivity;
+        this.value = Math.max(this.min, Math.min(this.max, newValue));
+        if (this.max <= 10) this.value = Math.round(this.value * 10) / 10;
+        this.draw();
+        if (this.onchange) this.onchange();
+        if (this.onInteract) this.onInteract(this.value);
+    });
+    document.addEventListener('mouseup', () => {
+        if (!this.isDragging) return;
+        this.isDragging = false;
+        if (this.onrelease) this.onrelease();
+    });
+}
+
 }

@@ -407,4 +407,20 @@ export const Protocol = {
         bytes[off++] = patternData[row][col] || 0;
     return buf;
   },
+  // ----------------------------------------------------------------
+	// toFlatIdx — convert (fxIdx, type, subIdx) → flat param index
+	// type: 'checkbox' | 'knob' | 'dropdown'
+	// flatIdx 0       = checkbox (enable)
+	// flatIdx 1..K    = knobs
+	// flatIdx K+1..   = dropdowns
+	// ----------------------------------------------------------------
+	toFlatIdx(fxIdx, type, subIdx) {
+		const tab = APP_CONFIG.tabs[fxIdx];
+		if (!tab) return 0;
+		const K = tab.params.knobs.length;
+		if (type === 'checkbox')  return 0;
+		if (type === 'knob')      return 1 + subIdx;
+		if (type === 'dropdown')  return 1 + K + subIdx;
+		return 0;
+	},
 };

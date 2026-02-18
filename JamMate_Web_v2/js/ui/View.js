@@ -216,26 +216,37 @@ export const View = {
         }
 
         // ── 2. Generic effect controls ────────────────────────────
-        const K = (effect.params.knobs || []).length;   // knob count – needed for dropdown flat offset
+// ── 2. Generic effect controls ────────────────────────────
+const K = (effect.params.knobs || []).length;   // knob count – needed for dropdown flat offset
 
-        controls.innerHTML = `
-            <div class="effect-controls">
-                <div class="effect-title">${effect.title}</div>
-                <label class="checkbox" id="effectEnableRow">
-                    <input type="checkbox" id="effectEnableInput">
-                    <span>${effect.params.checkbox || 'Enable'}</span>
-                </label>
-                <div class="dropdowns-grid" id="generatedDropdowns"></div>
-                <div class="knobs-grid"     id="generatedKnobs"></div>
-            </div>`;
+controls.innerHTML = `
+    <div class="effect-controls">
+        <div class="effect-title-row">
+            <div class="effect-title">${effect.title}</div>
+            <label class="checkbox effect-enable-inline" id="effectEnableRow">
+                <input type="checkbox" id="effectEnableInput">
+                <span>${effect.params.checkbox || 'Enable'}</span>
+            </label>
+        </div>
+        <div class="dropdowns-grid" id="generatedDropdowns"></div>
+        <div class="knobs-grid"     id="generatedKnobs"></div>
+    </div>`;
 
-        // ── Enable checkbox — flat index 0 ───────────────────────
-        const enableInput   = document.getElementById('effectEnableInput');
-        const currentState  = effectStates[idx];
-        enableInput.checked = !!(currentState && currentState.enabled);
-        enableInput.addEventListener('change', () => {
-            if (onParam) onParam(0, enableInput.checked ? 1 : 0);
-        });
+// ── Enable checkbox — flat index 0 ───────────────────────
+const enableInput   = document.getElementById('effectEnableInput');
+const currentState  = effectStates[idx];
+const isEnabled = !!(currentState && currentState.enabled);
+enableInput.checked = isEnabled;
+
+enableInput.addEventListener('change', () => {
+    const newEnabled = enableInput.checked;
+    // Update effect state
+    effectStates[idx].enabled = newEnabled;
+    // Update grid button appearance immediately
+    this.updateEffectButtons(effectStates);
+    // Send to device via callback
+    if (onParam) onParam(0, newEnabled ? 1 : 0);
+});
 
         // ── Dropdowns — flat index K+1 … K+D ────────────────────
         const dropdownContainer = document.getElementById('generatedDropdowns');

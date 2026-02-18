@@ -312,7 +312,7 @@ body:fullscreen { width: 100vw; height: 100vh; margin: 0; padding: 0; }
 }
 .tab.active { background: var(--color-accent); color: #000; border-bottom-color: var(--color-accent); }
 
-.tab-content { display: none; padding: 15px; max-width: 1200px; margin: 0 auto; }
+.tab-content { display: none; padding: 15px; max-width: 1200px; margin: 0 auto; overflow-y: auto; }
 .tab-content.active { display: block; }
 
 /* =========================================
@@ -410,7 +410,7 @@ body.light-theme #statusMessage {
     padding: 6px 10px !important;
 }
 
-#effects-tab.easy-mode #effectControls { display: none !important; }
+#effects-tab.easy-mode #effectControls { display: none !important; overflow-y: auto;}
 
 #effects-tab.easy-mode .effects-scroll {
     flex: 1 1 0 !important;

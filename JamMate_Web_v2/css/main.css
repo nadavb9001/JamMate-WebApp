@@ -498,3 +498,38 @@ body.light-theme #statusMessage {
     gap: 8px;
     margin-top: 4px;
 }
+
+/* Effect title row with inline checkbox */
+.effect-title-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 15px;
+    margin-bottom: 15px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--color-border);
+}
+
+.effect-title-row .effect-title {
+    margin: 0;
+    flex: 1;
+}
+
+.effect-title-row .effect-enable-inline {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0;
+    white-space: nowrap;
+}
+
+.effect-title-row .effect-enable-inline input[type="checkbox"] {
+    width: 20px;
+    height: 20px;
+    cursor: pointer;
+}
+
+.effect-title-row .effect-enable-inline span {
+    font-size: 14px;
+    color: var(--color-text-secondary);
+}

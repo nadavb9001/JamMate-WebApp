@@ -18,85 +18,88 @@ export class Knob {
         this.bindEvents();
     }
 
-    render() {
-        const canvas = document.createElement('canvas');
-        canvas.className = 'knob-canvas';
+render() {
+    const canvas = document.createElement('canvas');
+    canvas.className = 'knob-canvas';
 
-        const size = 90;
-        canvas.width        = size * this.dpr;
-        canvas.height       = size * this.dpr;
-        canvas.style.width  = size + 'px';
-        canvas.style.height = size + 'px';
+    const dpr  = this.dpr;
+    // Use the element's actual CSS size, fall back to 70
+    const size = this.element.offsetWidth || 70;
 
-        this.element.innerHTML = '';
-        this.element.appendChild(canvas);
-        this.canvas = canvas;
-        this.draw();
-    }
+    canvas.width        = size * dpr;
+    canvas.height       = size * dpr;
+    canvas.style.width  = size + 'px';
+    canvas.style.height = size + 'px';
+
+    this.element.innerHTML = '';
+    this.element.appendChild(canvas);
+    this.canvas = canvas;
+    this.size   = size;  // store for draw()
+    this.draw();
+},
 
     draw() {
-        const ctx  = this.canvas.getContext('2d');
-        const dpr  = this.dpr;
-        const size = 90;
-        const cx   = (size / 2) * dpr;
-        const cy   = (size / 2) * dpr;
-        const r    = 35 * dpr;
+    const ctx  = this.canvas.getContext('2d');
+    const dpr  = this.dpr;
+    const size = this.size || 70;
+    const cx   = size / 2;
+    const cy   = size / 2;
+    const r    = size * 0.38;   // proportional radius
 
-        ctx.clearRect(0, 0, size * dpr, size * dpr);
-        ctx.save();
-        ctx.scale(dpr, dpr);
+    ctx.clearRect(0, 0, size * dpr, size * dpr);
+    ctx.save();
+    ctx.scale(dpr, dpr);
 
-        // Knob body
-        const grad = ctx.createRadialGradient(cx/dpr, cy/dpr, 0, cx/dpr, cy/dpr, r/dpr);
-        grad.addColorStop(0, '#666');
-        grad.addColorStop(1, '#333');
-        ctx.fillStyle = grad;
-        ctx.beginPath();
-        ctx.arc(cx/dpr, cy/dpr, r/dpr, 0, Math.PI * 2);
-        ctx.fill();
+    // Body
+    const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+    grad.addColorStop(0, '#666');
+    grad.addColorStop(1, '#333');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.fill();
 
-        // Track arc
-        ctx.strokeStyle = '#222';
-        ctx.lineWidth   = 6;
-        ctx.beginPath();
-        ctx.arc(cx/dpr, cy/dpr, (r - 8) / dpr, 0.75 * Math.PI, 2.25 * Math.PI);
-        ctx.stroke();
+    // Track
+    ctx.strokeStyle = '#222';
+    ctx.lineWidth   = size * 0.07;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r * 0.78, 0.75 * Math.PI, 2.25 * Math.PI);
+    ctx.stroke();
 
-        // Value arc
-        const angle = 0.75 * Math.PI + ((this.value - this.min) / (this.max - this.min)) * 1.5 * Math.PI;
-        ctx.strokeStyle = '#00b0b0';
-        ctx.lineWidth   = 6;
-        ctx.beginPath();
-        ctx.arc(cx/dpr, cy/dpr, (r - 8) / dpr, 0.75 * Math.PI, angle);
-        ctx.stroke();
+    // Value arc
+    const angle = 0.75 * Math.PI + ((this.value - this.min) / (this.max - this.min)) * 1.5 * Math.PI;
+    ctx.strokeStyle = '#00b0b0';
+    ctx.lineWidth   = size * 0.07;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r * 0.78, 0.75 * Math.PI, angle);
+    ctx.stroke();
 
-        // Needle
-        const needleLen = (r - 15) / dpr;
-        ctx.strokeStyle = '#fff';
-        ctx.lineWidth   = 3;
-        ctx.beginPath();
-        ctx.moveTo(cx/dpr, cy/dpr);
-        ctx.lineTo(cx/dpr + Math.cos(angle) * needleLen, cy/dpr + Math.sin(angle) * needleLen);
-        ctx.stroke();
+    // Needle
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth   = size * 0.035;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.lineTo(cx + Math.cos(angle) * r * 0.6, cy + Math.sin(angle) * r * 0.6);
+    ctx.stroke();
 
-        // Center dot
-        ctx.fillStyle = '#fff';
-        ctx.beginPath();
-        ctx.arc(cx/dpr, cy/dpr, 5, 0, Math.PI * 2);
-        ctx.fill();
+    // Center dot
+    ctx.fillStyle = '#fff';
+    ctx.beginPath();
+    ctx.arc(cx, cy, size * 0.06, 0, Math.PI * 2);
+    ctx.fill();
 
-        // Value label
-        ctx.fillStyle     = '#fff';
-        ctx.font          = '16px monospace';
-        ctx.textAlign     = 'center';
-        ctx.textBaseline  = 'middle';
-        const displayValue = (this.max <= 10)
-            ? this.value.toFixed(1)
-            : Math.round(this.value).toString();
-        ctx.fillText(displayValue, cx/dpr, cy/dpr + 20);
+    // Value label
+    ctx.fillStyle    = '#fff';
+    ctx.font         = `${Math.round(size * 0.18)}px monospace`;
+    ctx.textAlign    = 'center';
+    ctx.textBaseline = 'middle';
+    const displayValue = (this.max <= 10)
+        ? this.value.toFixed(1)
+        : Math.round(this.value).toString();
+    ctx.fillText(displayValue, cx, cy + r * 0.52);
 
-        ctx.restore();
-    }
+    ctx.restore();
+}
 
     _scheduleDraw() {
         if (this._rafPending) return;
@@ -161,3 +164,4 @@ export class Knob {
         });
     }
 }
+

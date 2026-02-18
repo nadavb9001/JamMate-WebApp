@@ -423,4 +423,7 @@ export const Protocol = {
 		if (type === 'dropdown')  return 1 + K + subIdx;
 		return 0;
 	},
+	createConfigUpload() {
+    return this.createConfigPacket();
+},
 };

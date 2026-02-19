@@ -37,11 +37,15 @@ export const app = {
   drumLevel: 50,
   drumStyle: 0,
   drumFill: 0,
+  drumNumber: 1,
   bpm: 120,
   looperEnabled: false,
   loopLevel: 50,
-  loopNumber: 1, // 1-5
-  loopSync: 0,   // 0=None, 1=Beat, 2=Bar
+  loopNumber: 1, // legacy kept for compat
+  loopSync: 0,   // 0=None, 1=Bar, 2=Beat
+  loopArm: 0,    // 0=None, 1=Low, 2=High
+  loopLength: 0, // 0=Custom, 4/8/12/16=bars
+  loopTracks: 1,
 
   // ========================================================
   // Init (FIXED - Initialize all 17 effects)
@@ -82,11 +86,15 @@ export const app = {
     this.drumLevel = 50;
     this.drumStyle = 0;
     this.drumFill = 0;
+    this.drumNumber = 1;
     this.bpm = 120;
-	this.looperEnabled = false;
+    this.looperEnabled = false;
     this.loopLevel = 50;
     this.loopNumber = 1;
     this.loopSync = 0;
+    this.loopArm = 0;
+    this.loopLength = 0;
+    this.loopTracks = 1;
 
     
     // Initialize View and pass app reference
@@ -211,14 +219,10 @@ export const app = {
     this.setupTabs();
     View.setupEffectsGrid(this.config);
 
-    // Setup Drum Grid
-    View.setupDrumGrid(this.drumPattern, (cell, row, col) => {
-      const currentVal = this.drumPattern[row][col];
-      const newVal = currentVal > 0 ? 0 : 100;
-      this.drumPattern[row][col] = newVal;
-      View.updateDrumCell(cell, newVal);
-
-      console.log("[APP] Sending Drum Pattern...");
+    // Setup Drum Grid — velocity cycles Off→42→85→127→Off on click
+    View.setupDrumGrid(this.drumPattern, (cell, row, col, newVelocity) => {
+      this.drumPattern[row][col] = newVelocity;
+      View.updateDrumCell(cell, newVelocity);
       const packet = Protocol.createDrumPatternPacket(this.drumPattern);
       BLEService.send(packet);
     });
@@ -231,113 +235,120 @@ export const app = {
   },
 
   // ========================================================
-  // Setup Drum Controls (FIXED - use sendDrumUpdate)
+  // Setup Drum Controls — wires all drum + looper UI
   // ========================================================
   setupDrumControls() {
-// 1. Drum Enable
+    // 1. Drum Enable
     const drumEnableEl = document.getElementById('drumEnable');
     if (drumEnableEl) {
       drumEnableEl.addEventListener('change', (e) => {
         this.drumEnabled = e.target.checked;
         this.sendDrumUpdate();
-        View.updateStatus(this.drumEnabled ? "Drum ON" : "Drum OFF");
+        View.updateStatus(this.drumEnabled ? 'Drum ON' : 'Drum OFF');
       });
     }
 
-    // 2. Looper Enable (NEW)
+    // 2. Looper Enable
     const looperEnableEl = document.getElementById('looperEnable');
     if (looperEnableEl) {
       looperEnableEl.addEventListener('change', (e) => {
         this.looperEnabled = e.target.checked;
         this.sendDrumUpdate();
-        View.updateStatus(this.looperEnabled ? "Looper ON" : "Looper OFF");
+        View.updateStatus(this.looperEnabled ? 'Looper ON' : 'Looper OFF');
       });
     }
 
     // 3. Drum Level Knob
-    const drumLevelKnobEl = document.getElementById('drumLevelKnob');
-    if (drumLevelKnobEl && !drumLevelKnobEl.knob) {
-      const knob = new Knob(drumLevelKnobEl, 0, 100, 50, (val) => {
-        View.updateStatus(`Drum Vol: ${Math.round(val)}`);
+    const drumLevelEl = document.getElementById('drumLevelKnob');
+    if (drumLevelEl && !drumLevelEl._knobInit) {
+      drumLevelEl._knobInit = true;
+      const knob = new Knob(drumLevelEl, 0, 100, this.drumLevel, (v) => {
+        View.updateStatus(`Drum Vol: ${Math.round(v)}`);
       });
-      knob.onrelease = () => {
-        this.drumLevel = knob.value;
-        this.sendDrumUpdate();
-      };
+      knob.onrelease = () => { this.drumLevel = knob.value; this.sendDrumUpdate(); };
     }
 
-    // 4. Loop Level Knob (NEW)
-    const loopLevelKnobEl = document.getElementById('loopLevelKnob');
-    if (loopLevelKnobEl && !loopLevelKnobEl.knob) {
-      const knob = new Knob(loopLevelKnobEl, 0, 100, 50, (val) => {
-        View.updateStatus(`Loop Vol: ${Math.round(val)}`);
+    // 4. Loop Level Knob
+    const loopLevelEl = document.getElementById('loopLevelKnob');
+    if (loopLevelEl && !loopLevelEl._knobInit) {
+      loopLevelEl._knobInit = true;
+      const knob = new Knob(loopLevelEl, 0, 100, this.loopLevel, (v) => {
+        View.updateStatus(`Loop Vol: ${Math.round(v)}`);
       });
-      knob.onrelease = () => {
-        this.loopLevel = knob.value;
-        this.sendDrumUpdate();
-      };
+      knob.onrelease = () => { this.loopLevel = knob.value; this.sendDrumUpdate(); };
     }
 
-    // 5. Style & Fill Dropdowns
-    ['drumStyle', 'drumFill',"loopNum","loopSync"].forEach(id => {
-        const el = document.getElementById(id);
-        if(el) el.addEventListener('change', (e) => {
-            this[id] = parseInt(e.target.value);
-            this.sendDrumUpdate();
-        });
+    // 5. Drum dropdowns: style, fill, number
+    [
+      ['drumStyle',  'style'],
+      ['drumFill',   'fill'],
+      ['drumNumber', 'drumNumber'],
+    ].forEach(([id, prop]) => {
+      const el = document.getElementById(id);
+      if (el) el.addEventListener('change', (e) => {
+        this[prop] = parseInt(e.target.value);
+        this.sendDrumUpdate();
+        View.updateStatus(`${id}: ${e.target.value}`);
+      });
     });
 
-    // 6. Loop Number (NEW)
-    /*const loopNumEl = document.getElementById('loopNumber');
-    if (loopNumEl) {
-        loopNumEl.addEventListener('change', (e) => {
-            this.loopNumber = parseInt(e.target.value);
-            this.sendDrumUpdate();
-            View.updateStatus(`Loop Track: ${this.loopNumber}`);
-        });
-    }
+    // 6. Looper dropdowns: sync, arm, loopLength, loopTracks
+    [
+      ['loopSync',   'loopSync'],
+      ['loopArm',    'loopArm'],
+      ['loopLength', 'loopLength'],
+      ['loopTracks', 'loopTracks'],
+    ].forEach(([id, prop]) => {
+      const el = document.getElementById(id);
+      if (el) el.addEventListener('change', (e) => {
+        this[prop] = parseInt(e.target.value);
+        this.sendDrumUpdate();
+        View.updateStatus(`${id}: ${e.target.value}`);
+      });
+    });
 
-    // 7. Loop Sync (NEW)
-    const loopSyncEl = document.getElementById('loopSync');
-    if (loopSyncEl) {
-        loopSyncEl.addEventListener('change', (e) => {
-            this.loopSync = parseInt(e.target.value);
-            this.sendDrumUpdate();
-            const texts = ["None", "Beat", "Bar"];
-            View.updateStatus(`Sync: ${texts[this.loopSync]}`);
-        });
-    }*/
+    // 7. Save to SD
+    const btnSaveToSD = document.getElementById('btnSaveToSD');
+    if (btnSaveToSD) {
+      btnSaveToSD.addEventListener('click', () => {
+        const pkt = Protocol.createSaveToSD();
+        BLEService.send(pkt);
+        View.updateStatus('Saving to SD…');
+      });
+    }
   },
 
   // ========================================================
-  // Send Drum Update (0x41 command)
+  // Send Drum + Looper state to ESP (CMD 0x41)
+  // Packet carries: drum enable/level/bpm/style/fill/number
+  //                 looper enable/level/sync/arm/loopLength/tracks
   // ========================================================
-	sendDrumUpdate() {
-		if (this.isUpdatingUI) return;
+  sendDrumUpdate() {
+    if (this.isUpdatingUI) return;
+    const bpmEl = document.getElementById('bpmKnob');
+    const currentBPM = bpmEl && bpmEl.knob ? bpmEl.knob.value : this.bpm;
 
-		const bpmEl = document.getElementById('bpmKnob');
-		const currentBPM = bpmEl && bpmEl.knob ? bpmEl.knob.value : this.bpm;
-
-		console.log(`[APP] Drum/Loop Update`);
-
-		const pkt = Protocol.createDrumUpdate(
-			this.drumEnabled || false,
-			this.drumLevel || 50,
-			currentBPM || 120,
-			this.drumStyle || 0,
-			this.drumFill || 0,
-			// New Params
-			this.looperEnabled || false,
-			this.loopLevel || 50,
-			this.loopNumber || 1,
-			this.loopSync || 0
-		);
-
-		BLEService.send(pkt);
-	},
+    const pkt = Protocol.createDrumUpdate(
+      this.drumEnabled  || false,
+      this.drumLevel    || 50,
+      currentBPM        || 120,
+      this.drumStyle    || 0,
+      this.drumFill     || 0,
+      this.drumNumber   || 1,
+      this.looperEnabled || false,
+      this.loopLevel    || 50,
+      this.loopSync     || 0,
+      this.loopArm      || 0,
+      this.loopLength   || 0,
+      this.loopTracks   || 1
+    );
+    BLEService.send(pkt);
+  },
 
   // ========================================================
-  // Load State from Blob (FIXED - with safety checks)
+  // Load State from Blob
+  // Deserializes and populates effectParams using flat keys (p0, p1...)
+  // p0 = checkbox/enable, p1..pK = knobs, pK+1..pK+D = dropdowns
   // ========================================================
   loadStateFromBlob(blob) {
     this.isUpdatingUI = true;
@@ -345,7 +356,7 @@ export const app = {
     try {
       const state = Protocol.deserializeState(blob);
 
-      // Ensure all effectStates initialized (safety check)
+      // Ensure all effectStates initialized
       for (let i = 0; i < 18; i++) {
         if (!this.effectStates[i]) {
           this.effectStates[i] = { enabled: false, selected: false };
@@ -355,40 +366,43 @@ export const app = {
         }
       }
 
-      // Now safe to update from loaded state
+      // Populate effectParams using flat keys
       Object.keys(state.effectStates).forEach(idx => {
         const i = parseInt(idx);
-        if (i < 18 && this.effectStates[i]) {
-          this.effectStates[i].enabled = state.effectStates[i].enabled;
-          if (state.effectParams[i]) {
-            this.effectParams[i] = { ...this.effectParams[i], ...state.effectParams[i] };
-          }
+        if (i >= 18) return;
+        const config = this.config.tabs[i];
+        if (!config) return;
+
+        // p0 = checkbox
+        const enabled = state.effectStates[i].enabled;
+        this.effectStates[i].enabled = enabled;
+        this.effectParams[i].p0 = enabled ? 1 : 0;
+
+        // p1..pK = knobs
+        const kCount = config.params.knobs.length;
+        for (let k = 0; k < kCount; k++) {
+          const v = state.effectParams[i] ? state.effectParams[i][`knob${k}`] : undefined;
+          this.effectParams[i][`p${1 + k}`] = v !== undefined ? v : 50;
+        }
+
+        // pK+1..pK+D = dropdowns
+        const dCount = config.params.dropdowns.length;
+        for (let d = 0; d < dCount; d++) {
+          const v = state.effectParams[i] ? state.effectParams[i][`dropdown${d}`] : undefined;
+          this.effectParams[i][`p${1 + kCount + d}`] = v !== undefined ? v : 0;
         }
       });
 
       // Load EQ points
-	// ✅ NEW CODE (SYNC TO HARDWARE)
-	if (state.eqPoints && state.eqPoints.length > 0) {
-		this.currentEQPoints = state.eqPoints;
-
-		// Check if IIRDesigner is currently active/visible
-		if (this.iirDesigner) {
-			this.iirDesigner.loadPoints(this.currentEQPoints);
-
-			// === NEW: SYNC ALL EQ BANDS TO HARDWARE DSP ===
-			// loadPoints() updates the UI and infers count,
-			// but we also need to send all band data to hardware
-			console.log('[APP] Syncing loaded EQ state to hardware DSP...');
-			this.iirDesigner.masterPoints.forEach((pt, bandIdx) => {
-				// triggerDataChange() will:
-				// 1. Find the point in masterPoints
-				// 2. Send via Protocol.createEQUpdate()
-				// 3. Send to BLEService
-				this.iirDesigner.triggerDataChange(bandIdx);
-			});
-			console.log('[APP] EQ sync complete - all bands sent to DSP');
-		}
-	}
+      if (state.eqPoints && state.eqPoints.length > 0) {
+        this.currentEQPoints = state.eqPoints;
+        if (this.iirDesigner) {
+          this.iirDesigner.loadPoints(this.currentEQPoints);
+          this.iirDesigner.masterPoints.forEach((pt, bandIdx) => {
+            this.iirDesigner.triggerDataChange(bandIdx);
+          });
+        }
+      }
 
       View.updateEffectButtons(this.effectStates);
 
@@ -402,12 +416,6 @@ export const app = {
         bpmKnob.knob.value = state.bpm;
         this.bpm = state.bpm;
       }
-
-      // Update Master knob
-      //const masterKnob = document.getElementById('masterKnob');
-      //if (masterKnob && masterKnob.knob) {
-      //  masterKnob.knob.value = state.master;
-      //}
 
       View.updateStatus(`Loaded: ${state.name}`);
     } catch (e) {
@@ -562,32 +570,28 @@ export const app = {
 	
     const modal = document.getElementById('saveModal');
 
-    document.getElementById('btnSavePreset').onclick = () => {
+    // Single open handler — works even in easy mode
+    document.getElementById('btnSavePreset').addEventListener('click', (e) => {
+      e.stopPropagation();
       modal.classList.add('active');
-    };
-	
-	// --------------------------------------------------------
-	// ROBUST SAVE MODAL HANDLER (Event Delegation)
-	// Works even if the Header/HTML is refreshed dynamically.
-	// --------------------------------------------------------
-	document.body.addEventListener('click', (e) => {
-		
-		// 1. OPEN MODAL (Check if clicked element is the Save Button or its icon)
-		if (e.target.closest('#btnSavePreset')) {
-			const modal = document.getElementById('saveModal');
-			if (modal) modal.style.display = 'flex';
-		}
+      modal.style.display = 'flex';
+    });
 
-		// 2. CLOSE MODAL (Cancel Button)
-		if (e.target.closest('#btnCancelSave')) {
-			const modal = document.getElementById('saveModal');
-			if (modal) modal.style.display = 'none';
-		}
-	});
-
-    document.getElementById('btnCancelSave').onclick = () => {
+	// --------------------------------------------------------
+	// SAVE MODAL — confirm / cancel
+	// --------------------------------------------------------
+	document.getElementById('btnCancelSave').addEventListener('click', () => {
       modal.classList.remove('active');
-    };
+      modal.style.display = '';
+    });
+
+	// Close on backdrop click
+	modal.addEventListener('click', (e) => {
+	  if (e.target === modal) {
+	    modal.classList.remove('active');
+	    modal.style.display = '';
+	  }
+	});
 	document.getElementById('flash-btn').addEventListener('click', () => {
 		if (confirm("Enter Bootloader Mode? The DSP will stop audio.")) {
 			console.log("[APP] Sending FLSH command...");
@@ -620,11 +624,24 @@ export const app = {
       BLEService.send(packet);
 
       modal.classList.remove('active');
+      modal.style.display = '';
     };
   },
 
   // ========================================================
   // Select Effect
+  //
+  // All three param types (checkbox, knobs, dropdowns) are now
+  // addressed by a single flat index via Protocol.toFlatIdx().
+  //   flatIdx 0        → checkbox (enable/disable)
+  //   flatIdx 1..K     → knobs
+  //   flatIdx K+1..K+D → dropdowns
+  //
+  // effectParams[idx] stores values by flat index:
+  //   effectParams[idx].p0  = checkbox value (0|1)
+  //   effectParams[idx].p1  = knob0 value
+  //   effectParams[idx].p2  = knob1 value  … etc.
+  // effectStates[idx].enabled mirrors p0 for the UI grid buttons.
   // ========================================================
   selectEffect(idx) {
     this.currentEffect = idx;
@@ -640,56 +657,51 @@ export const app = {
       idx,
       this.effectParams[idx],
       this.effectStates,
-      // Knob Callback
-      (pid, val) => {
+      // ── Unified flat-index param callback ─────────────────────────
+      // View.js fires: onParam(flatIdx, value)
+      //   flatIdx 0        = checkbox (enable 0|1)
+      //   flatIdx 1..K     = knob[flatIdx-1]    value 0..255
+      //   flatIdx K+1..K+D = dropdown[flatIdx-1-K]  value 0..255
+      (flatIdx, val) => {
         if (this.isUpdatingUI) return;
-        this.effectParams[idx][`knob${pid}`] = val;
-        BLEService.send(Protocol.createParamUpdate(idx, pid, val));
-      },
-      // Dropdown Callback
-      (pid, val) => {
-        if (this.isUpdatingUI) return;
-        const knobCount = this.config.tabs[idx].params.knobs.length;
-        const paramId = knobCount + pid;
-        this.effectParams[idx][`dropdown${pid}`] = val;
-        BLEService.send(Protocol.createParamUpdate(idx, paramId, val));
-      },
-      // Toggle Callback
-      (en) => {
-        if (this.isUpdatingUI) return;
-        this.effectStates[idx].enabled = en;
-        View.updateEffectButtons(this.effectStates);
-        BLEService.send(Protocol.createToggleUpdate(idx, en));
-      },
-      // EQ Callback
-      /*(b, en, f, g, q) => {
-        if (this.isUpdatingUI) return;
-        BLEService.send(Protocol.createEQUpdate(b, en, f, g, q));
-      }*/
-	  (b, en, f, g, q) => {
-        if (this.isUpdatingUI) return;
-        
-        // Update Internal State immediately so it doesn't get lost on tab switch
-        if(!this.currentEQPoints) this.currentEQPoints = [];
-        // Ensure array is big enough
-        while(this.currentEQPoints.length <= b) this.currentEQPoints.push({freq:100, gain:0, q:1.4, enabled:true});
-        
-        this.currentEQPoints[b] = { freq: f, gain: g, q: q, enabled: (en === 1 || en === true) };
 
+        // Store by flat key: p0, p1, p2 …
+        this.effectParams[idx][`p${flatIdx}`] = val;
+
+        // Mirror enable into effectStates for the grid button colours
+        if (flatIdx === 0) {
+          this.effectStates[idx].enabled = (val !== 0);
+          View.updateEffectButtons(this.effectStates);
+        }
+
+        // Wire packet: [0x20][0x03][0x00][fxId][flatIdx][value]  (6 bytes)
+        BLEService.send(Protocol.createParamUpdate(idx, flatIdx, val));
+      },
+      // ── EQ callback (unchanged) ────────────────────────────────
+      (b, en, f, g, q) => {
+        if (this.isUpdatingUI) return;
+        if (!this.currentEQPoints) this.currentEQPoints = [];
+        while (this.currentEQPoints.length <= b) {
+          this.currentEQPoints.push({ freq: 100, gain: 0, q: 1.4, enabled: true });
+        }
+        this.currentEQPoints[b] = { freq: f, gain: g, q: q, enabled: (en === 1 || en === true) };
         BLEService.send(Protocol.createEQUpdate(b, en, f, g, q));
       }
     );
   },
 
   // ========================================================
-  // Toggle Effect Enabled
+  // Toggle Effect Enabled (from grid button double-click)
+  // flatParamIdx 0 = checkbox — uses unified createParamUpdate
   // ========================================================
   toggleEffectEnabled(idx) {
     if (this.isUpdatingUI) return;
     const newState = !this.effectStates[idx].enabled;
     this.effectStates[idx].enabled = newState;
+    this.effectParams[idx] = this.effectParams[idx] || {};
+    this.effectParams[idx].p0 = newState ? 1 : 0;
     View.updateEffectButtons(this.effectStates);
-    BLEService.send(Protocol.createToggleUpdate(idx, newState));
+    BLEService.send(Protocol.createParamUpdate(idx, 0, newState ? 1 : 0));
   },
 
   // ========================================================
@@ -847,6 +859,19 @@ export const app = {
   },
 
   // ========================================================
+  // Send Config Upload (CMD 0x50)
+  // Pushes a compact JSON layout table to ESP LittleFS so the
+  // ESP can split flat param indices without being reflashed.
+  // ========================================================
+  sendConfigUpdate() {
+    console.log("[APP] Uploading config to ESP LittleFS...");
+    View.updateStatus("Uploading config...");
+    const packet = Protocol.createConfigUpload();
+    BLEService.send(packet);
+    View.updateStatus("Config upload sent");
+  },
+
+  // ========================================================
   // Setup Global Listeners
   // ========================================================
 	setupGlobalListeners() {
@@ -867,6 +892,20 @@ export const app = {
 		        console.log("[APP] Sending SD Card Read command...");
 		        BLEService.send(Protocol.createSDCardReadCommand());
 		        View.updateStatus("SD Card Read command sent");
+		    };
+		}
+
+		// Update Config Button — pushes config.js layout to ESP LittleFS
+		const btnUpdateConfig = document.getElementById('btnUpdateConfig');
+		if (btnUpdateConfig) {
+		    btnUpdateConfig.onclick = () => {
+		        if (!BLEService.isConnected) {
+		            View.updateStatus("Not connected — connect first");
+		            return;
+		        }
+		        if (confirm("Upload current config.js to ESP? The device will use new param counts immediately.")) {
+		            this.sendConfigUpdate();
+		        }
 		    };
 		}
 
@@ -943,13 +982,17 @@ export const app = {
 		window.soloEffectOpen = false;
 
 		window.closeSoloEffect = () => {
-			const overlay = document.querySelector('.solo-effect-overlay');
-			const controls = document.getElementById('effectControls');
-			const effectsTab = document.getElementById('effects-tab');
-
+			// Only remove overlays that are actual solo-effect popups,
+			// NOT the save modal (which also has solo-effect-overlay class).
+			const overlay = document.querySelector('.solo-effect-overlay:not(#saveModal)');
 			if (overlay) {
-				if (controls && effectsTab) {
-					effectsTab.appendChild(controls);  // put controls back
+				// Move #effectControls back into the effects-tab before removing the overlay
+				const controls   = document.getElementById('effectControls');
+				const effectsTab = document.getElementById('effects-tab');
+				if (controls && effectsTab && overlay.contains(controls)) {
+					// Re-hide it — in easy mode we don't show inline controls
+					controls.style.display = 'none';
+					effectsTab.appendChild(controls);
 				}
 				overlay.remove();
 			}
@@ -957,10 +1000,7 @@ export const app = {
 		};
 
 		window.showSoloEffect = (name, idx) => {
-			// If something is already open, clean it up first
-			if (window.soloEffectOpen) {
-				window.closeSoloEffect();
-			}
+			if (window.soloEffectOpen) window.closeSoloEffect();
 			window.soloEffectOpen = true;
 
 			const overlay = document.createElement('div');
@@ -970,56 +1010,110 @@ export const app = {
 			cont.className = 'solo-effect-container';
 
 			const title = document.createElement('div');
-			title.className = 'solo-effect-title';
+			title.className   = 'solo-effect-title';
 			title.textContent = name;
 
 			const closeBtn = document.createElement('button');
-			closeBtn.className = 'solo-effect-close-btn';
-			closeBtn.textContent = 'X';
+			closeBtn.className   = 'solo-effect-close-btn';
+			closeBtn.textContent = '✕';
 			closeBtn.addEventListener('click', window.closeSoloEffect);
+
+			// Close on backdrop click
+			overlay.addEventListener('click', (e) => {
+				if (e.target === overlay) window.closeSoloEffect();
+			});
 
 			cont.appendChild(title);
 			cont.appendChild(closeBtn);
 			overlay.appendChild(cont);
 			document.body.appendChild(overlay);
 
+			// Move #effectControls into popup and make it visible
 			const controls = document.getElementById('effectControls');
 			if (controls) {
+				controls.style.display = '';
 				cont.appendChild(controls);
 			}
 
-			if (app.iirDesigner) {
-				requestAnimationFrame(() => app.iirDesigner.draw());
-			}
+			if (app.iirDesigner) requestAnimationFrame(() => app.iirDesigner.draw());
 		};
 
 
 		const btnEasyMode = document.getElementById('btnEasyMode');
 		if (btnEasyMode) {
+			// ── Measure & fit buttons to fill the panel ────────────
+			const resizeEasyMode = () => {
+				const tab   = document.getElementById('effects-tab');
+				if (!tab || !tab.classList.contains('easy-mode')) return;
+
+				const scroll = tab.querySelector('.effects-scroll');
+				const grid   = tab.querySelector('.effects-grid');
+				const btns   = grid ? grid.querySelectorAll('.effect-btn') : [];
+				const n      = btns.length;
+				if (!scroll || !grid || n === 0) return;
+
+				// Available space (scroll container)
+				const W = scroll.clientWidth  - 8;   // 4px padding each side
+				const H = scroll.clientHeight - 8;
+
+				// Find cols that produces squarish cells filling the space best.
+				// Score = how close aspect ratio of a cell is to square (1:1).
+				let bestCols = 1, bestScore = Infinity;
+				for (let cols = 1; cols <= n; cols++) {
+					const rows  = Math.ceil(n / cols);
+					const gap   = 4;
+					const cellW = (W - gap * (cols - 1)) / cols;
+					const cellH = (H - gap * (rows - 1)) / rows;
+					if (cellW < 44 || cellH < 36) continue;  // too small to tap
+					const ratio = Math.max(cellW, cellH) / Math.min(cellW, cellH);
+					// Prefer ratios close to 1 (square), penalise very narrow/tall
+					const score = Math.abs(ratio - 1.15); // slight vertical preferred
+					if (score < bestScore) { bestScore = score; bestCols = cols; }
+				}
+
+				const cols   = bestCols;
+				const rows   = Math.ceil(n / cols);
+				const gap    = 4;
+				const cellW  = Math.floor((W - gap * (cols - 1)) / cols);
+				const cellH  = Math.floor((H - gap * (rows - 1)) / rows);
+
+				grid.style.gridTemplateColumns = `repeat(${cols}, ${cellW}px)`;
+				grid.style.gridTemplateRows    = `repeat(${rows}, ${cellH}px)`;
+				grid.style.gap                 = `${gap}px`;
+			};
+
+			// Store so we can call it on window resize
+			this._resizeEasyMode = resizeEasyMode;
+
 			btnEasyMode.onclick = (e) => {
 				const tab = document.getElementById('effects-tab');
 				if (!tab) return;
 
 				tab.classList.toggle('easy-mode');
-				
+
 				// Ensure all effect buttons remain draggable
 				document.querySelectorAll('.effect-btn').forEach(btn => {
 					btn.draggable = true;
 				});
-		
-		
+
 				const isActive = tab.classList.contains('easy-mode');
 
-				e.target.style.background = isActive
-					? 'var(--color-accent)'
-					: 'var(--color-bg-surface)';
-				e.target.style.color = isActive
-					? '#000'
-					: 'var(--color-text-primary)';
+				e.target.style.background = isActive ? 'var(--color-accent)' : 'var(--color-bg-surface)';
+				e.target.style.color      = isActive ? '#000' : 'var(--color-text-primary)';
 
 				window.soloEffectOpen = false;
 				View.updateStatus(isActive ? 'Easy Mode Enabled' : 'Easy Mode Disabled');
+
+				if (isActive) {
+					// Wait one frame for layout to settle before measuring
+					requestAnimationFrame(() => requestAnimationFrame(resizeEasyMode));
+				}
 			};
+
+			// Re-fit on every resize / orientation change
+			window.addEventListener('resize', () => {
+				requestAnimationFrame(() => this._resizeEasyMode && this._resizeEasyMode());
+			});
 		}
 		const tunerEnable = document.getElementById('tunerEnable');
 		if (tunerEnable) {
@@ -1149,4 +1243,3 @@ export const app = {
 	
 
 };
-

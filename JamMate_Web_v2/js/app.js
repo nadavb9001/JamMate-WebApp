@@ -934,7 +934,7 @@ export const app = {
 			let clickCount = 0;
 			let clickTimeout = null;
 
-			btn.addEventListener('click', () => {
+			/*btn.addEventListener('click', () => {
 				clickCount++;
 				if (clickCount === 1) {
 					clickTimeout = setTimeout(() => {
@@ -945,6 +945,19 @@ export const app = {
 					clickCount = 0;
 					onToggle();
 				}
+			});*/
+			btn.addEventListener('click', () => {
+			    const isEasyMode = document.getElementById('effects-tab').classList.contains('easy-mode');
+			    if (window.soloEffectOpen) {
+			        window.closeSoloEffect();
+			        // ← no return — fall through to open the newly clicked effect
+			    }
+			    ...
+			    clickTimeout = setTimeout(() => {
+			        this.app.selectEffect(idx);
+			        if (isEasyMode) window.showSoloEffect(effect.title, idx);
+			        clickCount = 0;
+			    }, 250);
 			});
 		};
 		
@@ -978,7 +991,7 @@ export const app = {
 		// Solo effect handler
 		window.soloEffectOpen = false;
 
-		window.closeSoloEffect = () => {
+		/*window.closeSoloEffect = () => {
 			// Only remove overlays that are actual solo-effect popups,
 			// NOT the save modal (which also has solo-effect-overlay class).
 			const overlay = document.querySelector('.solo-effect-overlay:not(#saveModal)');
@@ -994,6 +1007,18 @@ export const app = {
 				overlay.remove();
 			}
 			window.soloEffectOpen = false;
+		};*/
+		window.closeSoloEffect = () => {
+		    const overlay    = document.getElementById('soloEffectOverlay');  // use ID not class
+		    const controls   = document.getElementById('effectControls');
+		    const effectsTab = document.getElementById('effects-tab');
+		
+		    // Always restore controls to effects-tab, regardless of overlay state
+		    if (controls && effectsTab && !effectsTab.contains(controls)) {
+		        effectsTab.appendChild(controls);
+		    }
+		    if (overlay) overlay.remove();
+		    window.soloEffectOpen = false;
 		};
 
 		window.showSoloEffect = (name, idx) => {
@@ -1001,6 +1026,7 @@ export const app = {
 			window.soloEffectOpen = true;
 
 			const overlay = document.createElement('div');
+			overlay.id        = 'soloEffectOverlay';   // ← add this
 			overlay.className = 'solo-effect-overlay';
 
 			const cont = document.createElement('div');
@@ -1083,6 +1109,8 @@ export const app = {
 			this._resizeEasyMode = resizeEasyMode;
 
 			btnEasyMode.onclick = (e) => {
+				// ★ Always clean up the overlay before changing mode
+    			if (window.closeSoloEffect) window.closeSoloEffect();
 				const tab = document.getElementById('effects-tab');
 				if (!tab) return;
 
@@ -1098,7 +1126,7 @@ export const app = {
 				e.target.style.background = isActive ? 'var(--color-accent)' : 'var(--color-bg-surface)';
 				e.target.style.color      = isActive ? '#000' : 'var(--color-text-primary)';
 
-				window.soloEffectOpen = false;
+				//window.soloEffectOpen = false;
 				View.updateStatus(isActive ? 'Easy Mode Enabled' : 'Easy Mode Disabled');
 
 				if (isActive) {

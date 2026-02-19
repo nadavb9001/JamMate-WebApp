@@ -1,11 +1,11 @@
-import { Knob }        from './Knob.js';
+import { Knob } from './Knob.js';
 import { IIRDesigner } from './IIRDesigner.js';
 
 export const View = {
     init(app) {
-        this.app         = app;
-        this.statusEl    = document.getElementById('statusMessage');
-        this.ledEl       = document.getElementById('statusLed');
+        this.app = app;
+        this.statusEl = document.getElementById('statusMessage');
+        this.ledEl    = document.getElementById('statusLed');
         this.statusTimer = null;
     },
 
@@ -29,21 +29,10 @@ export const View = {
         if (!this.ledEl) return;
         this.ledEl.classList.remove('connected', 'connecting', 'error');
         switch (status) {
-            case 'connected':
-                this.ledEl.classList.add('connected');
-                this.updateStatus('Connected to JamMate');
-                break;
-            case 'connecting':
-                this.ledEl.classList.add('connecting');
-                this.updateStatus('Connecting...');
-                break;
-            case 'disconnected':
-                this.updateStatus('Disconnected');
-                break;
-            case 'error':
-                this.ledEl.classList.add('error');
-                this.updateStatus('Connection Error');
-                break;
+            case 'connected':    this.ledEl.classList.add('connected');  this.updateStatus('Connected to JamMate'); break;
+            case 'connecting':   this.ledEl.classList.add('connecting'); this.updateStatus('Connecting…');         break;
+            case 'disconnected': this.updateStatus('Disconnected');                                                break;
+            case 'error':        this.ledEl.classList.add('error');      this.updateStatus('Connection Error');    break;
         }
     },
 
@@ -76,21 +65,12 @@ export const View = {
             btn.draggable        = true;
             btn.textContent      = effect.title;
 
-            // Single click = select (+ open solo panel in easy mode)
-            // Double click = toggle enable/disable
+            // Single click = select | Double click = toggle enable
             let clickTimeout = null;
             let clickCount   = 0;
             btn.addEventListener('click', () => {
-                const isEasyMode = document.getElementById('effects-tab')
-                                    .classList.contains('easy-mode');
-
-                // FIX: close the overlay but do NOT return — fall through
-                // to select the newly clicked effect and reopen its panel.
-                // The old code had `return` here, which meant clicking a
-                // different effect while a panel was open would close it
-                // but never open the new one (required a second click).
-                if (window.soloEffectOpen) window.closeSoloEffect();
-
+                const isEasyMode = document.getElementById('effects-tab').classList.contains('easy-mode');
+                if (window.soloEffectOpen) { window.closeSoloEffect(); return; }
                 clickCount++;
                 if (clickCount === 1) {
                     clickTimeout = setTimeout(() => {
@@ -98,7 +78,7 @@ export const View = {
                         if (isEasyMode) window.showSoloEffect(effect.title, idx);
                         clickCount = 0;
                     }, 250);
-                } else if (clickCount >= 2) {
+                } else if (clickCount === 2) {
                     clearTimeout(clickTimeout);
                     this.app.toggleEffectEnabled(idx);
                     clickCount = 0;
@@ -113,8 +93,7 @@ export const View = {
             });
             btn.addEventListener('dragend', () => {
                 btn.classList.remove('dragging');
-                document.querySelectorAll('.effect-btn')
-                        .forEach(b => b.classList.remove('drag-over'));
+                document.querySelectorAll('.effect-btn').forEach(b => b.classList.remove('drag-over'));
             });
             btn.addEventListener('dragover', (e) => {
                 e.preventDefault();
@@ -145,18 +124,15 @@ export const View = {
     // =========================================================
     // CONTROLS GENERATION
     //
-    // showEffectControls(effect, idx, effectParams, effectStates, onParam, onEQChange)
+    // NEW UNIFIED SIGNATURE:
+    //   showEffectControls(effect, idx, effectParams, effectStates, onParam, onEQChange)
     //
-    // onParam(flatIdx, value)  — single callback for ALL controls
-    //   flatIdx 0      → checkbox (enable)     value: 0 | 1
-    //   flatIdx 1..K   → knob[flatIdx-1]       value: 0-255
-    //   flatIdx K+1..  → dropdown[flatIdx-1-K] value: option index
+    // onParam(flatIdx, value)  ← single callback for ALL controls
+    //   flatIdx 0      → checkbox (enable)           value: 0 | 1
+    //   flatIdx 1..K   → knob[flatIdx-1]             value: 0-255
+    //   flatIdx K+1..  → dropdown[flatIdx-1-K]       value: option index
     //
-    // effectParams keys read back:
-    //   'knob0'..'knobN'         saved knob positions
-    //   'dropdown0'..'dropdownN' saved dropdown selections
-    //
-    // onEQChange(bandIdx, enabled, freq, gain, q) — EQ bands only
+    // onEQChange(bandIdx, enabled, freq, gain, q)  ← EQ bands only, unchanged
     // =========================================================
 
     showEffectControls(effect, idx, effectParams, effectStates, onParam, onEQChange) {
@@ -199,6 +175,7 @@ export const View = {
                 </div>
             </div>`;
 
+            // Level knob → flat index 1  (first and only EQ knob)
             const savedLevel = effectParams['knob0'] !== undefined ? effectParams['knob0'] : 50;
             const levelKnob  = new Knob(
                 document.getElementById('eqLevelKnob'), 0, 100, savedLevel,
@@ -206,6 +183,7 @@ export const View = {
             );
             levelKnob.onrelease = () => { if (onParam) onParam(1, levelKnob.value); };
 
+            // Q knob drives IIRDesigner internally – no flat param emitted
             const qKnob = new Knob(
                 document.getElementById('eqQKnob'), 0.1, 10, 1.41,
                 (v) => this.updateStatus(`Q Factor: ${v.toFixed(2)}`)
@@ -238,26 +216,37 @@ export const View = {
         }
 
         // ── 2. Generic effect controls ────────────────────────────
-        const K = (effect.params.knobs || []).length;
+// ── 2. Generic effect controls ────────────────────────────
+const K = (effect.params.knobs || []).length;   // knob count – needed for dropdown flat offset
 
-        controls.innerHTML = `
-            <div class="effect-controls">
-                <div class="effect-title">${effect.title}</div>
-                <label class="checkbox" id="effectEnableRow">
-                    <input type="checkbox" id="effectEnableInput">
-                    <span>${effect.params.checkbox || 'Enable'}</span>
-                </label>
-                <div class="dropdowns-grid" id="generatedDropdowns"></div>
-                <div class="knobs-grid"     id="generatedKnobs"></div>
-            </div>`;
+controls.innerHTML = `
+    <div class="effect-controls">
+        <div class="effect-title-row">
+            <div class="effect-title">${effect.title}</div>
+            <label class="checkbox effect-enable-inline" id="effectEnableRow">
+                <input type="checkbox" id="effectEnableInput">
+                <span>${effect.params.checkbox || 'Enable'}</span>
+            </label>
+        </div>
+        <div class="dropdowns-grid" id="generatedDropdowns"></div>
+        <div class="knobs-grid"     id="generatedKnobs"></div>
+    </div>`;
 
-        // ── Enable checkbox — flat index 0 ───────────────────────
-        const enableInput  = document.getElementById('effectEnableInput');
-        const currentState = effectStates[idx];
-        enableInput.checked = !!(currentState && currentState.enabled);
-        enableInput.addEventListener('change', () => {
-            if (onParam) onParam(0, enableInput.checked ? 1 : 0);
-        });
+// ── Enable checkbox — flat index 0 ───────────────────────
+const enableInput   = document.getElementById('effectEnableInput');
+const currentState  = effectStates[idx];
+const isEnabled = !!(currentState && currentState.enabled);
+enableInput.checked = isEnabled;
+
+enableInput.addEventListener('change', () => {
+    const newEnabled = enableInput.checked;
+    // Update effect state
+    effectStates[idx].enabled = newEnabled;
+    // Update grid button appearance immediately
+    this.updateEffectButtons(effectStates);
+    // Send to device via callback
+    if (onParam) onParam(0, newEnabled ? 1 : 0);
+});
 
         // ── Dropdowns — flat index K+1 … K+D ────────────────────
         const dropdownContainer = document.getElementById('generatedDropdowns');
@@ -271,15 +260,16 @@ export const View = {
             const select  = document.createElement('select');
             const options = this.app.config.dropdowns[name] || [];
             options.forEach((text, oi) => {
-                const opt = document.createElement('option');
-                opt.text  = text;
-                opt.value = oi;
+                const opt  = document.createElement('option');
+                opt.text   = text;
+                opt.value  = oi;
                 select.add(opt);
             });
             select.selectedIndex = effectParams[`dropdown${dIndex}`] || 0;
 
             select.addEventListener('change', () => {
                 this.updateStatus(`${name.replace(/_/g, ' ')}: ${options[select.selectedIndex]}`);
+                // flat: 0=checkbox, 1..K=knobs, K+1..=dropdowns
                 if (onParam) onParam(1 + K + dIndex, select.selectedIndex);
             });
 
@@ -306,25 +296,33 @@ export const View = {
                 0, 100, savedVal,
                 (v) => this.updateStatus(`${display}: ${Math.round(v)}`)
             );
+            // flat index = 1 (skip checkbox) + kIndex
             knob.onrelease = () => { if (onParam) onParam(1 + kIndex, knob.value); };
         });
     },
 
     // =========================================================
     // DRUM GRID
+    // =========================================================
+
+    // =========================================================
+    // DRUM GRID
     //
-    // Left-click / tap  — cycles velocity: 0 → 42 → 85 → 127 → 0
-    // Right-click       — clears cell (velocity = 0)
-    // Mouse/touch drag  — paints all cells with velocity from start
+    // Left-click / tap cycles velocity:  0 → 42 → 85 → 127 → 0
+    // Right-click clears the cell (velocity = 0)
+    // Touch drag: dragging across cells toggles them to the same
+    //             velocity as the first cell tapped in the gesture
     //
-    // updateCallback(cell, row, col, newVelocity) called on each change.
-    // Pattern array is owned by app.js; View is purely presentational.
+    // updateCallback(cell, row, col, newVelocity) — called for every change
+    // The pattern array is owned by app.js; View is purely presentational.
     // =========================================================
 
     setupDrumGrid(drumPattern, updateCallback) {
-        const grid = document.getElementById('drumGrid');
+        const grid  = document.getElementById('drumGrid');
         grid.innerHTML = '';
 
+        // Velocity cycle: Off → Low → Med → High → Off
+        // Right-click or long-drag sets to 0.
         const VELOCITY_STEPS = [0, 42, 85, 127];
         const parts = ['Kick','Snare','HiHat','Cymbal','Tom1','Tom2','Tom3','Perc1','Perc2'];
 
@@ -333,25 +331,26 @@ export const View = {
             return VELOCITY_STEPS[(i < 0 ? 0 : i + 1) % VELOCITY_STEPS.length];
         };
 
-        let dragVelocity = null;
-        let lastDragCell = null;
-        let didDrag      = false;
+        // ── shared drag state ─────────────────────────────────────
+        let dragVelocity = null;   // velocity being painted during drag
+        let lastDragCell = null;   // last cell touched (avoid double fire)
+        let didDrag      = false;  // was this gesture a drag (vs a tap)?
 
         parts.forEach((part, row) => {
             const rowDiv = document.createElement('div');
             rowDiv.className = 'drum-row';
-
-            const label       = document.createElement('div');
+            const label  = document.createElement('div');
             label.className   = 'drum-label';
             label.textContent = part;
             rowDiv.appendChild(label);
 
             for (let col = 0; col < 16; col++) {
-                const cell       = document.createElement('div');
+                const cell = document.createElement('div');
                 cell.className   = 'drum-cell';
                 cell.dataset.row = row;
                 cell.dataset.col = col;
 
+                // ── Mouse ────────────────────────────────────────
                 cell.addEventListener('mousedown', (e) => {
                     e.preventDefault();
                     didDrag = false;
@@ -374,6 +373,7 @@ export const View = {
                 });
 
                 cell.addEventListener('contextmenu', (e) => e.preventDefault());
+
                 rowDiv.appendChild(cell);
             }
             grid.appendChild(rowDiv);
@@ -386,6 +386,13 @@ export const View = {
         });
 
         // ── Touch ────────────────────────────────────────────────
+        // touchstart  → record start cell & compute target velocity,
+        //               but DO NOT apply yet (wait to see if it's a drag)
+        // touchmove   → if we enter a NEW cell, this is a drag:
+        //               apply dragVelocity to every cell we pass over
+        // touchend    → if NO drag happened, apply the velocity cycle
+        //               to the original cell (pure tap behaviour)
+
         let touchStartCell = null;
         let touchStartRow  = null;
         let touchStartCol  = null;
@@ -397,9 +404,11 @@ export const View = {
             const t  = e.touches[0];
             const el = document.elementFromPoint(t.clientX, t.clientY);
             if (!el || !el.classList.contains('drum-cell')) return;
+
             touchStartCell = el;
             touchStartRow  = parseInt(el.dataset.row);
             touchStartCol  = parseInt(el.dataset.col);
+            // Pre-compute what the cycle would produce for a tap
             touchDragVel   = nextVelocity(drumPattern[touchStartRow][touchStartCol]);
             touchDidDrag   = false;
             lastDragCell   = el;
@@ -411,19 +420,27 @@ export const View = {
             const t  = e.touches[0];
             const el = document.elementFromPoint(t.clientX, t.clientY);
             if (!el || !el.classList.contains('drum-cell') || el === lastDragCell) return;
+
+            // First move to a different cell confirms this is a drag
             if (!touchDidDrag) {
                 touchDidDrag = true;
+                // Apply to the start cell now (drag mode)
                 updateCallback(touchStartCell, touchStartRow, touchStartCol, touchDragVel);
             }
+
             lastDragCell = el;
-            updateCallback(el, parseInt(el.dataset.row), parseInt(el.dataset.col), touchDragVel);
+            const r = parseInt(el.dataset.row);
+            const c = parseInt(el.dataset.col);
+            updateCallback(el, r, c, touchDragVel);
         }, { passive: false });
 
         grid.addEventListener('touchend', (e) => {
             e.preventDefault();
             if (!touchDidDrag && touchStartCell !== null) {
+                // Pure tap — apply velocity cycle now
                 updateCallback(touchStartCell, touchStartRow, touchStartCol, touchDragVel);
             }
+            // Reset all touch state
             touchStartCell = null;
             touchStartRow  = null;
             touchStartCol  = null;
@@ -434,17 +451,24 @@ export const View = {
     },
 
     updateDrumCell(cell, velocity) {
+        // Velocity levels map to visual intensity:
+        //   0   = off  (no class, no bar)
+        //   42  = low  (dim green)
+        //   85  = med  (medium green)
+        //   127 = high (bright, full bar)
         cell.classList.remove('active', 'vel-low', 'vel-med', 'vel-high');
         const bar = cell.querySelector('.velocity-bar');
         if (bar) bar.remove();
+
         if (velocity <= 0) return;
 
         cell.classList.add('active');
-        if (velocity <= 42)      cell.classList.add('vel-low');
-        else if (velocity <= 85) cell.classList.add('vel-med');
-        else                     cell.classList.add('vel-high');
 
-        const newBar     = document.createElement('div');
+        if (velocity <= 42)       cell.classList.add('vel-low');
+        else if (velocity <= 85)  cell.classList.add('vel-med');
+        else                      cell.classList.add('vel-high');
+
+        const newBar    = document.createElement('div');
         newBar.className = 'velocity-bar';
         newBar.style.height = Math.round(velocity / 127 * 100) + '%';
         cell.appendChild(newBar);
@@ -504,6 +528,7 @@ export const View = {
             return fftData[i] * (1 - frac) + fftData[i + 1] * frac;
         };
 
+        // Grid lines
         ctx.strokeStyle = '#333'; ctx.lineWidth = 1;
         [20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000].forEach(freq => {
             if (freq > maxFreq) return;
@@ -511,11 +536,11 @@ export const View = {
             const x = t * width;
             ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, height); ctx.stroke();
             ctx.fillStyle = '#888'; ctx.font = '11px monospace';
-            if ([20, 100, 1000, 10000].includes(freq)) {
-                ctx.fillText(freq >= 1000 ? `${freq / 1000}k` : `${freq}`, x - 15, height - 5);
-            }
+            if ([20, 100, 1000, 10000].includes(freq))
+                ctx.fillText(freq >= 1000 ? `${freq/1000}k` : `${freq}`, x - 15, height - 5);
         });
 
+        // Full FFT – green
         ctx.strokeStyle = '#0a0'; ctx.lineWidth = 1.5; ctx.beginPath();
         for (let i = 0; i < width; i++) {
             const freq = minFreq * Math.pow(maxFreq / minFreq, i / width);
@@ -525,6 +550,7 @@ export const View = {
         }
         ctx.stroke();
 
+        // Subset – cyan
         const irSel = document.getElementById('irPoints');
         const pts   = irSel ? parseInt(irSel.value) : 512;
         if (pts <= fft.length * 2) {
@@ -578,24 +604,13 @@ export const View = {
         const needleEl = document.getElementById('tunerNeedle');
         const centsEl  = document.getElementById('centsDisplay');
         const targetEl = document.getElementById('targetFreq');
+        if (!freqEl || !stringEl) return;
 
-        // FIX: guard ALL elements before touching any of them.
-        // The old code only checked freqEl/stringEl, then unconditionally
-        // accessed needleEl.style — crashing with TypeError when the tuner
-        // tab had not yet rendered (needleEl === null).
-        if (!freqEl || !stringEl || !needleEl || !centsEl) return;
-
-        // FIX: added upper bound (8000 Hz). The DSP pitch detector can
-        // return garbage values well outside the guitar frequency range.
-        if (!freq || freq < 20 || freq > 8000) {
+        if (freq < 20) {
             freqEl.textContent   = '-- Hz';
             stringEl.textContent = '--';
             centsEl.textContent  = '-- cents';
-            if (targetEl) targetEl.textContent = '-- Hz';
-            needleEl.style.transform       = 'translateX(-50%) rotate(0deg)';
-            needleEl.style.backgroundColor = 'var(--color-border)';
-            stringEl.style.color           = 'var(--color-text-primary)';
-            freqEl.style.color             = 'var(--color-text-primary)';
+            needleEl.style.transform = 'translateX(-50%) rotate(0deg)';
             return;
         }
 
@@ -603,21 +618,16 @@ export const View = {
         const rounded    = Math.round(noteNum);
         const cents      = (noteNum - rounded) * 100;
         const noteIndex  = ((rounded % 12) + 12) % 12;
-        // FIX: show octave number (E2, A4, etc.) — far more useful than
-        // a bare note name, particularly across the full guitar range.
-        const octave     = Math.floor(rounded / 12) - 1;
         const targetFreq = 440 * Math.pow(2, (rounded - 69) / 12);
-        const inTune     = Math.abs(cents) < 5;
 
         freqEl.textContent   = `${freq.toFixed(1)} Hz`;
-        stringEl.textContent = `${noteStrings[noteIndex]}${octave}`;
-        if (targetEl) targetEl.textContent = `${targetFreq.toFixed(1)} Hz`;
+        stringEl.textContent = noteStrings[noteIndex];
+        targetEl.textContent = `${targetFreq.toFixed(1)} Hz`;
         centsEl.textContent  = `${cents > 0 ? '+' : ''}${cents.toFixed(0)} cents`;
+        needleEl.style.transform = `translateX(-50%) rotate(${Math.max(-45, Math.min(45, cents))}deg)`;
 
-        needleEl.style.transform       = `translateX(-50%) rotate(${Math.max(-45, Math.min(45, cents))}deg)`;
-        needleEl.style.backgroundColor = inTune ? '#0f0' : '#f00';
+        const inTune = Math.abs(cents) < 5;
         stringEl.style.color           = inTune ? '#0f0' : 'var(--color-accent)';
-        // FIX: colour frequency display green when in tune
-        freqEl.style.color             = inTune ? '#0f0' : 'var(--color-text-primary)';
+        needleEl.style.backgroundColor = inTune ? '#0f0' : '#f00';
     },
 };

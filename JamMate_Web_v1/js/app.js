@@ -213,21 +213,15 @@ export const app = {
 
     // Setup Drum Grid
     View.setupDrumGrid(this.drumPattern, (cell, row, col) => {
-		if (this._justDragged) {
-		  console.log('Ignoring click after drag');
-		  return;
-		}
-		const currentVal = this.drumPattern[row][col];
-		const newVal = currentVal === 0 ? 100 : 0; // Toggle on click
-		this.drumPattern[row][col] = newVal;
-		View.updateDrumCell(cell, newVal);
+      const currentVal = this.drumPattern[row][col];
+      const newVal = currentVal > 0 ? 0 : 100;
+      this.drumPattern[row][col] = newVal;
+      View.updateDrumCell(cell, newVal);
 
-		// Send ONLY the changed row to ESP32
-		this.sendDrumRow(row);
-	  });
-
-	  // Add velocity drag handler
-	  this.setupDrumVelocityDrag();
+      console.log("[APP] Sending Drum Pattern...");
+      const packet = Protocol.createDrumPatternPacket(this.drumPattern);
+      BLEService.send(packet);
+    });
 
     this.setupStaticKnobs();
     this.setupFileUpload();
@@ -235,108 +229,6 @@ export const app = {
     this.setupPresetListeners();
     this.setupDrumControls();  // ← Setup drum controls (all event listeners)
   },
-  
-setupDrumVelocityDrag() {
-  const grid = document.getElementById('drumGrid');
-  if (!grid) return;
-
-  let isDragging = false;
-  let dragRow = -1;
-  let dragCol = -1;
-  let startY = 0;
-  let startVelocity = 0;
-  
-  // ✅ Store flag on app object
-  this._justDragged = false;
-
-  const handleStart = (e, touch = false) => {
-    const cell = touch ? 
-      document.elementFromPoint(e.touches[0].clientX, e.touches[0].clientY) :
-      e.target.closest('.drum-cell');
-
-    if (!cell || !cell.classList.contains('drum-cell')) return;
-
-    const row = parseInt(cell.dataset.row);
-    const col = parseInt(cell.dataset.col);
-
-    if (this.drumPattern[row][col] === 0) return;
-
-    isDragging = true;
-    dragRow = row;
-    dragCol = col;
-    startY = touch ? e.touches[0].clientY : e.clientY;
-    startVelocity = this.drumPattern[row][col];
-    this._justDragged = false; // Reset
-
-    e.preventDefault();
-  };
-
-  const handleMove = (e, touch = false) => {
-    if (!isDragging) return;
-
-    const currentY = touch ? e.touches[0].clientY : e.clientY;
-    const deltaY = startY - currentY;
-
-    // ✅ Mark as dragged if moved more than 3px
-    if (Math.abs(deltaY) > 3) {
-      this._justDragged = true;
-    }
-
-    const velocityChange = Math.round(deltaY * 1.27);
-    let newVelocity = Math.max(1, Math.min(127, startVelocity + velocityChange));
-
-    this.drumPattern[dragRow][dragCol] = newVelocity;
-
-    const cell = document.querySelector(
-      `.drum-cell[data-row="${dragRow}"][data-col="${dragCol}"]`
-    );
-    if (cell) {
-      View.updateDrumCell(cell, newVelocity);
-    }
-
-    View.updateStatus(`Velocity: ${newVelocity}`);
-    e.preventDefault();
-  };
-
-  const handleEnd = () => {
-    if (isDragging && dragRow >= 0 && this._justDragged) {
-      this.sendDrumRow(dragRow);
-      console.log(`Sent row ${dragRow} after velocity drag`);
-    }
-
-    isDragging = false;
-    dragRow = -1;
-    dragCol = -1;
-    
-    // ✅ Keep flag for 50ms to block click
-    setTimeout(() => {
-      this._justDragged = false;
-    }, 50);
-  };
-
-  grid.addEventListener('mousedown', (e) => handleStart(e, false));
-  document.addEventListener('mousemove', (e) => handleMove(e, false));
-  document.addEventListener('mouseup', handleEnd);
-  grid.addEventListener('touchstart', (e) => handleStart(e, true), { passive: false });
-  document.addEventListener('touchmove', (e) => handleMove(e, true), { passive: false });
-  grid.addEventListener('touchend', handleEnd);
-},
-
-// NEW: Send single row to ESP32 (replaces old full-pattern send)
-sendDrumRow(rowIndex) {
-  if (this.isUpdatingUI) return;
-
-  console.log(`APP: Sending drum row ${rowIndex}`);
-
-  // Create single-row pattern (ESP32 expects row-by-row)
-  const singleRowPattern = [this.drumPattern[rowIndex]];
-  const packets = Protocol.createDrumPatternPacket(singleRowPattern, rowIndex);
-
-  // Since we're sending only one row, packets will have 1 element
-  if (packets.length > 0) {
-    BLEService.send(packets[0]);
-  }
-},
 
   // ========================================================
   // Setup Drum Controls (FIXED - use sendDrumUpdate)
@@ -1257,4 +1149,3 @@ sendDrumRow(rowIndex) {
 	
 
 };
-

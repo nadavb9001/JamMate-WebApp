@@ -207,35 +207,37 @@ export const Protocol = {
   },
 
   // ----------------------------------------------------------------
-  // UPDATE_CONFIG  —  send APP_CONFIG layout to ESP LittleFS
+  // UPDATE_CONFIG (CMD 0x50) — send FX layout to ESP, saved as /config.json
   //
-  // Builds a minimal JSON the ESP parses with ArduinoJson.
-  // Packet: [CMD=0x50][lenL][lenH][json bytes...]
+  // ESP C parser expects a compact array-of-pairs with NO object keys:
+  //   [[5,0],[8,0],[9,3],[10,2],...] — 18 pairs of [knobCount, dropCount]
   //
-  // JSON schema:
-  //   { "tabs": [ { "short_name":"GATE", "dsp_tag":"GATE", "k":5, "d":0 }, ... ] }
-  // ----------------------------------------------------------------
-  createConfigPacket() {
-    const minimal = {
-      tabs: APP_CONFIG.tabs.map(tab => ({
-        short_name: tab.short_name,
-        dsp_tag:    tab.dsp_tag,
-        k:          tab.params.knobs.length,
-        d:          tab.params.dropdowns.length
-      }))
-    };
-
-    const json      = JSON.stringify(minimal);
+  // This is intentionally simpler than the old object schema so the ESP
+  // can parse it without ArduinoJson using plain String.indexOf().
+  //
+  // Also aliased as createConfigPacket() for back-compat.
+  // ---------------------------------------------------------------
+  createConfigUpload(config) {
+    // Build [[knobs, drops], ...] for every tab in order
+    const layout    = (config.tabs || []).map(tab => [
+      (tab.params.knobs     || []).length,
+      (tab.params.dropdowns || []).length,
+    ]);
+    const json      = JSON.stringify(layout);
     const jsonBytes = new TextEncoder().encode(json);
-    const buf       = new Uint8Array(3 + jsonBytes.length);
-    buf[0] = this.CMD.UPDATE_CONFIG;
+
+    const buf = new Uint8Array(3 + jsonBytes.length);
+    buf[0] = this.CMD.UPDATE_CONFIG;   // 0x50
     buf[1] = jsonBytes.length & 0xFF;
     buf[2] = (jsonBytes.length >> 8) & 0xFF;
     buf.set(jsonBytes, 3);
 
-    console.log(`[Protocol] createConfigPacket: ${jsonBytes.length} bytes`, JSON.parse(json));
-    return buf.buffer;
+    console.log('[Protocol] createConfigUpload:', json);
+    return buf;
   },
+
+  // Back-compat alias
+  createConfigPacket(config) { return this.createConfigUpload(config || {}); },
 
   // ----------------------------------------------------------------
   // SAVE PRESET
@@ -407,23 +409,4 @@ export const Protocol = {
         bytes[off++] = patternData[row][col] || 0;
     return buf;
   },
-  // ----------------------------------------------------------------
-	// toFlatIdx — convert (fxIdx, type, subIdx) → flat param index
-	// type: 'checkbox' | 'knob' | 'dropdown'
-	// flatIdx 0       = checkbox (enable)
-	// flatIdx 1..K    = knobs
-	// flatIdx K+1..   = dropdowns
-	// ----------------------------------------------------------------
-	toFlatIdx(fxIdx, type, subIdx) {
-		const tab = APP_CONFIG.tabs[fxIdx];
-		if (!tab) return 0;
-		const K = tab.params.knobs.length;
-		if (type === 'checkbox')  return 0;
-		if (type === 'knob')      return 1 + subIdx;
-		if (type === 'dropdown')  return 1 + K + subIdx;
-		return 0;
-	},
-	createConfigUpload() {
-    return this.createConfigPacket();
-},
 };

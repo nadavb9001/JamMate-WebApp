@@ -282,6 +282,7 @@ button:disabled { background: var(--color-border); cursor: not-allowed; }
     pointer-events: none;
     transition: opacity 0.14s ease, transform 0.14s ease;
     overscroll-behavior: contain;
+    touch-action: pan-y;
     scrollbar-width: thin;
     scrollbar-color: var(--color-accent) transparent;
 }

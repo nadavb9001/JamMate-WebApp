@@ -93,28 +93,14 @@ function initCustomSelect(select) {
       item.className = 'csel-item' + (i === select.selectedIndex ? ' csel-item--active' : '');
       item.textContent = opt.text;
 
-      // Use pointerdown+pointerup pair so we can distinguish a tap from
-      // a scroll gesture. If the pointer moves more than 8px vertically
-      // before releasing, treat it as a scroll and skip the selection.
-      item.addEventListener('pointerdown', (e) => {
-        const startY = e.clientY;
-        let scrolled = false;
-
-        const onMove = (me) => {
-          if (Math.abs(me.clientY - startY) > 8) scrolled = true;
-        };
-        const onUp = () => {
-          panel.removeEventListener('pointermove', onMove);
-          if (!scrolled) {
-            select.selectedIndex = i;
-            select.value = opt.value;
-            select.dispatchEvent(new Event('change', { bubbles: true }));
-            close();
-          }
-        };
-
-        panel.addEventListener('pointermove', onMove);
-        panel.addEventListener('pointerup', onUp, { once: true });
+      // Use 'click' — the browser natively suppresses it when a scroll
+      // gesture occurs, so tap-vs-scroll is handled correctly on all
+      // devices without any manual movement tracking.
+      item.addEventListener('click', () => {
+        select.selectedIndex = i;
+        select.value = opt.value;
+        select.dispatchEvent(new Event('change', { bubbles: true }));
+        close();
       });
 
       panel.appendChild(item);

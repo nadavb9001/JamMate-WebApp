@@ -309,6 +309,7 @@ button:disabled { background: var(--color-border); cursor: not-allowed; }
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    touch-action: manipulation;
     transition: background 0.1s, color 0.1s;
 }
 .csel-item:last-child {

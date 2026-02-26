@@ -19,6 +19,7 @@ import { View } from './ui/View.js';
 import { Knob } from './ui/Knob.js';
 import { BLEService } from './services/BLEService.js';
 import { Protocol } from './services/Protocol.js';
+import { upgradeSelects } from './ui/CustomSelect.js';
 
 const PRESETS_LOCKED = false;
 
@@ -40,6 +41,7 @@ export const app = {
   isUpdatingUI: false,
   effectOrder: null,
   tunerEnabled: false,
+  bypassEnabled: false,
 
   // Drum / looper state
   drumEnabled: false,
@@ -197,6 +199,7 @@ export const app = {
     this.setupGlobalListeners();
     this.setupPresetListeners();
     this.setupDrumControls();
+    upgradeSelects(); // replace all static <select> elements
   },
 
   // ============================================================
@@ -715,6 +718,19 @@ export const app = {
           return;
         }
         if (confirm('Upload current config.js to ESP?')) this.sendConfigUpdate();
+      };
+    }
+
+    const btnBypass = document.getElementById('btnBypass');
+    if (btnBypass) {
+      // Start green (signal active)
+      btnBypass.classList.add('bypass-active');
+      btnBypass.onclick = () => {
+        this.bypassEnabled = !this.bypassEnabled;
+        btnBypass.classList.toggle('bypass-active',   !this.bypassEnabled);
+        btnBypass.classList.toggle('bypass-blinking',  this.bypassEnabled);
+        BLEService.send(Protocol.createBypassPacket(this.bypassEnabled));
+        View.updateStatus(this.bypassEnabled ? 'Bypass ON' : 'Bypass OFF');
       };
     }
 

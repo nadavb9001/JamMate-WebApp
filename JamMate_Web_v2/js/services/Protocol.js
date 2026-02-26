@@ -22,6 +22,7 @@ export const Protocol = {
     SET_TOGGLE:          0x21,   // legacy; prefer SET_PARAM idx=0
     SET_EQ_BAND:         0x22,
     SET_UTIL:            0x23,
+    SET_BYPASS:          0x24,
     SET_GLOBAL:          0x25,
     GET_STATE:           0x30,
     STATE_DATA:          0x31,
@@ -278,6 +279,20 @@ export const Protocol = {
     const view = new DataView(buf);
     view.setUint8(0,  this.CMD.GET_STATE);
     view.setUint16(1, 0, true);
+    return buf;
+  },
+
+  // ----------------------------------------------------------------
+  // BYPASS  (CMD 0x24)
+  //   Wire format: [CMD(1)][payloadLen16LE(2)][bypassed(1)]
+  //   bypassed: 0 = signal active, 1 = bypassed
+  // ----------------------------------------------------------------
+  createBypassPacket(bypassed) {
+    const buf  = new ArrayBuffer(4);
+    const view = new DataView(buf);
+    view.setUint8(0,  this.CMD.SET_BYPASS);
+    view.setUint16(1, 1, true);
+    view.setUint8(3,  bypassed ? 1 : 0);
     return buf;
   },
 

@@ -1,5 +1,6 @@
 import { Knob } from './Knob.js';
 import { IIRDesigner } from './IIRDesigner.js';
+import { upgradeSelects } from './CustomSelect.js';
 
 export const View = {
     init(app) {
@@ -212,6 +213,7 @@ export const View = {
             });
 
             this.app.iirDesigner.draw();
+            upgradeSelects(controls);
             return;
         }
 
@@ -277,6 +279,7 @@ enableInput.addEventListener('change', () => {
             wrapper.appendChild(select);
             dropdownContainer.appendChild(wrapper);
         });
+        upgradeSelects(dropdownContainer);
 
         // ── Knobs — flat index 1 … K ─────────────────────────────
         const knobContainer = document.getElementById('generatedKnobs');

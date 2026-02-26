@@ -93,14 +93,12 @@ function initCustomSelect(select) {
       item.className = 'csel-item' + (i === select.selectedIndex ? ' csel-item--active' : '');
       item.textContent = opt.text;
 
-      // Use 'click' — the browser natively suppresses it when a scroll
-      // gesture occurs, so tap-vs-scroll is handled correctly on all
-      // devices without any manual movement tracking.
-      item.addEventListener('click', () => {
+      item.addEventListener('click', (e) => {
+        e.stopPropagation(); // prevent click bubbling to underlying elements
         select.selectedIndex = i;
         select.value = opt.value;
         select.dispatchEvent(new Event('change', { bubbles: true }));
-        close();
+        closeAfterSelection();
       });
 
       panel.appendChild(item);
@@ -148,6 +146,24 @@ function initCustomSelect(select) {
     if (_closeActive === close) _closeActive = null;
     panel.classList.remove('csel-panel--open');
     trigger.classList.remove('csel-trigger--open');
+  };
+
+  // Variant used when an item is selected: absorbs the phantom click that
+  // touch browsers (iOS Safari) synthesize at the same coordinates after
+  // the panel is dismissed, which would otherwise fall through to whatever
+  // button is visually beneath the panel.
+  const closeAfterSelection = () => {
+    close();
+    const absorb = (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      document.removeEventListener('click', absorb, true);
+    };
+    document.addEventListener('click', absorb, true);
+    // Self-remove after two frames in case no phantom click comes
+    requestAnimationFrame(() => requestAnimationFrame(() =>
+      document.removeEventListener('click', absorb, true)
+    ));
   };
 
   trigger.addEventListener('click', (e) => {

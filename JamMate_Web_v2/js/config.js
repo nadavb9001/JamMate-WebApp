@@ -149,8 +149,8 @@ export const APP_CONFIG = {
       "dsp_tag": "_FIR",
       "params": {
         "checkbox": "enable",
-        "knobs": ["level", "treble", "mid", "bass", "presence", "gain"],
-        "dropdowns": ["amp_type", "tone_type", "ir_points", "ir_type", "ir_file"]
+        "knobs": ["level", "treble", "mid", "bass", "presence", "gain","gain1","IRmix"],
+        "dropdowns": ["amp_type", "tone_type", "ir_points", "ir_type", "ir_file","amp_type","ir_file"]
       }
     },
     {

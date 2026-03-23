@@ -242,18 +242,18 @@ export const app = {
       wire(id, (e) => { this[prop] = parseInt(e.target.value); this.sendDrumUpdate(); });
     });
 
-    // ── Looper config selects (sent via DRUM packet) ──
+    // ── Looper config selects (sent via LOOP packet) ──
     ['loopSync', 'loopLength'].forEach(id => {
-      wire(id, (e) => { this[id] = parseInt(e.target.value); this.sendDrumUpdate(); });
+      wire(id, (e) => { this[id] = parseInt(e.target.value); this.sendLoopConfig(); });
     });
-    wire('trackSelect', (e) => { this.trackSelect = parseInt(e.target.value); this.sendDrumUpdate(); });
+    wire('trackSelect', (e) => { this.trackSelect = parseInt(e.target.value); this.sendLoopConfig(); });
 
-    // ── Looper checkboxes (sent via DRUM packet) ──
+    // ── Looper checkboxes (sent via LOOP packet) ──
     const wireCheck = (id, prop, sendFn) => {
       const el = document.getElementById(id);
       if (el) el.addEventListener('change', (e) => { this[prop] = e.target.checked; sendFn.call(this); });
     };
-    wireCheck('autoArm',     'autoArm',     this.sendDrumUpdate);
+    wireCheck('autoArm',     'autoArm',     this.sendLoopConfig);
     wireCheck('bounceMode',  'bounceMode',  this.sendLoopConfig);
 
     // ── Looper LOOP-packet settings ──

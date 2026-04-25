@@ -311,10 +311,9 @@ enableInput.addEventListener('change', () => {
     // =========================================================
     // DRUM GRID
     //
-    // Left-click / tap cycles velocity:  0 → 42 → 85 → 127 → 0
-    // Right-click clears the cell (velocity = 0)
-    // Touch drag: dragging across cells toggles them to the same
-    //             velocity as the first cell tapped in the gesture
+    // Click / tap cycles velocity: 0 → 42 → 85 → 127 → 0 (cyclic)
+    // Double-click / double-tap clears the cell (velocity = 0)
+    // Double-click the part label clears the entire row
     //
     // updateCallback(cell, row, col, newVelocity) — called for every change
     // The pattern array is owned by app.js; View is purely presentational.
@@ -324,8 +323,6 @@ enableInput.addEventListener('change', () => {
         const grid  = document.getElementById('drumGrid');
         grid.innerHTML = '';
 
-        // Velocity cycle: Off → Low → Med → High → Off
-        // Right-click or long-drag sets to 0.
         const VELOCITY_STEPS = [0, 42, 85, 127];
         const parts = ['Kick','Snare','HiHat','Cymbal','Tom1','Tom2','Tom3','Perc1','Perc2'];
 
@@ -334,17 +331,22 @@ enableInput.addEventListener('change', () => {
             return VELOCITY_STEPS[(i < 0 ? 0 : i + 1) % VELOCITY_STEPS.length];
         };
 
-        // ── shared drag state ─────────────────────────────────────
-        let dragVelocity = null;   // velocity being painted during drag
-        let lastDragCell = null;   // last cell touched (avoid double fire)
-        let didDrag      = false;  // was this gesture a drag (vs a tap)?
-
         parts.forEach((part, row) => {
             const rowDiv = document.createElement('div');
             rowDiv.className = 'drum-row';
+
             const label  = document.createElement('div');
             label.className   = 'drum-label';
             label.textContent = part;
+
+            // Double-click label → clear entire row
+            label.addEventListener('dblclick', () => {
+                for (let c = 0; c < 16; c++) {
+                    const cell = rowDiv.querySelector(`.drum-cell[data-col="${c}"]`);
+                    if (cell) updateCallback(cell, row, c, 0);
+                }
+            });
+
             rowDiv.appendChild(label);
 
             for (let col = 0; col < 16; col++) {
@@ -354,25 +356,21 @@ enableInput.addEventListener('change', () => {
                 cell.dataset.col = col;
 
                 // ── Mouse ────────────────────────────────────────
-                cell.addEventListener('mousedown', (e) => {
-                    e.preventDefault();
-                    didDrag = false;
-                    if (e.button === 2) {
-                        updateCallback(cell, row, col, 0);
-                        dragVelocity = 0;
-                    } else {
-                        const vel = nextVelocity(drumPattern[row][col]);
-                        updateCallback(cell, row, col, vel);
-                        dragVelocity = vel;
-                    }
-                    lastDragCell = cell;
+                // Single click (delayed) → cycle velocity
+                // Double-click → clear cell
+                let clickTimer = null;
+
+                cell.addEventListener('click', () => {
+                    if (clickTimer) clearTimeout(clickTimer);
+                    clickTimer = setTimeout(() => {
+                        clickTimer = null;
+                        updateCallback(cell, row, col, nextVelocity(drumPattern[row][col]));
+                    }, 220);
                 });
 
-                cell.addEventListener('mouseenter', () => {
-                    if (dragVelocity === null || cell === lastDragCell) return;
-                    didDrag      = true;
-                    lastDragCell = cell;
-                    updateCallback(cell, row, col, dragVelocity);
+                cell.addEventListener('dblclick', () => {
+                    if (clickTimer) { clearTimeout(clickTimer); clickTimer = null; }
+                    updateCallback(cell, row, col, 0);
                 });
 
                 cell.addEventListener('contextmenu', (e) => e.preventDefault());
@@ -382,74 +380,69 @@ enableInput.addEventListener('change', () => {
             grid.appendChild(rowDiv);
         });
 
-        document.addEventListener('mouseup', () => {
-            dragVelocity = null;
-            lastDragCell = null;
-            didDrag      = false;
-        });
-
         // ── Touch ────────────────────────────────────────────────
-        // touchstart  → record start cell & compute target velocity,
-        //               but DO NOT apply yet (wait to see if it's a drag)
-        // touchmove   → if we enter a NEW cell, this is a drag:
-        //               apply dragVelocity to every cell we pass over
-        // touchend    → if NO drag happened, apply the velocity cycle
-        //               to the original cell (pure tap behaviour)
+        // Single tap → cycle velocity on touchend
+        // Double-tap (same cell within 300 ms) → clear cell
+        // No drag activation
 
-        let touchStartCell = null;
-        let touchStartRow  = null;
-        let touchStartCol  = null;
-        let touchDragVel   = null;
-        let touchDidDrag   = false;
+        let lastTapCell  = null;
+        let lastTapTime  = 0;
+        let pendingCell  = null;
+        let isDoubleTap  = false;
+        const DBL_TAP_MS = 300;
 
         grid.addEventListener('touchstart', (e) => {
             e.preventDefault();
             const t  = e.touches[0];
             const el = document.elementFromPoint(t.clientX, t.clientY);
-            if (!el || !el.classList.contains('drum-cell')) return;
 
-            touchStartCell = el;
-            touchStartRow  = parseInt(el.dataset.row);
-            touchStartCol  = parseInt(el.dataset.col);
-            // Pre-compute what the cycle would produce for a tap
-            touchDragVel   = nextVelocity(drumPattern[touchStartRow][touchStartCol]);
-            touchDidDrag   = false;
-            lastDragCell   = el;
-        }, { passive: false });
-
-        grid.addEventListener('touchmove', (e) => {
-            e.preventDefault();
-            if (touchDragVel === null) return;
-            const t  = e.touches[0];
-            const el = document.elementFromPoint(t.clientX, t.clientY);
-            if (!el || !el.classList.contains('drum-cell') || el === lastDragCell) return;
-
-            // First move to a different cell confirms this is a drag
-            if (!touchDidDrag) {
-                touchDidDrag = true;
-                // Apply to the start cell now (drag mode)
-                updateCallback(touchStartCell, touchStartRow, touchStartCol, touchDragVel);
+            // Handle double-tap on label to clear row
+            if (el && el.classList.contains('drum-label')) {
+                const now = Date.now();
+                if (el === lastTapCell && now - lastTapTime < DBL_TAP_MS) {
+                    const rowDiv   = el.parentElement;
+                    const rowIndex = parseInt(rowDiv.querySelector('.drum-cell').dataset.row);
+                    for (let c = 0; c < 16; c++) {
+                        const cell = rowDiv.querySelector(`.drum-cell[data-col="${c}"]`);
+                        if (cell) updateCallback(cell, rowIndex, c, 0);
+                    }
+                    lastTapCell = null; lastTapTime = 0;
+                } else {
+                    lastTapCell = el; lastTapTime = now;
+                }
+                return;
             }
 
-            lastDragCell = el;
-            const r = parseInt(el.dataset.row);
-            const c = parseInt(el.dataset.col);
-            updateCallback(el, r, c, touchDragVel);
+            if (!el || !el.classList.contains('drum-cell')) return;
+
+            const now = Date.now();
+            if (el === lastTapCell && now - lastTapTime < DBL_TAP_MS) {
+                // Double-tap → clear
+                isDoubleTap = true;
+                pendingCell = null;
+                const r = parseInt(el.dataset.row);
+                const c = parseInt(el.dataset.col);
+                updateCallback(el, r, c, 0);
+                lastTapCell = null; lastTapTime = 0;
+            } else {
+                isDoubleTap = false;
+                pendingCell = el;
+                lastTapCell = el;
+                lastTapTime = now;
+            }
         }, { passive: false });
+
+        grid.addEventListener('touchmove', (e) => { e.preventDefault(); }, { passive: false });
 
         grid.addEventListener('touchend', (e) => {
             e.preventDefault();
-            if (!touchDidDrag && touchStartCell !== null) {
-                // Pure tap — apply velocity cycle now
-                updateCallback(touchStartCell, touchStartRow, touchStartCol, touchDragVel);
-            }
-            // Reset all touch state
-            touchStartCell = null;
-            touchStartRow  = null;
-            touchStartCol  = null;
-            touchDragVel   = null;
-            touchDidDrag   = false;
-            lastDragCell   = null;
+            if (isDoubleTap) { isDoubleTap = false; return; }
+            const el = pendingCell;
+            if (!el) return;
+            pendingCell = null;
+            const r = parseInt(el.dataset.row);
+            const c = parseInt(el.dataset.col);
+            updateCallback(el, r, c, nextVelocity(drumPattern[r][c]));
         }, { passive: false });
     },
 

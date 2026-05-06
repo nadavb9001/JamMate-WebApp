@@ -25,7 +25,7 @@ import { Protocol }   from './services/Protocol.js';
 
 // ── Config ────────────────────────────────────────────────────────────────────
 // Replace with your real TONE3000 publishable key from tone3000.com/account
-const T3K_APP_ID     = 'f21e2195-103d-4458-8db4-929bbe3c6ae0';
+const T3K_APP_ID = 't3k_pub_UdyZ5sYtaceVAFXOLFwGtuLs4QvwQeLe';
 const CHUNK_SIZE     = 512;   // bytes per BLE chunk
 const NAM_CMD_START  = 0x50;
 const NAM_CMD_CHUNK  = 0x51;

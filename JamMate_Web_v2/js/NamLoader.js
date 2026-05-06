@@ -557,7 +557,14 @@ export const NamLoader = {
     }
 
     const buffer = await new Blob(chunks).arrayBuffer();
-
+    const blob = new Blob([buffer], { type: 'application/octet-stream' });
+const a = document.createElement('a');
+a.href = URL.createObjectURL(blob);
+a.download = name || 'model.nam';
+document.body.appendChild(a);
+a.click();
+a.remove();
+URL.revokeObjectURL(a.href);
     await this._sendBuffer(
       buffer,
       name,

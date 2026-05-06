@@ -197,6 +197,7 @@ export const app = {
     this.setupStaticKnobs();
     this.setupFileUpload();
     this.setupGlobalListeners();
+    this.setupNamTab();
     this.setupPresetListeners();
     this.setupDrumControls();
     upgradeSelects(); // replace all static <select> elements

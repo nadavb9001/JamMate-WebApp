@@ -202,6 +202,238 @@ export const app = {
     upgradeSelects(); // replace all static <select> elements
   },
 
+  setupNamTab() {
+  // ── State ────────────────────────────────────────────────────────────────
+  let namPage    = 1;
+  let namQuery   = '';
+  let namResults = [];
+  let namTotal   = 0;
+  let loadedModelName = null;
+ 
+  // ── Check for T3K OAuth callback on page load ─────────────────────────
+  const params = new URLSearchParams(window.location.search);
+  if (params.get('t3k_callback')) {
+    // Switch to NAM tab automatically
+    document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.getElementById('nam-tab')?.classList.add('active');
+    document.querySelector('.tab[data-tab="nam"]')?.classList.add('active');
+ 
+    NamLoader.handleCallback(params, (pct, msg) => this._namProgress(pct, msg), (ok, msg) => {
+      this._namDone(ok, msg);
+      if (ok) loadedModelName = msg.replace(' sent to device', '');
+      this._namUpdateDevice(loadedModelName);
+    }).then(consumed => {
+      if (consumed) {
+        // Clean callback params from URL without reload
+        const clean = window.location.pathname;
+        window.history.replaceState({}, '', clean);
+      }
+    });
+  }
+ 
+  // ── UI helpers ────────────────────────────────────────────────────────
+  const setProgress = (pct, msg) => {
+    const panel = document.getElementById('namProgressPanel');
+    const bar   = document.getElementById('namProgressBar');
+    const msgEl = document.getElementById('namProgressMsg');
+    const title = document.getElementById('namProgressTitle');
+    if (!panel) return;
+    panel.style.display = 'block';
+    bar.style.width     = pct + '%';
+    msgEl.textContent   = msg;
+    if (pct >= 100 || pct === 0) {
+      title.textContent = pct >= 100 ? '✓ Done' : 'Transfer';
+      if (pct >= 100) setTimeout(() => { panel.style.display = 'none'; }, 3000);
+    } else {
+      title.textContent = 'Transferring…';
+    }
+  };
+ 
+  this._namProgress = setProgress;
+  this._namDone = (ok, msg) => {
+    setProgress(ok ? 100 : 0, msg);
+    View.updateStatus(msg);
+    if (!ok) console.error('[NAM]', msg);
+  };
+  this._namUpdateDevice = (name) => {
+    const el = document.getElementById('namDeviceName');
+    if (el) el.textContent = name || '—';
+  };
+ 
+  // ── Render search results ─────────────────────────────────────────────
+  const renderGrid = (tones) => {
+    const grid = document.getElementById('namGrid');
+    if (!grid) return;
+    grid.innerHTML = '';
+ 
+    if (!tones || tones.length === 0) {
+      grid.innerHTML = '<div class="nam-placeholder"><div class="nam-placeholder-icon">🔍</div><div class="nam-placeholder-text">No nano NAM models found</div></div>';
+      return;
+    }
+ 
+    tones.forEach(tone => {
+      const card = document.createElement('div');
+      card.className = 'nam-card';
+ 
+      // Find nano model info
+      const models = tone.models || [];
+      const nano   = models.find(m => m.platform === 'nam' && m.size === 'nano');
+      const size   = nano ? nano.size : (tone.size || '');
+      const dl     = (tone.downloads || tone.download_count || 0).toLocaleString();
+      const author = tone.user?.username || tone.author || '';
+ 
+      card.innerHTML = `
+        <div class="nam-card-name" title="${tone.name || ''}">${tone.name || 'Unnamed'}</div>
+        <div class="nam-card-author">${author}</div>
+        <div class="nam-card-meta">
+          ${size ? `<span class="nam-card-badge">${size}</span>` : ''}
+          <span class="nam-card-downloads">⬇ ${dl}</span>
+        </div>
+        <button class="nam-card-send">Send to Device</button>`;
+ 
+      card.querySelector('.nam-card-send').addEventListener('click', async (e) => {
+        e.stopPropagation();
+        if (!BLEService.isConnected?.()) {
+          View.updateStatus('Not connected — connect BLE first');
+          return;
+        }
+        card.classList.add('nam-card--loading');
+        setProgress(1, 'Starting transfer…');
+ 
+        try {
+          // Fetch full tone to get signed model_url
+          const res  = await fetch(`https://www.tone3000.com/api/v1/tones/${tone.id}`);
+          const full = await res.json();
+          const nanoModel = (full.models || []).find(m => m.platform === 'nam' && m.size === 'nano' && m.model_url);
+          if (!nanoModel) throw new Error('No downloadable nano model (login to TONE3000 may be required)');
+ 
+          await NamLoader._downloadAndSend(
+            nanoModel.model_url,
+            full.name || tone.name || 'model.nam',
+            setProgress,
+            (ok, msg) => {
+              this._namDone(ok, msg);
+              if (ok) {
+                loadedModelName = full.name || tone.name;
+                this._namUpdateDevice(loadedModelName);
+              }
+              card.classList.remove('nam-card--loading');
+            }
+          );
+        } catch (err) {
+          card.classList.remove('nam-card--loading');
+          // Model URL requires auth → fall back to T3K Select flow
+          if (err.message.includes('login') || err.message.includes('401') || err.message.includes('403')) {
+            View.updateStatus('Login required — opening TONE3000…');
+            // Store intent so callback can send it
+            sessionStorage.setItem('nam_pending_tone_id', tone.id);
+            NamLoader.browseT3K();
+          } else {
+            this._namDone(false, err.message);
+          }
+        }
+      });
+ 
+      grid.appendChild(card);
+    });
+  };
+ 
+  // ── Search ────────────────────────────────────────────────────────────
+  const doSearch = async (page = 1) => {
+    const grid      = document.getElementById('namGrid');
+    const countEl   = document.getElementById('namResultCount');
+    const pagination = document.getElementById('namPagination');
+    const nanoOnly  = document.getElementById('namNanoOnly')?.checked ?? true;
+    const sort      = document.getElementById('namSort')?.value || 'downloads-all-time';
+ 
+    if (grid) grid.innerHTML = '<div class="nam-placeholder"><div class="nam-placeholder-icon">⏳</div><div class="nam-placeholder-text">Searching…</div></div>';
+ 
+    try {
+      const sizeParam  = nanoOnly ? 'nano' : '';
+      const q          = encodeURIComponent(namQuery);
+      const url        = `https://www.tone3000.com/api/v1/tones?platform=nam${sizeParam ? `&size=${sizeParam}` : ''}&sort=${sort}&search=${q}&page=${page}&page_size=20`;
+      const res        = await fetch(url, { headers: { Accept: 'application/json' } });
+      if (!res.ok) throw new Error(`Search error ${res.status}`);
+      const data       = await res.json();
+ 
+      namResults = data.tones || data.results || data.data || [];
+      namTotal   = data.total || data.count || namResults.length;
+      namPage    = page;
+ 
+      if (countEl) countEl.textContent = `${namTotal.toLocaleString()} models`;
+      renderGrid(namResults);
+ 
+      const totalPages = Math.ceil(namTotal / 20);
+      if (pagination) {
+        pagination.style.display = totalPages > 1 ? 'flex' : 'none';
+        document.getElementById('namPageLabel').textContent = `Page ${namPage} / ${totalPages}`;
+        document.getElementById('btnNamPrev').disabled = namPage <= 1;
+        document.getElementById('btnNamNext').disabled = namPage >= totalPages;
+      }
+    } catch (err) {
+      if (grid) grid.innerHTML = `<div class="nam-placeholder"><div class="nam-placeholder-icon">⚠</div><div class="nam-placeholder-text">${err.message}</div></div>`;
+    }
+  };
+ 
+  // ── Wire controls ─────────────────────────────────────────────────────
+  const wire = (id, event, fn) => document.getElementById(id)?.addEventListener(event, fn);
+ 
+  wire('btnNamSearch', 'click', () => {
+    namQuery = document.getElementById('namSearch')?.value?.trim() || '';
+    doSearch(1);
+  });
+ 
+  wire('namSearch', 'keydown', (e) => {
+    if (e.key === 'Enter') {
+      namQuery = e.target.value.trim();
+      doSearch(1);
+    }
+  });
+ 
+  wire('btnNamBrowseT3K', 'click', () => {
+    if (!window.confirm('You will be taken to TONE3000 to browse and select a nano NAM model. Continue?')) return;
+    NamLoader.browseT3K();
+  });
+ 
+  wire('namSort',     'change', () => doSearch(1));
+  wire('namNanoOnly', 'change', () => doSearch(1));
+ 
+  wire('btnNamPrev', 'click', () => { if (namPage > 1)  doSearch(namPage - 1); });
+  wire('btnNamNext', 'click', () =>                      doSearch(namPage + 1));
+ 
+  // Local file
+  wire('namFileInput', 'change', (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const nameEl = document.getElementById('namFileName');
+    if (nameEl) nameEl.textContent = file.name;
+    if (!BLEService.isConnected?.()) {
+      View.updateStatus('Not connected — connect BLE first');
+      return;
+    }
+    NamLoader.loadFromFile(file, setProgress, (ok, msg) => {
+      this._namDone(ok, msg);
+      if (ok) {
+        loadedModelName = file.name;
+        this._namUpdateDevice(loadedModelName);
+      }
+    });
+  });
+ 
+  // Eject
+  wire('btnNamEject', 'click', () => {
+    BLEService.send(new Uint8Array([0x54])); // NAM_EJECT
+    loadedModelName = null;
+    this._namUpdateDevice(null);
+    View.updateStatus('NAM model unloaded');
+  });
+ 
+  // ── Initial load (trending nano models) ──────────────────────────────
+  doSearch(1);
+},
+  
+
   // ============================================================
   // setupDrumControls
   // ============================================================

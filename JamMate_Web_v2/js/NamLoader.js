@@ -1,212 +1,292 @@
 /**
- * NamLoader.js  —  TONE3000 NAM model browser + BLE transfer
+ * NamLoader.js  —  TONE3000 NAM browser + BLE transfer  (v2, corrected)
  *
- * Flow:
- *   1. User clicks "Browse TONE3000" → OAuth Select flow opens tone3000.com
- *   2. TONE3000 redirects back to the app with ?tone_url=<signed_url>
- *   3. We fetch the tone JSON → extract the nano .nam model_url
- *   4. Download the .nam binary, compute CRC32
- *   5. Send over BLE in 512-byte chunks with header + CRC check
+ * ── What changed from v1 ────────────────────────────────────────────────────
+ *  • Search endpoint: /api/v1/tones/search  (not /api/v1/tones)
+ *  • Search requires Bearer token  → full PKCE OAuth flow before search
+ *  • Select flow callback returns ?code=&state=&tone_id=  (not ?tone_url=)
+ *  • Token exchange added (POST /api/v1/oauth/token)
+ *  • Token stored in sessionStorage, refreshed automatically
+ *  • browseT3K() now generates proper PKCE params
  *
- * BLE packet layout (sent via BLEService.send):
- *   NAM_UPLOAD_START  [0x50] [4-byte total_size LE] [4-byte crc32 LE] [name up to 32 bytes]
- *   NAM_UPLOAD_CHUNK  [0x51] [2-byte chunk_index LE] [payload bytes]
- *   NAM_UPLOAD_END    [0x52]
- *   ESP replies with [0x53 0x01] = ACK OK  or  [0x53 0x00] = NACK (CRC mismatch)
+ * ── OAuth flow (Select) ──────────────────────────────────────────────────────
+ *  1. NamLoader.startAuth()   → generates PKCE, stores verifier, redirects
+ *  2. TONE3000 user signs in, picks a nano NAM tone
+ *  3. TONE3000 redirects back with ?code=&state=&tone_id=
+ *  4. NamLoader.handleCallback() → exchanges code for token → fetches models
+ *  5. Finds nano model_url → downloads → BLE transfer
  *
- * TONE3000 Select Flow (no backend needed):
- *   redirect → https://www.tone3000.com/api/v1/select?app_id=APP_ID&redirect_url=<this page>
- *   callback  → current URL gains ?tone_url=<signed>&api_key=<user_key>
- *   fetch tone_url → JSON with models[] array
+ * ── BLE packet layout ────────────────────────────────────────────────────────
+ *  NAM_UPLOAD_START [0x50] [u32 total_size LE] [u32 crc32 LE] [name up to 32b]
+ *  NAM_UPLOAD_CHUNK [0x51] [u16 chunk_index LE] [payload]
+ *  NAM_UPLOAD_END   [0x52]
+ *  ESP ACK          [0x53] [0x01=OK | 0x00=NACK]
+ *  NAM_EJECT        [0x54]
  */
 
 import { BLEService } from './services/BLEService.js';
-import { Protocol }   from './services/Protocol.js';
 
 // ── Config ────────────────────────────────────────────────────────────────────
-// Replace with your real TONE3000 publishable key from tone3000.com/account
-const T3K_APP_ID = 't3k_pub_UdyZ5sYtaceVAFXOLFwGtuLs4QvwQeLe';
-const CHUNK_SIZE     = 512;   // bytes per BLE chunk
-const NAM_CMD_START  = 0x50;
-const NAM_CMD_CHUNK  = 0x51;
-const NAM_CMD_END    = 0x52;
-const NAM_CMD_ACK    = 0x53;
+const T3K_CLIENT_ID = 't3k_pub_UdyZ5sYtaceVAFXOLFwGtuLs4QvwQeLe';
+const T3K_BASE      = 'https://www.tone3000.com/api/v1';
+const REDIRECT_URI  = window.location.origin + window.location.pathname;
+const CHUNK_SIZE    = 512;
+const ACK_TIMEOUT   = 20000;
+const CMD_START = 0x50, CMD_CHUNK = 0x51, CMD_END = 0x52;
 
-// ── CRC-32 (standard poly 0xEDB88320) ────────────────────────────────────────
+// ── CRC-32 ────────────────────────────────────────────────────────────────────
 function crc32(buffer) {
-  const table = crc32._table || (crc32._table = (() => {
-    const t = new Uint32Array(256);
+  if (!crc32._t) {
+    crc32._t = new Uint32Array(256);
     for (let i = 0; i < 256; i++) {
       let c = i;
       for (let j = 0; j < 8; j++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
-      t[i] = c;
+      crc32._t[i] = c;
     }
-    return t;
-  })());
+  }
   let crc = 0xFFFFFFFF;
-  const bytes = new Uint8Array(buffer);
-  for (let i = 0; i < bytes.length; i++)
-    crc = table[(crc ^ bytes[i]) & 0xFF] ^ (crc >>> 8);
+  new Uint8Array(buffer).forEach(b => { crc = crc32._t[(crc ^ b) & 0xFF] ^ (crc >>> 8); });
   return (crc ^ 0xFFFFFFFF) >>> 0;
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
-function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
-
-function parseModelName(url, fallback) {
-  try { return decodeURIComponent(new URL(url).pathname.split('/').pop()) || fallback; }
-  catch { return fallback; }
+// ── PKCE ──────────────────────────────────────────────────────────────────────
+async function generatePKCE() {
+  const v = crypto.randomUUID().replace(/-/g,'') + crypto.randomUUID().replace(/-/g,'');
+  const h = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(v));
+  const c = btoa(String.fromCharCode(...new Uint8Array(h)))
+    .replace(/\+/g,'-').replace(/\//g,'_').replace(/=/g,'');
+  return { verifier: v, challenge: c };
 }
 
-// ── NamLoader singleton ───────────────────────────────────────────────────────
+// ── Token helpers ─────────────────────────────────────────────────────────────
+const T = {
+  save(a, r, e) {
+    sessionStorage.setItem('t3k_access',  a);
+    sessionStorage.setItem('t3k_refresh', r);
+    sessionStorage.setItem('t3k_exp',     String(Date.now() + e * 1000));
+  },
+  get()      { return sessionStorage.getItem('t3k_access'); },
+  expired()  { return Date.now() > parseInt(sessionStorage.getItem('t3k_exp') || '0'); },
+  clear()    { ['t3k_access','t3k_refresh','t3k_exp'].forEach(k => sessionStorage.removeItem(k)); },
+};
+
+async function getToken() {
+  if (!T.get()) return null;
+  if (!T.expired()) return T.get();
+  const rf = sessionStorage.getItem('t3k_refresh');
+  if (!rf) { T.clear(); return null; }
+  try {
+    const r = await fetch(`${T3K_BASE}/oauth/token`, {
+      method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'},
+      body: new URLSearchParams({ grant_type:'refresh_token', refresh_token:rf, client_id:T3K_CLIENT_ID }),
+    });
+    if (!r.ok) { T.clear(); return null; }
+    const { access_token:a, refresh_token:rv, expires_in:e } = await r.json();
+    T.save(a, rv, e);
+    return a;
+  } catch { T.clear(); return null; }
+}
+
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+// ── NamLoader ─────────────────────────────────────────────────────────────────
 export const NamLoader = {
-  _onProgress: null,   // (pct, msg) => void
-  _onDone:     null,   // (ok, msg)  => void
-  _pendingAck: null,   // resolve/reject for BLE ACK
+  _pendingAck: null,
+  isAuthed() { return !!T.get(); },
 
-  // ── called by app.js when BLE receives a NAM ACK packet ──────────────────
+  // Called by app.js BLE receive handler for CMD 0x53
   handleAck(ok) {
-    if (this._pendingAck) {
-      const { resolve, reject } = this._pendingAck;
-      this._pendingAck = null;
-      ok ? resolve() : reject(new Error('ESP CRC mismatch'));
-    }
+    if (!this._pendingAck) return;
+    const { resolve, reject } = this._pendingAck;
+    this._pendingAck = null;
+    ok ? resolve() : reject(new Error('ESP CRC mismatch'));
   },
 
-  // ── 1. Kick off TONE3000 Select flow ─────────────────────────────────────
-  browseT3K() {
-    const redirectUrl = encodeURIComponent(window.location.href.split('?')[0] + '?t3k_callback=1');
-    window.location.href =
-      `https://www.tone3000.com/api/v1/select?app_id=${T3K_APP_ID}&redirect_url=${redirectUrl}`;
+  // ── Auth: login only (no tone select) ──────────────────────────────────
+  async startLogin() {
+    const { verifier, challenge } = await generatePKCE();
+    const state = crypto.randomUUID();
+    sessionStorage.setItem('t3k_verifier', verifier);
+    sessionStorage.setItem('t3k_state',    state);
+    const p = new URLSearchParams({
+      client_id: T3K_CLIENT_ID, redirect_uri: REDIRECT_URI,
+      response_type:'code', code_challenge:challenge,
+      code_challenge_method:'S256', state,
+    });
+    window.location.href = `${T3K_BASE}/oauth/authorize?${p}`;
   },
 
-  // ── 2. Handle redirect callback — returns true if it consumed the params ──
+  // ── Select flow: login + tone picker in one step ────────────────────────
+  async startSelect() {
+    const { verifier, challenge } = await generatePKCE();
+    const state = crypto.randomUUID();
+    sessionStorage.setItem('t3k_verifier', verifier);
+    sessionStorage.setItem('t3k_state',    state);
+    const p = new URLSearchParams({
+      client_id: T3K_CLIENT_ID, redirect_uri: REDIRECT_URI,
+      response_type:'code', code_challenge:challenge,
+      code_challenge_method:'S256', state,
+      prompt:'select_tone', platform:'nam', menubar:'true',
+    });
+    window.location.href = `${T3K_BASE}/oauth/authorize?${p}`;
+  },
+
+  // ── Handle OAuth callback — returns true if it consumed the URL params ──
   async handleCallback(searchParams, onProgress, onDone) {
-    if (!searchParams.get('t3k_callback')) return false;
-    const toneUrl = searchParams.get('tone_url');
-    if (!toneUrl) { onDone(false, 'No tone_url in callback'); return true; }
-    await this.loadFromToneUrl(toneUrl, onProgress, onDone);
+    const code     = searchParams.get('code');
+    const state    = searchParams.get('state');
+    const toneId   = searchParams.get('tone_id');
+    const error    = searchParams.get('error');
+    const canceled = searchParams.get('canceled') === 'true';
+
+    if (!code && !error && !canceled) return false;  // not our redirect
+
+    window.history.replaceState({}, '', window.location.pathname);  // clean URL
+
+    if (canceled) { onDone(false, 'Canceled'); return true; }
+    if (error)    { onDone(false, `Auth error: ${error}`); return true; }
+
+    if (state !== sessionStorage.getItem('t3k_state')) {
+      onDone(false, 'State mismatch'); return true;
+    }
+
+    onProgress(5, 'Signing in…');
+    try {
+      const r = await fetch(`${T3K_BASE}/oauth/token`, {
+        method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'},
+        body: new URLSearchParams({
+          grant_type:'authorization_code', code,
+          code_verifier: sessionStorage.getItem('t3k_verifier') || '',
+          redirect_uri: REDIRECT_URI, client_id: T3K_CLIENT_ID,
+        }),
+      });
+      if (!r.ok) throw new Error(`Token exchange ${r.status}: ${await r.text()}`);
+      const { access_token:a, refresh_token:rv, expires_in:e } = await r.json();
+      T.save(a, rv, e);
+
+      if (toneId) {
+        await this._fetchAndSend(toneId, onProgress, onDone);
+      } else {
+        onDone(true, 'logged_in');  // auth-only callback; UI will re-render
+      }
+    } catch (err) { onDone(false, err.message); }
     return true;
   },
 
-  // ── 3. Fetch tone JSON, pick nano .nam model, download + send ─────────────
-  async loadFromToneUrl(toneUrl, onProgress, onDone) {
-    this._onProgress = onProgress;
-    this._onDone     = onDone;
-    try {
-      onProgress(0, 'Fetching tone info…');
-      const res = await fetch(toneUrl);
-      if (!res.ok) throw new Error(`Tone fetch failed: ${res.status}`);
-      const tone = await res.json();
+  // ── Search (Bearer required) ────────────────────────────────────────────
+  async search(query = '', page = 1, sort = 'downloads-all-time', sizes = 'nano') {
+    const token = await getToken();
+    if (!token) throw new Error('NOT_AUTHED');
 
-      // Find nano NAM model
-      const models = tone.models || [];
-      const nano = models.find(m =>
-        m.platform === 'nam' && m.size === 'nano' && m.model_url
-      );
-      if (!nano) throw new Error('No nano NAM model found in this tone');
+    const p = new URLSearchParams({ page, page_size: 20, sort });
+    if (query) p.set('query', query);
+    if (sizes) p.set('sizes', sizes);
 
-      await this._downloadAndSend(nano.model_url, nano.name || tone.name || 'model.nam', onProgress, onDone);
-    } catch (err) {
-      onDone(false, err.message);
-    }
+    const r = await fetch(`${T3K_BASE}/tones/search?${p}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (r.status === 401) { T.clear(); throw new Error('NOT_AUTHED'); }
+    if (!r.ok) throw new Error(`Search ${r.status}: ${await r.text()}`);
+    return r.json();  // { data: Tone[], total, page, page_size }
   },
 
-  // ── 4. User picked a local .nam file ──────────────────────────────────────
+  // ── Fetch models for tone_id and send to ESP ────────────────────────────
+  async _fetchAndSend(toneId, onProgress, onDone) {
+    const token = await getToken();
+    if (!token) { onDone(false, 'Not authenticated'); return; }
+
+    onProgress(12, 'Fetching model list…');
+    const mr = await fetch(`${T3K_BASE}/models?tone_id=${toneId}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!mr.ok) throw new Error(`Models fetch ${mr.status}`);
+    const { data: models } = await mr.json();
+
+    // Get tone name
+    let name = `tone_${toneId}.nam`;
+    try {
+      const tr = await fetch(`${T3K_BASE}/tones/${toneId}`, { headers: { Authorization: `Bearer ${token}` } });
+      if (tr.ok) { const t = await tr.json(); name = (t.name || name).replace(/\.nam$/i,'') + '.nam'; }
+    } catch { /**/ }
+
+    const nano = (models || []).find(m => m.platform === 'nam' && m.size === 'nano' && m.model_url);
+    if (!nano) throw new Error('No downloadable nano NAM model for this tone');
+
+    await this._downloadAndSend(nano.model_url, name, token, onProgress, onDone);
+  },
+
+  // Public: send a tone by ID (called from search result cards)
+  async sendTone(toneId, fallbackName, onProgress, onDone) {
+    try { await this._fetchAndSend(toneId, onProgress, onDone); }
+    catch (err) { onDone(false, err.message); }
+  },
+
+  // Load local file
   async loadFromFile(file, onProgress, onDone) {
-    this._onProgress = onProgress;
-    this._onDone     = onDone;
     try {
-      onProgress(0, `Reading ${file.name}…`);
-      const buffer = await file.arrayBuffer();
-      await this._sendBuffer(buffer, file.name, onProgress, onDone);
-    } catch (err) {
-      onDone(false, err.message);
-    }
+      onProgress(2, `Reading ${file.name}…`);
+      await this._sendBuffer(await file.arrayBuffer(), file.name, onProgress, onDone);
+    } catch (err) { onDone(false, err.message); }
   },
 
-  // ── 5. Download binary ────────────────────────────────────────────────────
-  async _downloadAndSend(url, name, onProgress, onDone) {
-    onProgress(5, `Downloading ${name}…`);
-    const res = await fetch(url);
-    if (!res.ok) throw new Error(`Download failed: ${res.status}`);
-    const total = parseInt(res.headers.get('content-length') || '0');
-    let loaded = 0;
-    const reader = res.body.getReader();
-    const chunks = [];
-    while (true) {
+  async _downloadAndSend(url, name, token, onProgress, onDone) {
+    onProgress(18, `Downloading ${name}…`);
+    const headers = token ? { Authorization: `Bearer ${token}` } : {};
+    const r = await fetch(url, { headers });
+    if (!r.ok) throw new Error(`Download ${r.status}`);
+    const total = parseInt(r.headers.get('content-length') || '0');
+    const reader = r.body.getReader();
+    const chunks = []; let loaded = 0;
+    for (;;) {
       const { done, value } = await reader.read();
       if (done) break;
-      chunks.push(value);
-      loaded += value.length;
-      if (total) onProgress(5 + Math.round((loaded / total) * 30), `Downloading… ${Math.round(loaded/1024)}KB`);
+      chunks.push(value); loaded += value.length;
+      if (total) onProgress(18 + Math.round(loaded/total*22), `Downloading… ${Math.round(loaded/1024)}KB`);
     }
-    const buffer = await new Blob(chunks).arrayBuffer();
-    await this._sendBuffer(buffer, name, onProgress, onDone);
+    await this._sendBuffer(await new Blob(chunks).arrayBuffer(), name, onProgress, onDone);
   },
 
-  // ── 6. CRC + chunked BLE transfer ────────────────────────────────────────
   async _sendBuffer(buffer, name, onProgress, onDone) {
-    const bytes      = new Uint8Array(buffer);
-    const totalSize  = bytes.length;
-    const checksum   = crc32(buffer);
-    const totalChunks = Math.ceil(totalSize / CHUNK_SIZE);
-    const nameBytes  = new TextEncoder().encode(name.slice(0, 32));
+    const bytes = new Uint8Array(buffer);
+    const total = bytes.length;
+    const csum  = crc32(buffer);
+    const nchunks = Math.ceil(total / CHUNK_SIZE);
+    const nameB   = new TextEncoder().encode(name.slice(0, 32));
 
-    onProgress(36, `Sending ${Math.round(totalSize/1024)}KB to device…`);
+    onProgress(42, `Sending ${Math.round(total/1024)}KB…`);
 
-    // START packet: [CMD][u32 size LE][u32 crc LE][name]
-    const startPkt = new Uint8Array(1 + 4 + 4 + nameBytes.length);
-    const sv = new DataView(startPkt.buffer);
-    startPkt[0] = NAM_CMD_START;
-    sv.setUint32(1, totalSize, true);
-    sv.setUint32(5, checksum,  true);
-    startPkt.set(nameBytes, 9);
-    BLEService.send(startPkt);
-    await sleep(50);
+    // START packet
+    const start = new Uint8Array(9 + nameB.length);
+    start[0] = CMD_START;
+    new DataView(start.buffer).setUint32(1, total, true);
+    new DataView(start.buffer).setUint32(5, csum,  true);
+    start.set(nameB, 9);
+    BLEService.send(start);
+    await sleep(60);
 
     // CHUNK packets
-    for (let i = 0; i < totalChunks; i++) {
-      const slice   = bytes.slice(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE);
-      const pkt     = new Uint8Array(3 + slice.length);
-      const cv      = new DataView(pkt.buffer);
-      pkt[0]        = NAM_CMD_CHUNK;
-      cv.setUint16(1, i, true);
+    for (let i = 0; i < nchunks; i++) {
+      const slice = bytes.slice(i * CHUNK_SIZE, (i+1) * CHUNK_SIZE);
+      const pkt   = new Uint8Array(3 + slice.length);
+      pkt[0] = CMD_CHUNK;
+      new DataView(pkt.buffer).setUint16(1, i, true);
       pkt.set(slice, 3);
       BLEService.send(pkt);
-
-      const pct = 36 + Math.round(((i + 1) / totalChunks) * 58);
-      onProgress(pct, `Chunk ${i + 1}/${totalChunks}`);
-
-      // Throttle — give ESP breathing room every 8 chunks
-      if ((i + 1) % 8 === 0) await sleep(20);
+      onProgress(42 + Math.round((i+1)/nchunks * 50), `Chunk ${i+1}/${nchunks}`);
+      if ((i+1) % 8 === 0) await sleep(20);
     }
 
-    // END packet + wait for ACK
-    BLEService.send(new Uint8Array([NAM_CMD_END]));
-    onProgress(95, 'Waiting for CRC confirmation…');
-
+    // END + wait for ACK
+    BLEService.send(new Uint8Array([CMD_END]));
+    onProgress(94, 'Waiting for device CRC…');
     await new Promise((resolve, reject) => {
       this._pendingAck = { resolve, reject };
       setTimeout(() => {
-        if (this._pendingAck) {
-          this._pendingAck = null;
-          reject(new Error('ACK timeout — check BLE connection'));
-        }
-      }, 15000);
+        if (this._pendingAck) { this._pendingAck = null; reject(new Error('ACK timeout')); }
+      }, ACK_TIMEOUT);
     });
 
-    onProgress(100, '✓ Model loaded successfully');
-    onDone(true, `${name} sent to device`);
-  },
-
-  // ── 7. Public search — returns array of {id, name, author, downloads, url} ─
-  // Uses public search endpoint (no auth required for listing)
-  async searchPublic(query = '', page = 1) {
-    const q = encodeURIComponent(query);
-    const url = `https://www.tone3000.com/api/v1/tones?platform=nam&size=nano&sort=downloads-all-time&search=${q}&page=${page}&page_size=20`;
-    const res = await fetch(url, { headers: { 'Accept': 'application/json' } });
-    if (!res.ok) throw new Error(`Search failed: ${res.status}`);
-    return res.json();
+    onProgress(100, `✓ ${name} loaded`);
+    onDone(true, name);
   },
 };

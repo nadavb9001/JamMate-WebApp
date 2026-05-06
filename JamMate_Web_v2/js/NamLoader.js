@@ -152,28 +152,26 @@ export const NamLoader = {
     window.location.href = `${T3K_BASE}/oauth/authorize?${params}`;
   },
 
-async startSelect() {
-  const { verifier, challenge } = await generatePKCE();
-  const state = crypto.randomUUID();
+  async startSelect() {
+    const { verifier, challenge } = await generatePKCE();
+    const state = crypto.randomUUID();
+    sessionStorage.setItem('t3k_verifier', verifier);
+    sessionStorage.setItem('t3k_state', state);
 
-  sessionStorage.setItem('t3k_verifier', verifier);
-  sessionStorage.setItem('t3k_state', state);
+    const params = new URLSearchParams({
+      client_id: T3K_CLIENT_ID,
+      redirect_uri: REDIRECT_URI,
+      response_type: 'code',
+      code_challenge: challenge,
+      code_challenge_method: 'S256',
+      state,
+      prompt: 'select_tone',
+      platform: 'nam',
+      menubar: 'true',
+    });
 
-  const p = new URLSearchParams({
-    client_id: T3K_CLIENT_ID,
-    redirect_uri: REDIRECT_URI,
-    response_type: 'code',
-    code_challenge: challenge,
-    code_challenge_method: 'S256',
-    state,
-    prompt: 'select_tone',
-    platform: 'nam',
-    gears: 'amp_full-rig',
-    menubar: 'false'
-  });
-
-  window.location.href = `${T3K_BASE}/oauth/authorize?${p}`;
-},
+    window.location.href = `${T3K_BASE}/oauth/authorize?${params}`;
+  },
 
   async handleCallback(searchParams, onProgress, onDone) {
     const code = searchParams.get('code');
@@ -222,11 +220,10 @@ async startSelect() {
       T.save(access_token, refresh_token, expires_in);
 
       if (toneId) {
-  onProgress(8, `Selected TONE3000 tone #${toneId}`);
-  await this._fetchAndSend(toneId, onProgress, onDone);
-} else {
-  onDone(false, 'Signed in, but no tone was selected. In TONE3000 tap/select a tone; do not use Download all models.');
-}
+        await this._fetchAndSend(toneId, onProgress, onDone);
+      } else {
+        onDone(true, 'logged_in');
+      }
     } catch (err) {
       onDone(false, err.message);
     }

@@ -13,7 +13,7 @@
  *     flatIdx 1..K   → knob k-1   value: 0–255
  *     flatIdx K+1..  → dropdown d value: selectedIndex
  */
-
+import { NamLoader } from './NamLoader.js';
 import { APP_CONFIG } from './config.js';
 import { View } from './ui/View.js';
 import { Knob } from './ui/Knob.js';

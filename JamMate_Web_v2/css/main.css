@@ -541,3 +541,148 @@ body.light-theme #statusMessage {
     font-size: 14px;
     color: var(--color-text-secondary);
 }
+
+<!-- ============================================================
+  CSS — paste into main.css or a <style> block in index.html
+============================================================= -->
+<style>
+/* ── NAM tab layout ───────────────────────────────────────── */
+#nam-tab { display:none; flex-direction:column; height:100%; overflow:hidden; }
+#nam-tab.active { display:flex; }
+ 
+.nam-layout {
+  display:flex; flex-direction:column; height:100%;
+  gap:10px; padding:10px; box-sizing:border-box; overflow:hidden;
+}
+ 
+/* ── Top bar ──────────────────────────────────────────────── */
+.nam-topbar { display:flex; flex-direction:column; gap:6px; flex-shrink:0; }
+ 
+.nam-search-row { display:flex; gap:6px; }
+ 
+.nam-search {
+  flex:1; background:var(--color-bg-input,#1a1a1a); color:var(--color-text,#eee);
+  border:1px solid var(--color-border,#444); border-radius:6px;
+  padding:7px 10px; font-size:14px; outline:none;
+}
+.nam-search:focus { border-color:var(--color-accent,#0af); }
+ 
+.nam-filter-row {
+  display:flex; align-items:center; gap:12px; flex-wrap:wrap;
+}
+.nam-filter-select {
+  background:var(--color-bg-input,#1a1a1a); color:var(--color-text,#eee);
+  border:1px solid var(--color-border,#444); border-radius:6px;
+  padding:5px 8px; font-size:12px; cursor:pointer;
+}
+.nam-filter-label { font-size:12px; color:var(--color-text-dim,#aaa); display:flex; align-items:center; gap:4px; cursor:pointer; }
+.nam-result-count { font-size:11px; color:var(--color-text-dim,#888); margin-left:auto; }
+ 
+/* ── Buttons ──────────────────────────────────────────────── */
+.btn-nam-action {
+  background:var(--color-bg-input,#1a1a1a); color:var(--color-text,#eee);
+  border:1px solid var(--color-border,#555); border-radius:6px;
+  padding:7px 14px; font-size:13px; cursor:pointer; white-space:nowrap;
+  transition:border-color .15s, background .15s;
+}
+.btn-nam-action:hover { border-color:var(--color-accent,#0af); background:#222; }
+ 
+.btn-t3k { border-color:#e55; color:#f88; }
+.btn-t3k:hover { border-color:#f00; background:#1a0a0a; color:#faa; }
+.t3k-logo { font-weight:700; letter-spacing:.5px; }
+ 
+.btn-nam-file { display:inline-flex; align-items:center; gap:4px; cursor:pointer; }
+ 
+.btn-nam-page {
+  background:transparent; color:var(--color-accent,#0af);
+  border:1px solid var(--color-accent,#0af); border-radius:6px;
+  padding:5px 14px; font-size:13px; cursor:pointer;
+}
+.btn-nam-page:disabled { opacity:.35; cursor:default; }
+ 
+.btn-nam-eject {
+  background:transparent; color:var(--color-text-dim,#888);
+  border:1px solid var(--color-border,#444); border-radius:5px;
+  padding:3px 9px; font-size:13px; cursor:pointer;
+}
+.btn-nam-eject:hover { border-color:#f55; color:#f55; }
+ 
+/* ── Model grid ───────────────────────────────────────────── */
+.nam-grid {
+  flex:1; overflow-y:auto; display:grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap:8px; align-content:start;
+}
+ 
+.nam-placeholder {
+  grid-column:1/-1; display:flex; flex-direction:column;
+  align-items:center; justify-content:center; gap:12px;
+  height:180px; color:var(--color-text-dim,#666);
+}
+.nam-placeholder-icon  { font-size:40px; opacity:.4; }
+.nam-placeholder-text  { font-size:13px; text-align:center; line-height:1.6; }
+ 
+/* ── Model card ───────────────────────────────────────────── */
+.nam-card {
+  background:var(--color-bg-input,#1a1a1a);
+  border:1px solid var(--color-border,#333);
+  border-radius:8px; padding:10px 12px;
+  display:flex; flex-direction:column; gap:6px;
+  cursor:pointer; transition:border-color .15s, transform .1s;
+  position:relative;
+}
+.nam-card:hover { border-color:var(--color-accent,#0af); transform:translateY(-1px); }
+.nam-card.nam-card--loading { opacity:.6; pointer-events:none; }
+ 
+.nam-card-name {
+  font-size:13px; font-weight:600; color:var(--color-text,#eee);
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+.nam-card-author {
+  font-size:11px; color:var(--color-accent,#0af);
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+.nam-card-meta { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+.nam-card-badge {
+  font-size:10px; padding:2px 7px; border-radius:4px;
+  background:#0af2; color:#0af; border:1px solid #0af4;
+}
+.nam-card-downloads { font-size:10px; color:var(--color-text-dim,#777); margin-left:auto; }
+.nam-card-send {
+  width:100%; margin-top:4px; padding:5px 0; font-size:12px;
+  background:var(--color-accent,#0af); color:#000; border:none;
+  border-radius:5px; cursor:pointer; font-weight:600;
+  transition:opacity .15s;
+}
+.nam-card-send:hover { opacity:.85; }
+ 
+/* ── Pagination ───────────────────────────────────────────── */
+.nam-pagination { display:flex; align-items:center; justify-content:center; gap:14px; flex-shrink:0; padding:4px 0; }
+.nam-page-label { font-size:12px; color:var(--color-text-dim,#888); }
+ 
+/* ── Local file row ───────────────────────────────────────── */
+.nam-local-row { display:flex; align-items:center; gap:10px; flex-shrink:0; flex-wrap:wrap; }
+.nam-local-label { font-size:12px; color:var(--color-text-dim,#888); }
+.nam-filename { font-size:12px; color:var(--color-text,#ccc); flex:1; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+ 
+/* ── Progress ─────────────────────────────────────────────── */
+.nam-progress-panel {
+  background:var(--color-bg-input,#111); border:1px solid var(--color-border,#333);
+  border-radius:8px; padding:12px 14px; flex-shrink:0;
+}
+.nam-progress-title { font-size:13px; font-weight:600; color:var(--color-text,#eee); margin-bottom:8px; }
+.nam-progress-bar-wrap { height:8px; background:#222; border-radius:4px; overflow:hidden; margin-bottom:6px; }
+.nam-progress-bar {
+  height:100%; width:0%; background:var(--color-accent,#0af);
+  border-radius:4px; transition:width .25s ease;
+}
+.nam-progress-msg { font-size:11px; color:var(--color-text-dim,#888); }
+ 
+/* ── Device row ───────────────────────────────────────────── */
+.nam-device-row {
+  display:flex; align-items:center; gap:10px; flex-shrink:0;
+  border-top:1px solid var(--color-border,#333); padding-top:8px;
+}
+.nam-device-label { font-size:11px; color:var(--color-text-dim,#666); white-space:nowrap; }
+.nam-device-name  { font-size:13px; color:var(--color-enabled,#0f0); flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+</style>

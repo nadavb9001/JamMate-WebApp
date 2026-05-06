@@ -243,7 +243,7 @@ setupNamTab() {
         if (ok) this._namDoSearch(1);          // refresh list now that token exists
       }
     );
-  }
+  },
  
   // ── Progress helpers ──────────────────────────────────────────────────
   this._namSetProgress = (pct, msg) => {
@@ -1535,3 +1535,7 @@ setupNamTab() {
     });
   },
 };
+
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}

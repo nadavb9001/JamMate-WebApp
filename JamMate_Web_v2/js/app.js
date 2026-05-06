@@ -32,7 +32,7 @@ export const app = {
   currentEQPoints: null,
   utilState: {
     noise: { enabled: false, level: 0 },
-    tone: { enabled: false, level: 0, freq: 670 }
+    tone:  { enabled: false, level: 0, freq: 670 }
   },
   audioData: null,
   sampleRate: null,
@@ -68,7 +68,7 @@ export const app = {
     console.log(`[APP] Initializing ${effectCount} effects`);
     this.effectStates = {};
     this.effectParams = {};
-    this.effectOrder = [];
+    this.effectOrder  = [];
     for (let i = 0; i < effectCount; i++) {
       this.effectStates[i] = { enabled: false, selected: false };
       this.effectParams[i] = {};
@@ -76,34 +76,29 @@ export const app = {
     }
 
     // Drum state defaults
-    this.drumEnabled = false;
-    this.drumLevel = 50;
-    this.drumStyle = 0;
-    this.drumFill = 0;
-    this.drumNumber = 1;
-    this.bpm = 120;
+    this.drumEnabled  = false;
+    this.drumLevel    = 50;
+    this.drumStyle    = 0;
+    this.drumFill     = 0;
+    this.drumNumber   = 1;
+    this.bpm          = 120;
     this.looperEnabled = false;
-    this.loopLevel = 50;
-    this.loopNumber = 1;
-    this.loopSync = 0;
-    this.loopArm = 0;
-    this.loopLength = 0;
-    this.loopTracks = 1;
+    this.loopLevel    = 50;
+    this.loopNumber   = 1;
+    this.loopSync     = 0;
+    this.loopArm      = 0;
+    this.loopLength   = 0;
+    this.loopTracks   = 1;
 
     View.init(this);
 
-    // BLE status
     BLEService.onStatusChange = (status) => {
       View.updateConnectionStatus(status);
     };
 
-    // ── BLE data received ────────────────────────────────────────
-    // Tuner rate-limit: max one View.updateTuner per animation frame.
-    // ESP wire format: [0x35][0x04][0x00][float32 LE] = 7 bytes total.
-    // Case A (reassembled): dataView is payload-only  → float at byte 0.
-    // Case B (raw DataView): full frame               → float at byte 3.
+    // ── BLE data received ─────────────────────────────────────────
     let _tunerPending = false;
-    let _tunerFreq = 0;
+    let _tunerFreq    = 0;
     const _scheduleTuner = (freq) => {
       _tunerFreq = freq;
       if (_tunerPending) return;
@@ -118,8 +113,7 @@ export const app = {
     };
     const _handleTuner = (dv, payloadOnly) => {
       try {
-        _scheduleTuner(payloadOnly ? dv.getFloat32(0, true)
-          : dv.getFloat32(3, true));
+        _scheduleTuner(payloadOnly ? dv.getFloat32(0, true) : dv.getFloat32(3, true));
       } catch (_) { /* malformed — ignore */ }
     };
 
@@ -135,6 +129,11 @@ export const app = {
         }
         if (cmd === 0x35) {
           _handleTuner(dataView, true);
+          return;
+        }
+        // NAM upload ACK
+        if (cmd === 0x53) {
+          NamLoader.handleAck(dataView.getUint8(0) === 1);
           return;
         }
         if (cmd === Protocol.CMD.NAM_LIST_DATA) {
@@ -168,6 +167,11 @@ export const app = {
           _handleTuner(packet, false);
           return;
         }
+        // NAM upload ACK
+        if (cmd === 0x53) {
+          NamLoader.handleAck(packet.getUint8(1) === 1);
+          return;
+        }
         if (cmd === Protocol.CMD.NAM_LIST_DATA) {
           const index = packet.getUint8(1);
           if (index === 255) { this.clearNamModels(); return; }
@@ -197,427 +201,214 @@ export const app = {
     this.setupStaticKnobs();
     this.setupFileUpload();
     this.setupGlobalListeners();
-    this.Tab();
+    this.setupNamTab();          // ← NAM tab (v2, correct)
     this.setupPresetListeners();
     this.setupDrumControls();
-    upgradeSelects(); // replace all static <select> elements
+    upgradeSelects();
   },
 
   // ============================================================
-//  NAM TAB — app.js additions (v2, corrected)
-//
-//  Replace the old setupNamTab() entirely with this one.
-//  All other integration instructions remain the same:
-//    • import { NamLoader } from './NamLoader.js';  at top
-//    • Protocol.CMD additions (0x50–0x54)
-//    • BLE ACK handler for 0x53
-//    • this.setupNamTab() call in init()
-// ============================================================
- 
-setupNamTab() {
-  let namPage  = 1;
-  let namQuery = '';
-  let namTotal = 0;
-  let loadedModelName = null;
- 
-  // ── Check for OAuth callback on page load ─────────────────────────────
-  const params = new URLSearchParams(window.location.search);
-  const hasCallback = params.get('code') || params.get('error') || params.get('canceled');
-  if (hasCallback) {
-    // Switch to NAM tab
-    document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
-    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-    document.getElementById('nam-tab')?.classList.add('active');
-    document.querySelector('.tab[data-tab="nam"]')?.classList.add('active');
- 
-    NamLoader.handleCallback(params,
-      (pct, msg) => this._namSetProgress(pct, msg),
-      (ok, msg)  => {
-        this._namHandleDone(ok, msg);
-        if (ok && msg !== 'logged_in') {
-          loadedModelName = msg;
-          this._namUpdateDevice(loadedModelName);
-        }
-        if (ok) this._namRefreshAuthUI();      // show search now that we're authed
-        if (ok && msg !== 'logged_in') return; // came from select flow
-        if (ok) this._namDoSearch(1);          // refresh list now that token exists
-      }
-    );
-  },
- 
-  // ── Progress helpers ──────────────────────────────────────────────────
-  this._namSetProgress = (pct, msg) => {
-    const panel = document.getElementById('namProgressPanel');
-    const bar   = document.getElementById('namProgressBar');
-    const msgEl = document.getElementById('namProgressMsg');
-    const title = document.getElementById('namProgressTitle');
-    if (!panel) return;
-    panel.style.display = 'block';
-    if (bar)   bar.style.width    = pct + '%';
-    if (msgEl) msgEl.textContent  = msg;
-    if (title) title.textContent  = pct >= 100 ? '✓ Done' : (pct === 0 ? '✗ Error' : 'Transferring…');
-    if (pct >= 100) setTimeout(() => { panel.style.display = 'none'; }, 3000);
-    if (pct === 0)  setTimeout(() => { panel.style.display = 'none'; }, 5000);
-  };
- 
-  this._namHandleDone = (ok, msg) => {
-    this._namSetProgress(ok ? 100 : 0, ok ? `✓ ${msg}` : `✗ ${msg}`);
-    View.updateStatus(ok ? `NAM: ${msg}` : `NAM error: ${msg}`);
-    if (!ok) console.error('[NAM]', msg);
-  };
- 
-  this._namUpdateDevice = (name) => {
-    const el = document.getElementById('namDeviceName');
-    if (el) el.textContent = name || '—';
-  };
- 
-  this._namRefreshAuthUI = () => {
-    const authed   = NamLoader.isAuthed();
-    const loginBtn = document.getElementById('btnNamLogin');
-    const searchArea = document.getElementById('namSearchArea');
-    if (loginBtn)    loginBtn.textContent   = authed ? '✓ Signed in' : 'Sign in to TONE3000';
-    if (loginBtn)    loginBtn.disabled      = authed;
-    if (searchArea)  searchArea.style.display = 'flex';  // always show search
-  };
- 
-  // ── Search ────────────────────────────────────────────────────────────
-  this._namDoSearch = async (page = 1) => {
-    const grid     = document.getElementById('namGrid');
-    const countEl  = document.getElementById('namResultCount');
-    const pagEl    = document.getElementById('namPagination');
-    const sortEl   = document.getElementById('namSort');
-    const nanoEl   = document.getElementById('namNanoOnly');
-    const sort     = sortEl?.value  || 'downloads-all-time';
-    const nanoOnly = nanoEl?.checked ?? true;
- 
-    if (grid) grid.innerHTML = '<div class="nam-placeholder"><div class="nam-placeholder-icon">⏳</div><div class="nam-placeholder-text">Searching…</div></div>';
- 
-    try {
-      const data = await NamLoader.search(namQuery, page, sort, nanoOnly ? 'nano' : '');
-      const tones = data.data || data.tones || [];
-      namTotal = data.total || tones.length;
-      namPage  = page;
- 
-      if (countEl) countEl.textContent = `${namTotal.toLocaleString()} models`;
-      this._namRenderGrid(tones);
- 
-      const totalPages = Math.ceil(namTotal / 20);
-      if (pagEl) {
-        pagEl.style.display = totalPages > 1 ? 'flex' : 'none';
-        const lbl = document.getElementById('namPageLabel');
-        if (lbl) lbl.textContent = `Page ${namPage} / ${totalPages}`;
-        const prev = document.getElementById('btnNamPrev');
-        const next = document.getElementById('btnNamNext');
-        if (prev) prev.disabled = namPage <= 1;
-        if (next) next.disabled = namPage >= totalPages;
-      }
-    } catch (err) {
-      if (err.message === 'NOT_AUTHED') {
-        if (grid) grid.innerHTML = '<div class="nam-placeholder"><div class="nam-placeholder-icon">🔒</div><div class="nam-placeholder-text">Sign in to TONE3000<br>to browse and search models</div></div>';
-      } else {
-        if (grid) grid.innerHTML = `<div class="nam-placeholder"><div class="nam-placeholder-icon">⚠</div><div class="nam-placeholder-text">${err.message}</div></div>`;
-        console.error('[NAM search]', err);
-      }
-    }
-  };
- 
-  // ── Render grid ───────────────────────────────────────────────────────
-  this._namRenderGrid = (tones) => {
-    const grid = document.getElementById('namGrid');
-    if (!grid) return;
-    if (!tones?.length) {
-      grid.innerHTML = '<div class="nam-placeholder"><div class="nam-placeholder-icon">🔍</div><div class="nam-placeholder-text">No models found</div></div>';
-      return;
-    }
-    grid.innerHTML = '';
-    tones.forEach(tone => {
-      const card = document.createElement('div');
-      card.className = 'nam-card';
-      const models  = tone.models || [];
-      const nano    = models.find(m => m.platform === 'nam' && m.size === 'nano');
-      const sizeTag = nano?.size || tone.size || 'nano';
-      const dl      = (tone.downloads || tone.download_count || 0).toLocaleString();
-      const author  = tone.user?.username || tone.author_username || '';
- 
-      card.innerHTML = `
-        <div class="nam-card-name" title="${escHtml(tone.name || '')}">${escHtml(tone.name || 'Unnamed')}</div>
-        ${author ? `<div class="nam-card-author">@${escHtml(author)}</div>` : ''}
-        <div class="nam-card-meta">
-          <span class="nam-card-badge">${escHtml(sizeTag)}</span>
-          <span class="nam-card-downloads">⬇ ${dl}</span>
-        </div>
-        <button class="nam-card-send">Send to Device</button>`;
- 
-      card.querySelector('.nam-card-send').addEventListener('click', async () => {
-        if (!BLEService.isConnected?.()) { View.updateStatus('Connect BLE first'); return; }
-        card.classList.add('nam-card--loading');
-        await NamLoader.sendTone(
-          tone.id, tone.name,
-          (pct, msg) => this._namSetProgress(pct, msg),
-          (ok, msg)  => {
-            this._namHandleDone(ok, msg);
-            if (ok) { loadedModelName = msg; this._namUpdateDevice(msg); }
-            card.classList.remove('nam-card--loading');
+  // setupNamTab  (v2 — TONE3000 OAuth + search + BLE transfer)
+  // ============================================================
+  setupNamTab() {
+    let namPage  = 1;
+    let namQuery = '';
+    let namTotal = 0;
+    let loadedModelName = null;
+
+    // ── Check for OAuth callback on page load ─────────────────
+    const params = new URLSearchParams(window.location.search);
+    const hasCallback = params.get('code') || params.get('error') || params.get('canceled');
+    if (hasCallback) {
+      // Switch to NAM tab automatically
+      document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      document.getElementById('nam-tab')?.classList.add('active');
+      document.querySelector('.tab[data-tab="nam"]')?.classList.add('active');
+
+      NamLoader.handleCallback(
+        params,
+        (pct, msg) => this._namSetProgress(pct, msg),
+        (ok, msg)  => {
+          this._namHandleDone(ok, msg);
+          if (ok && msg !== 'logged_in') {
+            loadedModelName = msg;
+            this._namUpdateDevice(loadedModelName);
           }
-        );
-      });
- 
-      grid.appendChild(card);
-    });
-  };
- 
-  // ── Wire up controls ──────────────────────────────────────────────────
-  const $  = id => document.getElementById(id);
-  const on = (id, ev, fn) => $(id)?.addEventListener(ev, fn);
- 
-  on('btnNamLogin',     'click', () => NamLoader.startLogin());
-  on('btnNamBrowseT3K', 'click', () => {
-    if (!confirm('You will be taken to TONE3000 to pick a nano NAM tone. Continue?')) return;
-    NamLoader.startSelect();
-  });
- 
-  on('btnNamSearch', 'click', () => {
-    namQuery = $('namSearch')?.value?.trim() || '';
-    this._namDoSearch(1);
-  });
-  on('namSearch', 'keydown', e => {
-    if (e.key === 'Enter') { namQuery = e.target.value.trim(); this._namDoSearch(1); }
-  });
- 
-  on('namSort',     'change', () => this._namDoSearch(1));
-  on('namNanoOnly', 'change', () => this._namDoSearch(1));
-  on('btnNamPrev',  'click',  () => { if (namPage > 1) this._namDoSearch(namPage - 1); });
-  on('btnNamNext',  'click',  () => this._namDoSearch(namPage + 1));
- 
-  on('namFileInput', 'change', e => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const nameEl = $('namFileName');
-    if (nameEl) nameEl.textContent = file.name;
-    if (!BLEService.isConnected?.()) { View.updateStatus('Connect BLE first'); return; }
-    NamLoader.loadFromFile(file,
-      (pct, msg) => this._namSetProgress(pct, msg),
-      (ok, msg)  => {
-        this._namHandleDone(ok, msg);
-        if (ok) { loadedModelName = file.name; this._namUpdateDevice(file.name); }
-      }
-    );
-  });
- 
-  on('btnNamEject', 'click', () => {
-    BLEService.send(new Uint8Array([0x54]));
-    loadedModelName = null;
-    this._namUpdateDevice(null);
-    View.updateStatus('NAM model unloaded');
-  });
- 
-  // ── Init ──────────────────────────────────────────────────────────────
-  this._namRefreshAuthUI();
-  // Show trending results immediately if already authed (page reload)
-  if (NamLoader.isAuthed()) this._namDoSearch(1);
-},
- 
-  // ── UI helpers ────────────────────────────────────────────────────────
-  const setProgress = (pct, msg) => {
-    const panel = document.getElementById('namProgressPanel');
-    const bar   = document.getElementById('namProgressBar');
-    const msgEl = document.getElementById('namProgressMsg');
-    const title = document.getElementById('namProgressTitle');
-    if (!panel) return;
-    panel.style.display = 'block';
-    bar.style.width     = pct + '%';
-    msgEl.textContent   = msg;
-    if (pct >= 100 || pct === 0) {
-      title.textContent = pct >= 100 ? '✓ Done' : 'Transfer';
-      if (pct >= 100) setTimeout(() => { panel.style.display = 'none'; }, 3000);
-    } else {
-      title.textContent = 'Transferring…';
-    }
-  };
- 
-  this._namProgress = setProgress;
-  this._namDone = (ok, msg) => {
-    setProgress(ok ? 100 : 0, msg);
-    View.updateStatus(msg);
-    if (!ok) console.error('[NAM]', msg);
-  };
-  this._namUpdateDevice = (name) => {
-    const el = document.getElementById('namDeviceName');
-    if (el) el.textContent = name || '—';
-  };
- 
-  // ── Render search results ─────────────────────────────────────────────
-  const renderGrid = (tones) => {
-    const grid = document.getElementById('namGrid');
-    if (!grid) return;
-    grid.innerHTML = '';
- 
-    if (!tones || tones.length === 0) {
-      grid.innerHTML = '<div class="nam-placeholder"><div class="nam-placeholder-icon">🔍</div><div class="nam-placeholder-text">No nano NAM models found</div></div>';
-      return;
-    }
- 
-    tones.forEach(tone => {
-      const card = document.createElement('div');
-      card.className = 'nam-card';
- 
-      // Find nano model info
-      const models = tone.models || [];
-      const nano   = models.find(m => m.platform === 'nam' && m.size === 'nano');
-      const size   = nano ? nano.size : (tone.size || '');
-      const dl     = (tone.downloads || tone.download_count || 0).toLocaleString();
-      const author = tone.user?.username || tone.author || '';
- 
-      card.innerHTML = `
-        <div class="nam-card-name" title="${tone.name || ''}">${tone.name || 'Unnamed'}</div>
-        <div class="nam-card-author">${author}</div>
-        <div class="nam-card-meta">
-          ${size ? `<span class="nam-card-badge">${size}</span>` : ''}
-          <span class="nam-card-downloads">⬇ ${dl}</span>
-        </div>
-        <button class="nam-card-send">Send to Device</button>`;
- 
-      card.querySelector('.nam-card-send').addEventListener('click', async (e) => {
-        e.stopPropagation();
-        if (!BLEService.isConnected?.()) {
-          View.updateStatus('Not connected — connect BLE first');
-          return;
+          if (ok) this._namRefreshAuthUI();
+          if (ok && msg === 'logged_in') this._namDoSearch(1);
         }
-        card.classList.add('nam-card--loading');
-        setProgress(1, 'Starting transfer…');
- 
-        try {
-          // Fetch full tone to get signed model_url
-          const res  = await fetch(`https://www.tone3000.com/api/v1/tones/${tone.id}`);
-          const full = await res.json();
-          const nanoModel = (full.models || []).find(m => m.platform === 'nam' && m.size === 'nano' && m.model_url);
-          if (!nanoModel) throw new Error('No downloadable nano model (login to TONE3000 may be required)');
- 
-          await NamLoader._downloadAndSend(
-            nanoModel.model_url,
-            full.name || tone.name || 'model.nam',
-            setProgress,
-            (ok, msg) => {
-              this._namDone(ok, msg);
-              if (ok) {
-                loadedModelName = full.name || tone.name;
-                this._namUpdateDevice(loadedModelName);
-              }
+      );
+    }
+
+    // ── Progress helpers ──────────────────────────────────────
+    this._namSetProgress = (pct, msg) => {
+      const panel = document.getElementById('namProgressPanel');
+      const bar   = document.getElementById('namProgressBar');
+      const msgEl = document.getElementById('namProgressMsg');
+      const title = document.getElementById('namProgressTitle');
+      if (!panel) return;
+      panel.style.display = 'block';
+      if (bar)   bar.style.width   = pct + '%';
+      if (msgEl) msgEl.textContent = msg;
+      if (title) title.textContent = pct >= 100 ? '✓ Done' : (pct === 0 ? '✗ Error' : 'Transferring…');
+      if (pct >= 100) setTimeout(() => { panel.style.display = 'none'; }, 3000);
+      if (pct === 0)  setTimeout(() => { panel.style.display = 'none'; }, 5000);
+    };
+
+    this._namHandleDone = (ok, msg) => {
+      this._namSetProgress(ok ? 100 : 0, ok ? `✓ ${msg}` : `✗ ${msg}`);
+      View.updateStatus(ok ? `NAM: ${msg}` : `NAM error: ${msg}`);
+      if (!ok) console.error('[NAM]', msg);
+    };
+
+    this._namUpdateDevice = (name) => {
+      const el = document.getElementById('namDeviceName');
+      if (el) el.textContent = name || '—';
+    };
+
+    this._namRefreshAuthUI = () => {
+      const authed   = NamLoader.isAuthed();
+      const loginBtn = document.getElementById('btnNamLogin');
+      if (loginBtn) {
+        loginBtn.textContent = authed ? '✓ Signed in' : 'Sign in to TONE3000';
+        loginBtn.disabled    = authed;
+      }
+    };
+
+    // ── Search ────────────────────────────────────────────────
+    this._namDoSearch = async (page = 1) => {
+      const grid    = document.getElementById('namGrid');
+      const countEl = document.getElementById('namResultCount');
+      const pagEl   = document.getElementById('namPagination');
+      const sortEl  = document.getElementById('namSort');
+      const nanoEl  = document.getElementById('namNanoOnly');
+      const sort    = sortEl?.value  || 'downloads-all-time';
+      const nanoOnly = nanoEl?.checked ?? true;
+
+      if (grid) grid.innerHTML = '<div class="nam-placeholder"><div class="nam-placeholder-icon">⏳</div><div class="nam-placeholder-text">Searching…</div></div>';
+
+      try {
+        const data  = await NamLoader.search(namQuery, page, sort, nanoOnly ? 'nano' : '');
+        const tones = data.data || data.tones || [];
+        namTotal = data.total || tones.length;
+        namPage  = page;
+
+        if (countEl) countEl.textContent = `${namTotal.toLocaleString()} models`;
+        this._namRenderGrid(tones);
+
+        const totalPages = Math.ceil(namTotal / 20);
+        if (pagEl) {
+          pagEl.style.display = totalPages > 1 ? 'flex' : 'none';
+          const lbl  = document.getElementById('namPageLabel');
+          const prev = document.getElementById('btnNamPrev');
+          const next = document.getElementById('btnNamNext');
+          if (lbl)  lbl.textContent = `Page ${namPage} / ${totalPages}`;
+          if (prev) prev.disabled   = namPage <= 1;
+          if (next) next.disabled   = namPage >= totalPages;
+        }
+      } catch (err) {
+        if (err.message === 'NOT_AUTHED') {
+          if (grid) grid.innerHTML = '<div class="nam-placeholder"><div class="nam-placeholder-icon">🔒</div><div class="nam-placeholder-text">Sign in to TONE3000<br>to browse and search models</div></div>';
+        } else {
+          if (grid) grid.innerHTML = `<div class="nam-placeholder"><div class="nam-placeholder-icon">⚠</div><div class="nam-placeholder-text">${escHtml(err.message)}</div></div>`;
+          console.error('[NAM search]', err);
+        }
+      }
+    };
+
+    // ── Render grid ───────────────────────────────────────────
+    this._namRenderGrid = (tones) => {
+      const grid = document.getElementById('namGrid');
+      if (!grid) return;
+      if (!tones?.length) {
+        grid.innerHTML = '<div class="nam-placeholder"><div class="nam-placeholder-icon">🔍</div><div class="nam-placeholder-text">No models found</div></div>';
+        return;
+      }
+      grid.innerHTML = '';
+      tones.forEach(tone => {
+        const card    = document.createElement('div');
+        card.className = 'nam-card';
+        const models  = tone.models || [];
+        const nano    = models.find(m => m.platform === 'nam' && m.size === 'nano');
+        const sizeTag = nano?.size || tone.size || 'nano';
+        const dl      = (tone.downloads || tone.download_count || 0).toLocaleString();
+        const author  = tone.user?.username || tone.author_username || '';
+
+        card.innerHTML = `
+          <div class="nam-card-name" title="${escHtml(tone.name || '')}">${escHtml(tone.name || 'Unnamed')}</div>
+          ${author ? `<div class="nam-card-author">@${escHtml(author)}</div>` : ''}
+          <div class="nam-card-meta">
+            <span class="nam-card-badge">${escHtml(sizeTag)}</span>
+            <span class="nam-card-downloads">⬇ ${dl}</span>
+          </div>
+          <button class="nam-card-send">Send to Device</button>`;
+
+        card.querySelector('.nam-card-send').addEventListener('click', async () => {
+          if (!BLEService.isConnected?.()) { View.updateStatus('Connect BLE first'); return; }
+          card.classList.add('nam-card--loading');
+          await NamLoader.sendTone(
+            tone.id, tone.name,
+            (pct, msg) => this._namSetProgress(pct, msg),
+            (ok, msg)  => {
+              this._namHandleDone(ok, msg);
+              if (ok) { loadedModelName = msg; this._namUpdateDevice(msg); }
               card.classList.remove('nam-card--loading');
             }
           );
-        } catch (err) {
-          card.classList.remove('nam-card--loading');
-          // Model URL requires auth → fall back to T3K Select flow
-          if (err.message.includes('login') || err.message.includes('401') || err.message.includes('403')) {
-            View.updateStatus('Login required — opening TONE3000…');
-            // Store intent so callback can send it
-            sessionStorage.setItem('nam_pending_tone_id', tone.id);
-            NamLoader.browseT3K();
-          } else {
-            this._namDone(false, err.message);
-          }
-        }
+        });
+
+        grid.appendChild(card);
       });
- 
-      grid.appendChild(card);
+    };
+
+    // ── Wire controls ─────────────────────────────────────────
+    const $  = id => document.getElementById(id);
+    const on = (id, ev, fn) => $(id)?.addEventListener(ev, fn);
+
+    on('btnNamLogin',     'click', () => NamLoader.startLogin());
+    on('btnNamBrowseT3K', 'click', () => {
+      if (!confirm('You will be taken to TONE3000 to pick a nano NAM tone. Continue?')) return;
+      NamLoader.startSelect();
     });
-  };
- 
-  // ── Search ────────────────────────────────────────────────────────────
-  const doSearch = async (page = 1) => {
-    const grid      = document.getElementById('namGrid');
-    const countEl   = document.getElementById('namResultCount');
-    const pagination = document.getElementById('namPagination');
-    const nanoOnly  = document.getElementById('namNanoOnly')?.checked ?? true;
-    const sort      = document.getElementById('namSort')?.value || 'downloads-all-time';
- 
-    if (grid) grid.innerHTML = '<div class="nam-placeholder"><div class="nam-placeholder-icon">⏳</div><div class="nam-placeholder-text">Searching…</div></div>';
- 
-    try {
-      const sizeParam  = nanoOnly ? 'nano' : '';
-      const q          = encodeURIComponent(namQuery);
-      const url        = `https://www.tone3000.com/api/v1/tones?platform=nam${sizeParam ? `&size=${sizeParam}` : ''}&sort=${sort}&search=${q}&page=${page}&page_size=20`;
-      const res        = await fetch(url, { headers: { Accept: 'application/json' } });
-      if (!res.ok) throw new Error(`Search error ${res.status}`);
-      const data       = await res.json();
- 
-      namResults = data.tones || data.results || data.data || [];
-      namTotal   = data.total || data.count || namResults.length;
-      namPage    = page;
- 
-      if (countEl) countEl.textContent = `${namTotal.toLocaleString()} models`;
-      renderGrid(namResults);
- 
-      const totalPages = Math.ceil(namTotal / 20);
-      if (pagination) {
-        pagination.style.display = totalPages > 1 ? 'flex' : 'none';
-        document.getElementById('namPageLabel').textContent = `Page ${namPage} / ${totalPages}`;
-        document.getElementById('btnNamPrev').disabled = namPage <= 1;
-        document.getElementById('btnNamNext').disabled = namPage >= totalPages;
-      }
-    } catch (err) {
-      if (grid) grid.innerHTML = `<div class="nam-placeholder"><div class="nam-placeholder-icon">⚠</div><div class="nam-placeholder-text">${err.message}</div></div>`;
-    }
-  };
- 
-  // ── Wire controls ─────────────────────────────────────────────────────
-  const wire = (id, event, fn) => document.getElementById(id)?.addEventListener(event, fn);
- 
-  wire('btnNamSearch', 'click', () => {
-    namQuery = document.getElementById('namSearch')?.value?.trim() || '';
-    doSearch(1);
-  });
- 
-  wire('namSearch', 'keydown', (e) => {
-    if (e.key === 'Enter') {
-      namQuery = e.target.value.trim();
-      doSearch(1);
-    }
-  });
- 
-  wire('btnNamBrowseT3K', 'click', () => {
-    if (!window.confirm('You will be taken to TONE3000 to browse and select a nano NAM model. Continue?')) return;
-    NamLoader.browseT3K();
-  });
- 
-  wire('namSort',     'change', () => doSearch(1));
-  wire('namNanoOnly', 'change', () => doSearch(1));
- 
-  wire('btnNamPrev', 'click', () => { if (namPage > 1)  doSearch(namPage - 1); });
-  wire('btnNamNext', 'click', () =>                      doSearch(namPage + 1));
- 
-  // Local file
-  wire('namFileInput', 'change', (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const nameEl = document.getElementById('namFileName');
-    if (nameEl) nameEl.textContent = file.name;
-    if (!BLEService.isConnected?.()) {
-      View.updateStatus('Not connected — connect BLE first');
-      return;
-    }
-    NamLoader.loadFromFile(file, setProgress, (ok, msg) => {
-      this._namDone(ok, msg);
-      if (ok) {
-        loadedModelName = file.name;
-        this._namUpdateDevice(loadedModelName);
-      }
+    on('btnNamSearch', 'click', () => {
+      namQuery = $('namSearch')?.value?.trim() || '';
+      this._namDoSearch(1);
     });
-  });
- 
-  // Eject
-  wire('btnNamEject', 'click', () => {
-    BLEService.send(new Uint8Array([0x54])); // NAM_EJECT
-    loadedModelName = null;
-    this._namUpdateDevice(null);
-    View.updateStatus('NAM model unloaded');
-  });
- 
-  // ── Initial load (trending nano models) ──────────────────────────────
-  doSearch(1);
-},
-  
+    on('namSearch', 'keydown', e => {
+      if (e.key === 'Enter') { namQuery = e.target.value.trim(); this._namDoSearch(1); }
+    });
+    on('namSort',     'change', () => this._namDoSearch(1));
+    on('namNanoOnly', 'change', () => this._namDoSearch(1));
+    on('btnNamPrev',  'click',  () => { if (namPage > 1) this._namDoSearch(namPage - 1); });
+    on('btnNamNext',  'click',  () => this._namDoSearch(namPage + 1));
+
+    on('namFileInput', 'change', e => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      const nameEl = $('namFileName');
+      if (nameEl) nameEl.textContent = file.name;
+      if (!BLEService.isConnected?.()) { View.updateStatus('Connect BLE first'); return; }
+      NamLoader.loadFromFile(file,
+        (pct, msg) => this._namSetProgress(pct, msg),
+        (ok, msg)  => {
+          this._namHandleDone(ok, msg);
+          if (ok) { loadedModelName = file.name; this._namUpdateDevice(file.name); }
+        }
+      );
+    });
+
+    on('btnNamEject', 'click', () => {
+      BLEService.send(new Uint8Array([0x54]));
+      loadedModelName = null;
+      this._namUpdateDevice(null);
+      View.updateStatus('NAM model unloaded');
+    });
+
+    // ── Init ─────────────────────────────────────────────────
+    this._namRefreshAuthUI();
+    if (NamLoader.isAuthed()) this._namDoSearch(1);
+  },
 
   // ============================================================
   // setupDrumControls
@@ -628,17 +419,9 @@ setupNamTab() {
       if (el) el.addEventListener('change', handler);
     };
 
-    wire('drumEnable', (e) => {
-      this.drumEnabled = e.target.checked;
-      this.sendDrumUpdate();
-    });
+    wire('drumEnable',   (e) => { this.drumEnabled   = e.target.checked; this.sendDrumUpdate(); });
+    wire('looperEnable', (e) => { this.looperEnabled = e.target.checked; this.sendDrumUpdate(); });
 
-    wire('looperEnable', (e) => {
-      this.looperEnabled = e.target.checked;
-      this.sendDrumUpdate();
-    });
-
-    // Level knobs (guard against double-init from setupStaticKnobs)
     const wireKnob = (id, prop, label) => {
       const el = document.getElementById(id);
       if (!el || el._knobInit) return;
@@ -650,7 +433,6 @@ setupNamTab() {
     wireKnob('drumLevelKnob', 'drumLevel', 'Drum Vol');
     wireKnob('loopLevelKnob', 'loopLevel', 'Loop Vol');
 
-    // ── Drum selects ──
     [
       ['drumStyle',  'drumStyle'],
       ['drumFill',   'drumFill'],
@@ -659,35 +441,28 @@ setupNamTab() {
       wire(id, (e) => { this[prop] = parseInt(e.target.value); this.sendDrumUpdate(); });
     });
 
-    // ── Looper config selects (sent via LOOP packet) ──
     ['loopSync', 'loopLength'].forEach(id => {
       wire(id, (e) => { this[id] = parseInt(e.target.value); this.sendLoopConfig(); });
     });
     wire('trackSelect', (e) => { this.trackSelect = parseInt(e.target.value); this.sendLoopConfig(); });
 
-    // ── Looper checkboxes (sent via LOOP packet) ──
     const wireCheck = (id, prop, sendFn) => {
       const el = document.getElementById(id);
       if (el) el.addEventListener('change', (e) => { this[prop] = e.target.checked; sendFn.call(this); });
     };
-    wireCheck('autoArm',     'autoArm',     this.sendLoopConfig);
-    wireCheck('bounceMode',  'bounceMode',  this.sendLoopConfig);
+    wireCheck('autoArm',    'autoArm',    this.sendLoopConfig);
+    wireCheck('bounceMode', 'bounceMode', this.sendLoopConfig);
 
-    // ── Looper LOOP-packet settings ──
     wire('playbackMode', (e) => { this.playbackMode = parseInt(e.target.value); this.sendLoopConfig(); });
     wire('muteMask',     (e) => { this.muteMask     = parseInt(e.target.value); this.sendLoopConfig(); });
     wire('soloMask',     (e) => { this.soloMask     = parseInt(e.target.value); this.sendLoopConfig(); });
 
-    // ── Looper action buttons ──
     ['rec', 'stop', 'clear', 'undo', 'redo', 'stopAll', 'clearAll'].forEach(btn => {
       const el = document.getElementById(`loopBtn_${btn}`);
       if (el) el.addEventListener('click', () => this.sendLoopButton(btn));
     });
 
-    // ── USB mode ──
     wire('usbMode', (e) => this.sendUSBMode(parseInt(e.target.value)));
-
-    // ── UART on/off ──
     wireCheck('uartEnable', 'uartEnabled', function() { this.sendUARTControl(this.uartEnabled); });
 
     const btnSaveToSD = document.getElementById('btnSaveToSD');
@@ -700,7 +475,7 @@ setupNamTab() {
   },
 
   // ============================================================
-  // sendDrumUpdate — drum machine + looper config (DRUM packet via 0x41)
+  // sendDrumUpdate
   // ============================================================
   sendDrumUpdate() {
     if (this.isUpdatingUI) return;
@@ -708,74 +483,66 @@ setupNamTab() {
     const currentBPM = bpmEl && bpmEl.knob ? bpmEl.knob.value : this.bpm;
     View.updateStatus(`Drum ${this.drumEnabled ? 'ON' : 'OFF'} | BPM ${Math.round(currentBPM)} | Style ${this.drumStyle || 0}`);
     BLEService.send(Protocol.createDrumUpdate(
-      this.drumEnabled  || false,
-      this.drumLevel    || 50,
-      currentBPM        || 120,
-      this.drumStyle    || 0,
-      this.drumFill     || 0,
-      this.drumNumber   || 1,
+      this.drumEnabled   || false,
+      this.drumLevel     || 50,
+      currentBPM         || 120,
+      this.drumStyle     || 0,
+      this.drumFill      || 0,
+      this.drumNumber    || 1,
       this.looperEnabled || false,
-      this.loopLevel    || 50,
-      this.loopSync     || 0,
-      this.autoArm      || false,   // renamed from loopArm
-      this.loopLength   || 0,
-      this.trackSelect  || 0        // renamed from loopTracks; 0-based index
+      this.loopLevel     || 50,
+      this.loopSync      || 0,
+      this.autoArm       || false,
+      this.loopLength    || 0,
+      this.trackSelect   || 0
     ));
   },
 
   // ============================================================
-  // sendLoopButton — single looper action button press (LOOP packet via 0x42)
-  // btn: 'rec'|'stop'|'clear'|'undo'|'redo'|'stopAll'|'clearAll'
+  // sendLoopButton
   // ============================================================
   sendLoopButton(btn) {
     if (this.isUpdatingUI) return;
     const labels = { rec:'● REC', stop:'■ STOP', clear:'CLR', undo:'UNDO', redo:'REDO', stopAll:'STOP ALL', clearAll:'CLR ALL' };
     View.updateStatus(`Loop T${(this.trackSelect || 0) + 1}: ${labels[btn] || btn}`);
     BLEService.send(Protocol.createLoopButtons(
-      this.trackSelect    || 0,
-      btn === 'rec',
-      btn === 'stop',
-      btn === 'clear',
-      btn === 'undo',
-      btn === 'redo',
-      btn === 'stopAll',
-      btn === 'clearAll',
-      this.loopSync       || 0,
-      this.playbackMode   || 0,
-      this.loopLength     || 0,
-      this.autoArm        || false,
-      this.bounceMode     || false,
-      this.muteMask       || 0,
-      this.soloMask       || 0,
-      this.loopLevel      || 100
+      this.trackSelect  || 0,
+      btn === 'rec',   btn === 'stop',   btn === 'clear',
+      btn === 'undo',  btn === 'redo',   btn === 'stopAll', btn === 'clearAll',
+      this.loopSync     || 0,
+      this.playbackMode || 0,
+      this.loopLength   || 0,
+      this.autoArm      || false,
+      this.bounceMode   || false,
+      this.muteMask     || 0,
+      this.soloMask     || 0,
+      this.loopLevel    || 100
     ));
   },
 
   // ============================================================
-  // sendLoopConfig — looper settings without a button press (0x42)
-  // Call when non-button settings change (sync, playback, bars, etc.)
+  // sendLoopConfig
   // ============================================================
   sendLoopConfig() {
     if (this.isUpdatingUI) return;
     const syncNames = ['Free', 'Beat', 'Bar'];
     View.updateStatus(`Loop cfg: sync=${syncNames[this.loopSync || 0]} bars=${this.loopLength || 0}`);
     BLEService.send(Protocol.createLoopButtons(
-      this.trackSelect    || 0,
-      false, false, false, false, false, false, false,  // no buttons
-      this.loopSync       || 0,
-      this.playbackMode   || 0,
-      this.loopLength     || 0,
-      this.autoArm        || false,
-      this.bounceMode     || false,
-      this.muteMask       || 0,
-      this.soloMask       || 0,
-      this.loopLevel      || 100
+      this.trackSelect  || 0,
+      false, false, false, false, false, false, false,
+      this.loopSync     || 0,
+      this.playbackMode || 0,
+      this.loopLength   || 0,
+      this.autoArm      || false,
+      this.bounceMode   || false,
+      this.muteMask     || 0,
+      this.soloMask     || 0,
+      this.loopLevel    || 100
     ));
   },
 
   // ============================================================
-  // sendUSBMode — switch Daisy USB class at runtime (0x43)
-  // mode: 0=off  1=serial  2=audio  3=midi-host(reserved)
+  // sendUSBMode
   // ============================================================
   sendUSBMode(mode) {
     this.usbMode = mode;
@@ -785,7 +552,7 @@ setupNamTab() {
   },
 
   // ============================================================
-  // sendUARTControl — enable/disable ESP↔Daisy UART link (0x44)
+  // sendUARTControl
   // ============================================================
   sendUARTControl(enable) {
     this.uartEnabled = enable;
@@ -795,11 +562,6 @@ setupNamTab() {
 
   // ============================================================
   // loadStateFromBlob
-  //
-  // FIX: store values as 'knob0','dropdown0' keys — this is what
-  // View.showEffectControls reads back to restore control values.
-  // The old code stored 'p0','p1'... which View never reads,
-  // causing blank knobs/dropdowns after every preset load.
   // ============================================================
   loadStateFromBlob(blob) {
     this.isUpdatingUI = true;
@@ -817,17 +579,14 @@ setupNamTab() {
         const config = this.config.tabs[i];
         if (!config) return;
 
-        // Enable state
         this.effectStates[i].enabled = state.effectStates[i].enabled;
 
-        // Knobs → 'knob0', 'knob1', …
         const kCount = (config.params.knobs || []).length;
         for (let k = 0; k < kCount; k++) {
           const v = state.effectParams[i] ? state.effectParams[i][`knob${k}`] : undefined;
           this.effectParams[i][`knob${k}`] = v !== undefined ? v : 50;
         }
 
-        // Dropdowns → 'dropdown0', 'dropdown1', …
         const dCount = (config.params.dropdowns || []).length;
         for (let d = 0; d < dCount; d++) {
           const v = state.effectParams[i] ? state.effectParams[i][`dropdown${d}`] : undefined;
@@ -835,7 +594,6 @@ setupNamTab() {
         }
       });
 
-      // EQ points
       if (state.eqPoints && state.eqPoints.length > 0) {
         this.currentEQPoints = state.eqPoints;
         if (this.iirDesigner) {
@@ -847,10 +605,7 @@ setupNamTab() {
       }
 
       View.updateEffectButtons(this.effectStates);
-
-      if (this.currentEffect !== null) {
-        this.selectEffect(this.currentEffect);
-      }
+      if (this.currentEffect !== null) this.selectEffect(this.currentEffect);
 
       const bpmKnob = document.getElementById('bpmKnob');
       if (bpmKnob && bpmKnob.knob) {
@@ -924,15 +679,15 @@ setupNamTab() {
     } else if (this.currentEQPoints) {
       eqData = this.currentEQPoints;
     }
-    const bpmEl = document.getElementById('bpmKnob');
+    const bpmEl    = document.getElementById('bpmKnob');
     const masterEl = document.getElementById('masterKnob');
     return {
-      bpm: bpmEl && bpmEl.knob ? bpmEl.knob.value : 120,
-      master: masterEl && masterEl.knob ? masterEl.knob.value : 50,
-      name: 'User Preset',
+      bpm:          bpmEl    && bpmEl.knob    ? bpmEl.knob.value    : 120,
+      master:       masterEl && masterEl.knob ? masterEl.knob.value : 50,
+      name:         'User Preset',
       effectStates: this.effectStates,
       effectParams: this.effectParams,
-      eqPoints: eqData
+      eqPoints:     eqData
     };
   },
 
@@ -953,9 +708,6 @@ setupNamTab() {
 
     document.getElementById('btnSavePreset').addEventListener('click', (e) => {
       e.stopPropagation();
-      // FIX: In easy mode the solo-effect overlay is position:fixed and full-screen.
-      // If it is open it sits above the modal, intercepting clicks on confirm/cancel.
-      // Always close it before opening the save modal.
       if (window.soloEffectOpen && window.closeSoloEffect) window.closeSoloEffect();
       modal.classList.add('active');
       modal.style.display = 'flex';
@@ -986,15 +738,11 @@ setupNamTab() {
     document.getElementById('btnConfirmSave').onclick = () => {
       const bankIndex = document.getElementById('saveBankSelect').selectedIndex;
       const slotIndex = document.getElementById('saveNumSelect').selectedIndex;
-
-      // DEBUG — remove after fix
       const state = this.getCurrentState();
       console.log('[SAVE] effectStates at save time:');
       Object.keys(state.effectStates).forEach(i => {
-        if (state.effectStates[i].enabled)
-          console.log(`  FX[${i}] ENABLED`);
+        if (state.effectStates[i].enabled) console.log(`  FX[${i}] ENABLED`);
       });
-
       BLEService.send(Protocol.createSavePreset(bankIndex, slotIndex, state));
       modal.classList.remove('active');
       modal.style.display = '';
@@ -1003,13 +751,6 @@ setupNamTab() {
 
   // ============================================================
   // selectEffect
-  //
-  // FIX: onParam signature matches View.js: (flatIdx, value).
-  // The old code used (type, subIdx, val) + Protocol.toFlatIdx()
-  // which doesn't exist in the View.js callback contract.
-  //
-  // Also stores values under 'knob${k}' / 'dropdown${d}' keys
-  // so they survive a selectEffect() re-render correctly.
   // ============================================================
   selectEffect(idx) {
     this.currentEffect = idx;
@@ -1023,48 +764,35 @@ setupNamTab() {
     const K = (tabConfig.params.knobs || []).length;
 
     View.showEffectControls(
-      tabConfig,
-      idx,
-      this.effectParams[idx],
-      this.effectStates,
+      tabConfig, idx, this.effectParams[idx], this.effectStates,
 
-      // Unified param callback — View fires onParam(flatIdx, value)
       (flatIdx, value) => {
         if (this.isUpdatingUI) return;
-
         if (flatIdx === 0) {
-          // Checkbox
           this.effectStates[idx].enabled = (value !== 0);
           View.updateEffectButtons(this.effectStates);
         } else if (flatIdx <= K) {
-          // Knob k-1
           this.effectParams[idx][`knob${flatIdx - 1}`] = value;
         } else {
-          // Dropdown d
           this.effectParams[idx][`dropdown${flatIdx - 1 - K}`] = value;
         }
-
         BLEService.send(Protocol.createParamUpdate(idx, flatIdx, value));
       },
 
-      // EQ callback (unchanged)
       (b, en, f, g, q) => {
         if (this.isUpdatingUI) return;
         if (!this.currentEQPoints) this.currentEQPoints = [];
         while (this.currentEQPoints.length <= b) {
           this.currentEQPoints.push({ freq: 100, gain: 0, q: 1.4, enabled: true });
         }
-        this.currentEQPoints[b] = {
-          freq: f, gain: g, q: q,
-          enabled: (en === 1 || en === true)
-        };
+        this.currentEQPoints[b] = { freq: f, gain: g, q: q, enabled: (en === 1 || en === true) };
         BLEService.send(Protocol.createEQUpdate(b, en, f, g, q));
       }
     );
   },
 
   // ============================================================
-  // toggleEffectEnabled (double-click from grid button)
+  // toggleEffectEnabled
   // ============================================================
   toggleEffectEnabled(idx) {
     if (this.isUpdatingUI) return;
@@ -1102,6 +830,7 @@ setupNamTab() {
       el.knob = knob;
       knob.onrelease = () => onChange(knob.value);
     };
+
     createKnob('whiteNoiseLevelKnob', 'Noise Level', 100, 0, (val) => {
       this.utilState.noise.level = val; this.sendUtilUpdate(0);
     });
@@ -1137,7 +866,7 @@ setupNamTab() {
   },
 
   // ============================================================
-  // sendTunerUpdate  (CMD 0x23, type=2)
+  // sendTunerUpdate
   // ============================================================
   sendTunerUpdate(isEnabled) {
     this.tunerEnabled = isEnabled;
@@ -1156,10 +885,10 @@ setupNamTab() {
       if (!file) return;
       const buf = await file.arrayBuffer();
       const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-      const audioBuffer = await audioContext.decodeAudioData(buf);
-      this.audioData = audioBuffer.getChannelData(0);
+      const audioBuffer  = await audioContext.decodeAudioData(buf);
+      this.audioData  = audioBuffer.getChannelData(0);
       this.sampleRate = audioBuffer.sampleRate;
-      this.fullFFT = View.computeFFT(this.audioData.slice(0, 16384));
+      this.fullFFT    = View.computeFFT(this.audioData.slice(0, 16384));
       View.drawWaveform(this.audioData, 'waveformCanvas');
       View.drawSpectrum(this.audioData, this.sampleRate, 'spectrumCanvas', this.fullFFT);
       const btn = document.getElementById('btnSendIR');
@@ -1180,16 +909,14 @@ setupNamTab() {
   // ============================================================
   sendGlobalUpdate(flash = false, reset = false) {
     if (this.isUpdatingUI) return;
-    const masterEl = document.getElementById('masterKnob');
-    const btVolEl = document.getElementById('blVolKnob');
-    const bpmEl = document.getElementById('bpmKnob');
-    const master = masterEl && masterEl.knob ? masterEl.knob.value : 50;
-    const btVol = btVolEl && btVolEl.knob ? btVolEl.knob.value : 50;
-    const bpm = bpmEl && bpmEl.knob ? bpmEl.knob.value : 120;
-    const btEnable = document.getElementById('btEnableCheck')
-      ? document.getElementById('btEnableCheck').checked : true;
-    const bleEnable = document.getElementById('bleEnableCheck')
-      ? document.getElementById('bleEnableCheck').checked : true;
+    const masterEl  = document.getElementById('masterKnob');
+    const btVolEl   = document.getElementById('blVolKnob');
+    const bpmEl     = document.getElementById('bpmKnob');
+    const master    = masterEl && masterEl.knob ? masterEl.knob.value : 50;
+    const btVol     = btVolEl  && btVolEl.knob  ? btVolEl.knob.value  : 50;
+    const bpm       = bpmEl    && bpmEl.knob    ? bpmEl.knob.value    : 120;
+    const btEnable  = document.getElementById('btEnableCheck')  ? document.getElementById('btEnableCheck').checked  : true;
+    const bleEnable = document.getElementById('bleEnableCheck') ? document.getElementById('bleEnableCheck').checked : true;
     BLEService.send(Protocol.createGlobalUpdate(master, btVol, bpm, btEnable, bleEnable, flash, reset));
     if (flash) View.updateStatus('Sending Flash Command...');
     if (reset) View.updateStatus('Sending Reset Command...');
@@ -1200,7 +927,7 @@ setupNamTab() {
   // ============================================================
   sendConfigUpdate() {
     View.updateStatus('Uploading config...');
-    BLEService.send(Protocol.createConfigUpload(this.config));  // pass live config
+    BLEService.send(Protocol.createConfigUpload(this.config));
     View.updateStatus('Config upload sent');
   },
 
@@ -1227,22 +954,18 @@ setupNamTab() {
     const btnUpdateConfig = document.getElementById('btnUpdateConfig');
     if (btnUpdateConfig) {
       btnUpdateConfig.onclick = () => {
-        if (!BLEService.isConnected) {
-          View.updateStatus('Not connected — connect first');
-          return;
-        }
+        if (!BLEService.isConnected) { View.updateStatus('Not connected — connect first'); return; }
         if (confirm('Upload current config.js to ESP?')) this.sendConfigUpdate();
       };
     }
 
     const btnBypass = document.getElementById('btnBypass');
     if (btnBypass) {
-      // Start green (signal active)
       btnBypass.classList.add('bypass-active');
       btnBypass.onclick = () => {
         this.bypassEnabled = !this.bypassEnabled;
-        btnBypass.classList.toggle('bypass-active',   !this.bypassEnabled);
-        btnBypass.classList.toggle('bypass-blinking',  this.bypassEnabled);
+        btnBypass.classList.toggle('bypass-active',  !this.bypassEnabled);
+        btnBypass.classList.toggle('bypass-blinking', this.bypassEnabled);
         BLEService.send(Protocol.createBypassPacket(this.bypassEnabled));
         View.updateStatus(this.bypassEnabled ? 'Bypass ON' : 'Bypass OFF');
       };
@@ -1264,14 +987,10 @@ setupNamTab() {
       };
     }
 
-    // Double-click handler for Noise / Tone utility toggle buttons
-    // FIX: The document version had the effect-btn click handler pasted in
-    // here instead, with a `...` syntax error and out-of-scope variables.
     const setupDoubleClickHandler = (id, onToggle) => {
       const btn = document.getElementById(id);
       if (!btn) return;
-      let clickCount = 0;
-      let clickTimeout = null;
+      let clickCount = 0, clickTimeout = null;
       btn.addEventListener('click', () => {
         clickCount++;
         if (clickCount === 1) {
@@ -1306,17 +1025,11 @@ setupNamTab() {
       });
     }
 
-    // ── Solo effect overlay ──────────────────────────────────────
+    // ── Solo effect overlay ──────────────────────────────────
     window.soloEffectOpen = false;
 
-    // FIX: use a unique ID instead of class — the save modal also
-    // has class 'solo-effect-overlay' and querySelector('.solo-effect-overlay')
-    // could match it, corrupting both the modal and the controls.
-    //
-    // FIX: restore controls unconditionally — if the overlay was removed
-    // by some other path, #effectControls still gets returned to the tab.
     window.closeSoloEffect = () => {
-      const overlay = document.getElementById('soloEffectOverlay');
+      const overlay  = document.getElementById('soloEffectOverlay');
       const controls = document.getElementById('effectControls');
       const effectsTab = document.getElementById('effects-tab');
       if (controls && effectsTab && !effectsTab.contains(controls)) {
@@ -1331,7 +1044,7 @@ setupNamTab() {
       window.soloEffectOpen = true;
 
       const overlay = document.createElement('div');
-      overlay.id = 'soloEffectOverlay';   // unique ID, not just class
+      overlay.id = 'soloEffectOverlay';
       overlay.className = 'solo-effect-overlay';
 
       const cont = document.createElement('div');
@@ -1364,24 +1077,24 @@ setupNamTab() {
       if (app.iirDesigner) requestAnimationFrame(() => app.iirDesigner.draw());
     };
 
-    // ── Easy Mode button ─────────────────────────────────────────
+    // ── Easy Mode ────────────────────────────────────────────
     const btnEasyMode = document.getElementById('btnEasyMode');
     if (btnEasyMode) {
       const resizeEasyMode = () => {
         const tab = document.getElementById('effects-tab');
         if (!tab || !tab.classList.contains('easy-mode')) return;
         const scroll = tab.querySelector('.effects-scroll');
-        const grid = tab.querySelector('.effects-grid');
-        const btns = grid ? grid.querySelectorAll('.effect-btn') : [];
+        const grid   = tab.querySelector('.effects-grid');
+        const btns   = grid ? grid.querySelectorAll('.effect-btn') : [];
         const n = btns.length;
         if (!scroll || !grid || n === 0) return;
 
-        const W = scroll.clientWidth - 8;
+        const W = scroll.clientWidth  - 8;
         const H = scroll.clientHeight - 8;
         let bestCols = 1, bestScore = Infinity;
         for (let cols = 1; cols <= n; cols++) {
-          const rows = Math.ceil(n / cols);
-          const gap = 4;
+          const rows  = Math.ceil(n / cols);
+          const gap   = 4;
           const cellW = (W - gap * (cols - 1)) / cols;
           const cellH = (H - gap * (rows - 1)) / rows;
           if (cellW < 44 || cellH < 36) continue;
@@ -1389,40 +1102,28 @@ setupNamTab() {
           const score = Math.abs(ratio - 1.15);
           if (score < bestScore) { bestScore = score; bestCols = cols; }
         }
-        const cols = bestCols;
-        const rows = Math.ceil(n / cols);
-        const gap = 4;
+        const cols  = bestCols;
+        const rows  = Math.ceil(n / cols);
+        const gap   = 4;
         const cellW = Math.floor((W - gap * (cols - 1)) / cols);
         const cellH = Math.floor((H - gap * (rows - 1)) / rows);
         grid.style.gridTemplateColumns = `repeat(${cols}, ${cellW}px)`;
-        grid.style.gridTemplateRows = `repeat(${rows}, ${cellH}px)`;
+        grid.style.gridTemplateRows    = `repeat(${rows}, ${cellH}px)`;
         grid.style.gap = `${gap}px`;
       };
       this._resizeEasyMode = resizeEasyMode;
 
       btnEasyMode.onclick = (e) => {
-        // FIX: always close the overlay before toggling mode.
-        // Without this, if a solo panel is open when the user clicks
-        // "Easy Mode OFF", #effectControls stays stranded inside the
-        // now-orphaned overlay div and never returns to the effects tab.
         if (window.closeSoloEffect) window.closeSoloEffect();
-
         const tab = document.getElementById('effects-tab');
         if (!tab) return;
         tab.classList.toggle('easy-mode');
-
-        document.querySelectorAll('.effect-btn').forEach(btn => {
-          btn.draggable = true;
-        });
-
+        document.querySelectorAll('.effect-btn').forEach(btn => { btn.draggable = true; });
         const isActive = tab.classList.contains('easy-mode');
-        e.target.style.background = isActive ? 'var(--color-accent)' : 'var(--color-bg-surface)';
-        e.target.style.color = isActive ? '#000' : 'var(--color-text-primary)';
+        e.target.style.background = isActive ? 'var(--color-accent)'     : 'var(--color-bg-surface)';
+        e.target.style.color      = isActive ? '#000'                     : 'var(--color-text-primary)';
         View.updateStatus(isActive ? 'Easy Mode Enabled' : 'Easy Mode Disabled');
-
-        if (isActive) {
-          requestAnimationFrame(() => requestAnimationFrame(resizeEasyMode));
-        }
+        if (isActive) requestAnimationFrame(() => requestAnimationFrame(resizeEasyMode));
       };
 
       window.addEventListener('resize', () => {
@@ -1430,7 +1131,7 @@ setupNamTab() {
       });
     }
 
-    // Tuner enable
+    // ── Tuner enable ─────────────────────────────────────────
     const tunerEnable = document.getElementById('tunerEnable');
     if (tunerEnable) {
       tunerEnable.checked = !!this.tunerEnabled;
@@ -1447,23 +1148,19 @@ setupNamTab() {
   reorderEffects(fromIdx, toIdx) {
     console.log(`[APP] Before swap: ${this.effectOrder.join(',')}`);
     [this.effectStates, this.effectParams, this.effectOrder].forEach(obj => {
-      const tmp = obj[fromIdx];
-      obj[fromIdx] = obj[toIdx];
-      obj[toIdx] = tmp;
+      const tmp      = obj[fromIdx];
+      obj[fromIdx]   = obj[toIdx];
+      obj[toIdx]     = tmp;
     });
     console.log(`[APP] After swap: ${this.effectOrder.join(',')}`);
     this.rebuildEffectsUI();
     const fromName = this.config.tabs[fromIdx]?.title || 'Effect';
-    const toName = this.config.tabs[toIdx]?.title || 'Effect';
+    const toName   = this.config.tabs[toIdx]?.title   || 'Effect';
     View.updateStatus(`Reordered: ${fromName} ↔ ${toName}`);
   },
 
   // ============================================================
-  // rebuildEffectsUI — called after drag-drop reorder
-  //
-  // FIX: includes full single/double-click + easy-mode support
-  // matching View.setupEffectsGrid (the original only called
-  // selectEffect with no easy-mode or double-click handling).
+  // rebuildEffectsUI
   // ============================================================
   rebuildEffectsUI() {
     const grid = document.getElementById('effectsGrid');
@@ -1475,26 +1172,21 @@ setupNamTab() {
       }
 
       const effect = this.config.tabs[idx];
-      const state = this.effectStates[idx];
+      const state  = this.effectStates[idx];
 
       const btn = document.createElement('div');
-      btn.className = 'effect-btn';
-      btn.dataset.index = idx;
+      btn.className      = 'effect-btn';
+      btn.dataset.index  = idx;
       btn.dataset.effectId = idx;
-      btn.draggable = true;
-      btn.textContent = effect.title;
+      btn.draggable      = true;
+      btn.textContent    = effect.title;
       if (state.selected) btn.classList.add('selected');
-      if (state.enabled) btn.classList.add('enabled');
+      if (state.enabled)  btn.classList.add('enabled');
 
-      let clickCount = 0;
-      let clickTimeout = null;
+      let clickCount = 0, clickTimeout = null;
       btn.addEventListener('click', () => {
-        const isEasyMode = document.getElementById('effects-tab')
-          .classList.contains('easy-mode');
-        // Close any open overlay but do NOT return — fall through to
-        // select and (re)open the panel for the newly clicked effect.
+        const isEasyMode = document.getElementById('effects-tab').classList.contains('easy-mode');
         if (window.soloEffectOpen) window.closeSoloEffect();
-
         clickCount++;
         if (clickCount === 1) {
           clickTimeout = setTimeout(() => {
@@ -1536,6 +1228,11 @@ setupNamTab() {
   },
 };
 
+// XSS guard used in NAM card rendering
 function escHtml(s) {
-  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
 }

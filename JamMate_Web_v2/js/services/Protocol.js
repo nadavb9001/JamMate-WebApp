@@ -38,6 +38,11 @@ export const Protocol = {
     NAM_LIST_DATA:       0x45,
     IR_LIST_DATA:        0x46,
     UPDATE_CONFIG:       0x50,   // NEW: upload config layout to ESP LittleFS
+    NAM_UPLOAD_START : 0x51,
+       NAM_UPLOAD_CHUNK : 0x52,
+       NAM_UPLOAD_END   : 0x53,
+       NAM_UPLOAD_ACK   : 0x54,
+       NAM_EJECT        : 0x55,
     FLASH_DSP:           0x60,
     RESET_DSP:           0x61,
     CMD_START_MIDI_SCAN: 0x62,

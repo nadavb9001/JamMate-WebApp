@@ -63,8 +63,84 @@
         <div class="tab" data-tab="setup">Setup</div>
         <div class="tab" data-tab="loader">Files</div>
         <div class="tab" data-tab="youtube">YouTube</div>
+        <div class="tab" data-tab="nam">NAM</div>
     </div>
 
+    <!-- ============================================================
+  NAM TAB — paste this block into index.html alongside the other tab-content divs
+  Also add  <div class="tab" data-tab="nam">NAM</div>  to the tabs bar.
+============================================================= -->
+ 
+<!-- NAM MODELS TAB -->
+<div class="tab-content" id="nam-tab">
+  <div class="nam-layout">
+ 
+    <!-- ── Top bar ─────────────────────────────────────────── -->
+    <div class="nam-topbar">
+      <div class="nam-search-row">
+        <input  type="text"   id="namSearch"       class="nam-search"    placeholder="Search nano NAM models…" autocomplete="off">
+        <button id="btnNamSearch"  class="btn-nam-action">Search</button>
+        <button id="btnNamBrowseT3K" class="btn-nam-action btn-t3k" title="Pick a tone from TONE3000">
+          <span class="t3k-logo">T3K</span> Browse
+        </button>
+      </div>
+      <div class="nam-filter-row">
+        <select id="namSort" class="nam-filter-select">
+          <option value="downloads-all-time">Most Downloaded</option>
+          <option value="newest">Newest</option>
+          <option value="trending">Trending</option>
+        </select>
+        <label class="nam-filter-label">
+          <input type="checkbox" id="namNanoOnly" checked> Nano only
+        </label>
+        <span class="nam-result-count" id="namResultCount"></span>
+      </div>
+    </div>
+ 
+    <!-- ── Model grid ──────────────────────────────────────── -->
+    <div class="nam-grid" id="namGrid">
+      <div class="nam-placeholder">
+        <div class="nam-placeholder-icon">🎸</div>
+        <div class="nam-placeholder-text">Search for nano NAM models<br>or browse TONE3000</div>
+      </div>
+    </div>
+ 
+    <!-- ── Pagination ──────────────────────────────────────── -->
+    <div class="nam-pagination" id="namPagination" style="display:none">
+      <button id="btnNamPrev" class="btn-nam-page">← Prev</button>
+      <span   id="namPageLabel" class="nam-page-label">Page 1</span>
+      <button id="btnNamNext" class="btn-nam-page">Next →</button>
+    </div>
+ 
+    <!-- ── Local file upload ───────────────────────────────── -->
+    <div class="nam-local-row">
+      <label class="nam-local-label">Or load local .nam file:</label>
+      <label class="btn-nam-action btn-nam-file">
+        📂 Choose File
+        <input type="file" id="namFileInput" accept=".nam" style="display:none">
+      </label>
+      <span id="namFileName" class="nam-filename"></span>
+    </div>
+ 
+    <!-- ── Transfer progress ───────────────────────────────── -->
+    <div class="nam-progress-panel" id="namProgressPanel" style="display:none">
+      <div class="nam-progress-title" id="namProgressTitle">Transferring…</div>
+      <div class="nam-progress-bar-wrap">
+        <div class="nam-progress-bar" id="namProgressBar"></div>
+      </div>
+      <div class="nam-progress-msg" id="namProgressMsg"></div>
+    </div>
+ 
+    <!-- ── On-device model slot ────────────────────────────── -->
+    <div class="nam-device-row">
+      <div class="nam-device-label">Loaded on device:</div>
+      <div class="nam-device-name" id="namDeviceName">—</div>
+      <button id="btnNamEject" class="btn-nam-eject" title="Unload model">⏏</button>
+    </div>
+ 
+  </div>
+</div>
+    
     <!-- ============================================================
          EFFECTS TAB
          Preset row: [💾 Save] [📱 Easy]  |  [Bank ▾] [Num ▾]
@@ -485,10 +561,12 @@
             </div>
         </div>
     </div>
-
+<script src="./js/NamAppHotfix.js"></script>
     <script type="module">
         import { app } from './js/app.js';
         document.addEventListener('DOMContentLoaded', () => { app.init(); });
     </script>
+<script type="module" src="./js/NamSuccess.js"></script>
+<script type="module" src="./js/NamTone3000InlineV3.js"></script>
 </body>
 </html>

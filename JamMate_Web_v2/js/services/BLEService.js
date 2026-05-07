@@ -78,13 +78,22 @@ export const BLEService = {
     },
 
     async send(data) {
-        if (!this.characteristic || !this.isConnected) return;
-        if (this.isSyncing) return; 
+        if (!this.characteristic || !this.isConnected) {
+            throw new Error('BLE is not connected');
+        }
+        if (this.isSyncing) {
+            throw new Error('BLE is busy syncing');
+        }
 
         try {
-            await this.characteristic.writeValue(data);
+            if (typeof this.characteristic.writeValueWithResponse === 'function') {
+                await this.characteristic.writeValueWithResponse(data);
+            } else {
+                await this.characteristic.writeValue(data);
+            }
         } catch (error) {
             console.error("BLE Write Failed:", error);
+            throw error;
         }
     },
 

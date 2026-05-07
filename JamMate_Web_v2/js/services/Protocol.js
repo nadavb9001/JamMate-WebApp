@@ -38,16 +38,18 @@ export const Protocol = {
     NAM_LIST_DATA:       0x45,
     IR_LIST_DATA:        0x46,
     UPDATE_CONFIG:       0x50,   // NEW: upload config layout to ESP LittleFS
-    NAM_UPLOAD_START : 0x51,
-       NAM_UPLOAD_CHUNK : 0x52,
-       NAM_UPLOAD_END   : 0x53,
-       NAM_UPLOAD_ACK   : 0x54,
-       NAM_EJECT        : 0x55,
     FLASH_DSP:           0x60,
     RESET_DSP:           0x61,
     CMD_START_MIDI_SCAN: 0x62,
     READ_SD_CARD:        0x63,
     SAVE_TO_SD:          0x64,
+    NAM_UPLOAD_START:    0x70,   // [0x70][len16][weightCount32][crc32][nameLen16][name]
+    NAM_HEADER_ACK:      0x71,   // [0x71][status]
+    NAM_UPLOAD_CHUNK:    0x72,   // [0x72][len16][chunkIndex16][data]
+    NAM_CHUNK_ACK:       0x73,   // [0x73][status][chunkIndex16]
+    NAM_UPLOAD_END:      0x74,
+    NAM_EJECT:           0x75,
+    NAM_DONE_ACK:        0x76,   // [0x76][status] final bytes/CRC result
   },
 
   // ----------------------------------------------------------------
@@ -508,4 +510,48 @@ export const Protocol = {
         bytes[off++] = patternData[row][col] || 0;
     return buf;
   },
+
+  // ----------------------------------------------------------------
+  // NAM TRANSFER PACKETS
+  // ----------------------------------------------------------------
+  createNamStart(weightCount, crc, name) {
+    const safeName = String(name || 'model.nam').slice(0, 64);
+    const nameBytes = new TextEncoder().encode(safeName);
+
+    // Payload format, after [cmd][payloadLen16LE]:
+    //   uint32 weightCount       number of float32 weights that follow
+    //   uint32 crc32             CRC of the raw little-endian float32 weight bytes
+    //   uint16 nameLen
+    //   uint8[nameLen] UTF-8 filename/model name
+    const payloadLen = 4 + 4 + 2 + nameBytes.length;
+    const buf = new Uint8Array(3 + payloadLen);
+    const view = new DataView(buf.buffer);
+
+    buf[0] = this.CMD.NAM_UPLOAD_START;
+    view.setUint16(1, payloadLen, true);
+    view.setUint32(3, weightCount >>> 0, true);
+    view.setUint32(7, crc >>> 0, true);
+    view.setUint16(11, nameBytes.length, true);
+    buf.set(nameBytes, 13);
+    return buf;
+  },
+
+  createNamChunk(index, data) {
+    const payloadLen = 2 + data.length; // index(2) + data(N)
+    const buf = new Uint8Array(3 + payloadLen);
+    const view = new DataView(buf.buffer);
+    buf[0] = this.CMD.NAM_UPLOAD_CHUNK;
+    view.setUint16(1, payloadLen, true);
+    view.setUint16(3, index, true);
+    buf.set(data, 5);
+    return buf;
+  },
+
+  createNamEnd() {
+    return this.createSystemPacket(this.CMD.NAM_UPLOAD_END);
+  },
+
+  createNamEject() {
+    return this.createSystemPacket(this.CMD.NAM_EJECT);
+  }
 };

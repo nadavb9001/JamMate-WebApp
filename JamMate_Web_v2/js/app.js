@@ -117,6 +117,25 @@ export const app = {
       } catch (_) { /* malformed — ignore */ }
     };
 
+    const _handleNamAck = (cmd, dv, payloadOnly = false) => {
+      let status = 0;
+      let index = null;
+
+      try {
+        if (payloadOnly) {
+          if (dv.byteLength >= 1) status = dv.getUint8(0);
+          if (dv.byteLength >= 3) index = dv.getUint16(1, true);
+        } else {
+          if (dv.byteLength >= 2) status = dv.getUint8(1);
+          if (dv.byteLength >= 4) index = dv.getUint16(2, true);
+        }
+      } catch (_) {
+        status = 1;
+      }
+
+      NamLoader.handleAck(cmd, status, index);
+    };
+
     BLEService.onDataReceived = (packet) => {
       // CASE A: reassembled { cmd, dataView }
       if (packet && typeof packet === 'object' && packet.cmd !== undefined) {
@@ -127,13 +146,15 @@ export const app = {
           this.loadStateFromBlob(dataView.buffer);
           return;
         }
-        if (cmd === 0x35) {
+        if (cmd === Protocol.CMD.TUNER_DATA) {
           _handleTuner(dataView, true);
           return;
         }
-        // NAM upload ACK
-        if (cmd === 0x53) {
-          NamLoader.handleAck(dataView.getUint8(0) === 1);
+        // Handle reassembled NAM upload ACKs.
+        if (cmd === Protocol.CMD.NAM_HEADER_ACK ||
+            cmd === Protocol.CMD.NAM_CHUNK_ACK ||
+            cmd === Protocol.CMD.NAM_DONE_ACK) {
+          _handleNamAck(cmd, dataView, true);
           return;
         }
         if (cmd === Protocol.CMD.NAM_LIST_DATA) {
@@ -167,9 +188,11 @@ export const app = {
           _handleTuner(packet, false);
           return;
         }
-        // NAM upload ACK
-        if (cmd === 0x53) {
-          NamLoader.handleAck(packet.getUint8(1) === 1);
+        // Handle raw NAM upload ACKs.
+        if (cmd === Protocol.CMD.NAM_HEADER_ACK ||
+            cmd === Protocol.CMD.NAM_CHUNK_ACK ||
+            cmd === Protocol.CMD.NAM_DONE_ACK) {
+          _handleNamAck(cmd, packet, false);
           return;
         }
         if (cmd === Protocol.CMD.NAM_LIST_DATA) {
@@ -211,203 +234,10 @@ export const app = {
   // setupNamTab  (v2 — TONE3000 OAuth + search + BLE transfer)
   // ============================================================
   setupNamTab() {
-    let namPage  = 1;
-    let namQuery = '';
-    let namTotal = 0;
-    let loadedModelName = null;
-
-    // ── Check for OAuth callback on page load ─────────────────
-    const params = new URLSearchParams(window.location.search);
-    const hasCallback = params.get('code') || params.get('error') || params.get('canceled');
-    if (hasCallback) {
-      // Switch to NAM tab automatically
-      document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
-      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-      document.getElementById('nam-tab')?.classList.add('active');
-      document.querySelector('.tab[data-tab="nam"]')?.classList.add('active');
-
-      NamLoader.handleCallback(
-        params,
-        (pct, msg) => this._namSetProgress(pct, msg),
-        (ok, msg)  => {
-          this._namHandleDone(ok, msg);
-          if (ok && msg !== 'logged_in') {
-            loadedModelName = msg;
-            this._namUpdateDevice(loadedModelName);
-          }
-          if (ok) this._namRefreshAuthUI();
-          if (ok && msg === 'logged_in') this._namDoSearch(1);
-        }
-      );
-    }
-
-    // ── Progress helpers ──────────────────────────────────────
-    this._namSetProgress = (pct, msg) => {
-      const panel = document.getElementById('namProgressPanel');
-      const bar   = document.getElementById('namProgressBar');
-      const msgEl = document.getElementById('namProgressMsg');
-      const title = document.getElementById('namProgressTitle');
-      if (!panel) return;
-      panel.style.display = 'block';
-      if (bar)   bar.style.width   = pct + '%';
-      if (msgEl) msgEl.textContent = msg;
-      if (title) title.textContent = pct >= 100 ? '✓ Done' : (pct === 0 ? '✗ Error' : 'Transferring…');
-      if (pct >= 100) setTimeout(() => { panel.style.display = 'none'; }, 3000);
-      if (pct === 0)  setTimeout(() => { panel.style.display = 'none'; }, 5000);
-    };
-
-    this._namHandleDone = (ok, msg) => {
-      this._namSetProgress(ok ? 100 : 0, ok ? `✓ ${msg}` : `✗ ${msg}`);
-      View.updateStatus(ok ? `NAM: ${msg}` : `NAM error: ${msg}`);
-      if (!ok) console.error('[NAM]', msg);
-    };
-
-    this._namUpdateDevice = (name) => {
-      const el = document.getElementById('namDeviceName');
-      if (el) el.textContent = name || '—';
-    };
-
-    this._namRefreshAuthUI = () => {
-      const authed   = NamLoader.isAuthed();
-      const loginBtn = document.getElementById('btnNamLogin');
-      if (loginBtn) {
-        loginBtn.textContent = authed ? '✓ Signed in' : 'Sign in to TONE3000';
-        loginBtn.disabled    = authed;
-      }
-    };
-
-    // ── Search ────────────────────────────────────────────────
-    this._namDoSearch = async (page = 1) => {
-      const grid    = document.getElementById('namGrid');
-      const countEl = document.getElementById('namResultCount');
-      const pagEl   = document.getElementById('namPagination');
-      const sortEl  = document.getElementById('namSort');
-      const nanoEl  = document.getElementById('namNanoOnly');
-      const sort    = sortEl?.value  || 'downloads-all-time';
-      const nanoOnly = nanoEl?.checked ?? true;
-
-      if (grid) grid.innerHTML = '<div class="nam-placeholder"><div class="nam-placeholder-icon">⏳</div><div class="nam-placeholder-text">Searching…</div></div>';
-
-      try {
-        const data  = await NamLoader.search(namQuery, page, sort, nanoOnly ? 'nano' : '');
-        const tones = data.data || data.tones || [];
-        namTotal = data.total || tones.length;
-        namPage  = page;
-
-        if (countEl) countEl.textContent = `${namTotal.toLocaleString()} models`;
-        this._namRenderGrid(tones);
-
-        const totalPages = Math.ceil(namTotal / 20);
-        if (pagEl) {
-          pagEl.style.display = totalPages > 1 ? 'flex' : 'none';
-          const lbl  = document.getElementById('namPageLabel');
-          const prev = document.getElementById('btnNamPrev');
-          const next = document.getElementById('btnNamNext');
-          if (lbl)  lbl.textContent = `Page ${namPage} / ${totalPages}`;
-          if (prev) prev.disabled   = namPage <= 1;
-          if (next) next.disabled   = namPage >= totalPages;
-        }
-      } catch (err) {
-        if (err.message === 'NOT_AUTHED') {
-          if (grid) grid.innerHTML = '<div class="nam-placeholder"><div class="nam-placeholder-icon">🔒</div><div class="nam-placeholder-text">Sign in to TONE3000<br>to browse and search models</div></div>';
-        } else {
-          if (grid) grid.innerHTML = `<div class="nam-placeholder"><div class="nam-placeholder-icon">⚠</div><div class="nam-placeholder-text">${escHtml(err.message)}</div></div>`;
-          console.error('[NAM search]', err);
-        }
-      }
-    };
-
-    // ── Render grid ───────────────────────────────────────────
-    this._namRenderGrid = (tones) => {
-      const grid = document.getElementById('namGrid');
-      if (!grid) return;
-      if (!tones?.length) {
-        grid.innerHTML = '<div class="nam-placeholder"><div class="nam-placeholder-icon">🔍</div><div class="nam-placeholder-text">No models found</div></div>';
-        return;
-      }
-      grid.innerHTML = '';
-      tones.forEach(tone => {
-        const card    = document.createElement('div');
-        card.className = 'nam-card';
-        const models  = tone.models || [];
-        const nano    = models.find(m => m.platform === 'nam' && m.size === 'nano');
-        const sizeTag = nano?.size || tone.size || 'nano';
-        const dl      = (tone.downloads || tone.download_count || 0).toLocaleString();
-        const author  = tone.user?.username || tone.author_username || '';
-
-        card.innerHTML = `
-          <div class="nam-card-name" title="${escHtml(tone.name || '')}">${escHtml(tone.name || 'Unnamed')}</div>
-          ${author ? `<div class="nam-card-author">@${escHtml(author)}</div>` : ''}
-          <div class="nam-card-meta">
-            <span class="nam-card-badge">${escHtml(sizeTag)}</span>
-            <span class="nam-card-downloads">⬇ ${dl}</span>
-          </div>
-          <button class="nam-card-send">Send to Device</button>`;
-
-        card.querySelector('.nam-card-send').addEventListener('click', async () => {
-          if (!BLEService.isConnected?.()) { View.updateStatus('Connect BLE first'); return; }
-          card.classList.add('nam-card--loading');
-          await NamLoader.sendTone(
-            tone.id, tone.name,
-            (pct, msg) => this._namSetProgress(pct, msg),
-            (ok, msg)  => {
-              this._namHandleDone(ok, msg);
-              if (ok) { loadedModelName = msg; this._namUpdateDevice(msg); }
-              card.classList.remove('nam-card--loading');
-            }
-          );
-        });
-
-        grid.appendChild(card);
-      });
-    };
-
-    // ── Wire controls ─────────────────────────────────────────
-    const $  = id => document.getElementById(id);
-    const on = (id, ev, fn) => $(id)?.addEventListener(ev, fn);
-
-    on('btnNamLogin',     'click', () => NamLoader.startLogin());
-    on('btnNamBrowseT3K', 'click', () => {
-      if (!confirm('You will be taken to TONE3000 to pick a nano NAM tone. Continue?')) return;
-      NamLoader.startSelect();
+    NamLoader.init({
+      onStatus: (msg) => View.updateStatus(msg),
+      onProgress: (pct, msg) => View.updateStatus(`NAM: ${msg} (${pct}%)`)
     });
-    on('btnNamSearch', 'click', () => {
-      namQuery = $('namSearch')?.value?.trim() || '';
-      this._namDoSearch(1);
-    });
-    on('namSearch', 'keydown', e => {
-      if (e.key === 'Enter') { namQuery = e.target.value.trim(); this._namDoSearch(1); }
-    });
-    on('namSort',     'change', () => this._namDoSearch(1));
-    on('namNanoOnly', 'change', () => this._namDoSearch(1));
-    on('btnNamPrev',  'click',  () => { if (namPage > 1) this._namDoSearch(namPage - 1); });
-    on('btnNamNext',  'click',  () => this._namDoSearch(namPage + 1));
-
-    on('namFileInput', 'change', e => {
-      const file = e.target.files?.[0];
-      if (!file) return;
-      const nameEl = $('namFileName');
-      if (nameEl) nameEl.textContent = file.name;
-      if (!BLEService.isConnected?.()) { View.updateStatus('Connect BLE first'); return; }
-      NamLoader.loadFromFile(file,
-        (pct, msg) => this._namSetProgress(pct, msg),
-        (ok, msg)  => {
-          this._namHandleDone(ok, msg);
-          if (ok) { loadedModelName = file.name; this._namUpdateDevice(file.name); }
-        }
-      );
-    });
-
-    on('btnNamEject', 'click', () => {
-      BLEService.send(new Uint8Array([0x54]));
-      loadedModelName = null;
-      this._namUpdateDevice(null);
-      View.updateStatus('NAM model unloaded');
-    });
-
-    // ── Init ─────────────────────────────────────────────────
-    this._namRefreshAuthUI();
-    if (NamLoader.isAuthed()) this._namDoSearch(1);
   },
 
   // ============================================================

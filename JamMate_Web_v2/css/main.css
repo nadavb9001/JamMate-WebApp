@@ -730,9 +730,18 @@ body.light-theme #statusMessage {
 
 /* progress */
 .nam-progress-panel {
-  background:var(--color-bg-input,#111);
-  border:1px solid var(--color-border,#333);
-  border-radius:8px; padding:10px 14px; flex-shrink:0;
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 10000;
+  width: 90%;
+  max-width: 320px;
+  background: var(--color-bg-elevated, #1a1a1a);
+  border: 2px solid var(--color-accent, #0af);
+  border-radius: 12px;
+  padding: 24px;
+  box-shadow: 0 0 0 5000px rgba(0,0,0,0.7), 0 15px 50px rgba(0,0,0,0.8);
 }
 .nam-progress-title { font-size:13px; font-weight:600; color:var(--color-text,#eee); margin-bottom:6px; }
 .nam-progress-bar-wrap { height:7px; background:#222; border-radius:4px; overflow:hidden; margin-bottom:5px; }

@@ -446,6 +446,20 @@ export const NamLoader = {
       .nam-v3-card-title { font-weight: 800; margin-bottom: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
       .nam-v3-meta { color: #aaa; font-size: 11px; margin-bottom: 10px; }
       .nam-card--loading { opacity: 0.5; pointer-events: none; }
+      .nam-progress-panel {
+        position: fixed !important;
+        top: 50% !important;
+        left: 50% !important;
+        transform: translate(-50%, -50%) !important;
+        z-index: 10001 !important;
+        width: 85% !important;
+        max-width: 320px !important;
+        background: var(--color-bg-elevated, #151515) !important;
+        border: 2px solid var(--color-accent, #0af) !important;
+        border-radius: 16px !important;
+        padding: 24px !important;
+        box-shadow: 0 0 0 5000px rgba(0,0,0,0.7), 0 20px 60px rgba(0,0,0,0.8) !important;
+      }
       .nam-success-panel { margin-top: 12px; padding: 12px; border: 1px solid rgba(0, 255, 160, 0.3); border-radius: 12px; background: rgba(0, 160, 100, 0.1); }
       .nam-success-details { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; font-size: 11px; }
     `;
@@ -566,7 +580,7 @@ export const NamLoader = {
     if (bar) bar.style.width = pct + '%';
     if (msgEl) msgEl.textContent = msg;
     if (this._options.onProgress) this._options.onProgress(pct, msg);
-    if (pct >= 100) setTimeout(() => { if (panel) panel.style.display = 'none'; }, 3000);
+    if (pct >= 100) setTimeout(() => { if (panel) panel.style.display = 'none'; }, 1500);
   },
 
   _handleDone(ok, msg, details) {

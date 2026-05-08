@@ -474,7 +474,8 @@ export const NamLoader = {
     };
 
     on('btnNamLogin', 'click', (e) => { e.preventDefault(); this.startLogin(); });
-    on('btnNamBrowseT3K', 'click', (e) => { e.preventDefault(); this._doSearch(1); });
+    //on('btnNamBrowseT3K', 'click', (e) => { e.preventDefault(); this._doSearch(1); });
+    on('btnNamBrowseT3K', 'click', (e) => { e.preventDefault(); this.startSelect();  });
     on('btnNamSearch', 'click', (e) => { e.preventDefault(); this._doSearch(1); });
     on('namSearch', 'keydown', (e) => { if (e.key === 'Enter') this._doSearch(1); });
     on('namSort', 'change', () => this._doSearch(1));

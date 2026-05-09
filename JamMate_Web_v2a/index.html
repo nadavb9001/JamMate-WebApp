@@ -39,11 +39,11 @@
     </nav>
 
     <main id="mainDeck">
-      <section class="tab-content active" id="effects-tab">
+      <section class="tab-content active easy-mode" id="effects-tab">
         <div class="panel preset-panel">
           <div class="preset-row compact-row">
             <button id="btnSavePreset" class="btn-preset-action" title="Save Preset">💾</button>
-            <button id="btnEasyMode" class="btn-preset-action" title="Toggle Easy Mode">📱</button>
+            <button id="btnEasyMode" class="btn-preset-action active" title="Toggle Easy Mode">📱</button>
             <label class="field grow"><span>Bank</span><select id="presetBank"><option>Clean</option><option>Crunch</option><option>Overdrive</option><option>Distortion</option><option>Modulated</option><option>Custom1</option><option>Custom2</option></select></label>
             <label class="field slot"><span>No.</span><select id="presetNum"><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option></select></label>
           </div>
@@ -140,10 +140,22 @@
     </div>
   </div>
 
+  <script src="./js/ui/easy-popup.js"></script>
   <script type="module">
     import { app } from './js/app.js';
     window.app = app;
-    document.addEventListener('DOMContentLoaded', () => { app.init(); });
+    document.addEventListener('DOMContentLoaded', () => {
+      app.init();
+      requestAnimationFrame(() => {
+        const effectsTab = document.getElementById('effects-tab');
+        const easyBtn = document.getElementById('btnEasyMode');
+        if (effectsTab && easyBtn) {
+          effectsTab.classList.add('easy-mode');
+          easyBtn.classList.add('active');
+          if (window.closeSoloEffect) window.closeSoloEffect();
+        }
+      });
+    });
   </script>
 </body>
 </html>

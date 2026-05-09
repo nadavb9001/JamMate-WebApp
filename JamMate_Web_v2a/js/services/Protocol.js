@@ -1,0 +1,557 @@
+// ================================================================
+// Protocol.js  —  BLE Packet Builders
+//
+// FLAT PARAM CONVENTION (matches config.js):
+//   For any effect, the flat param array is:
+//     [enable(1), knob0, knob1, ..., knobK, drop0, drop1, ..., dropD]
+//   Total bytes = 1 + K + D  (getFlatParamCount from config.js)
+//
+// CMD 0x20  SET_PARAM:   [fxId, flatParamIndex, value]
+//   flatParamIndex 0     = checkbox (enable)  value: 0/1
+//   flatParamIndex 1..K  = knob k             value: 0..255
+//   flatParamIndex K+1.. = dropdown d         value: 0..255
+//
+// CMD 0x50  UPDATE_CONFIG: raw minimal-JSON bytes of APP_CONFIG layout
+// ================================================================
+
+import { APP_CONFIG, buildFlatParams } from '../config.js';
+
+export const Protocol = {
+  CMD: {
+    SET_PARAM:           0x20,
+    SET_TOGGLE:          0x21,   // legacy; prefer SET_PARAM idx=0
+    SET_EQ_BAND:         0x22,
+    SET_UTIL:            0x23,
+    SET_BYPASS:          0x24,
+    SET_GLOBAL:          0x25,
+    GET_STATE:           0x30,
+    STATE_DATA:          0x31,
+    SAVE_PRESET:         0x32,
+    LOAD_REQ:            0x33,
+    PRESET_DATA:         0x34,
+    TUNER_DATA:          0x35,
+    SET_DRUM_PATTERN:    0x40,
+    SET_DRUM_UPDATE:     0x41,  // drum machine + looper config (DRUM packet)
+    SET_LOOP_BUTTONS:    0x42,  // looper button events + settings (LOOP packet)
+    SET_USB_MODE:        0x43,  // USB mode switch (USBM packet)
+    SET_UART_CTRL:       0x44,  // UART link on/off (ESP-only, no DSP packet)
+    NAM_LIST_DATA:       0x45,
+    IR_LIST_DATA:        0x46,
+    UPDATE_CONFIG:       0x50,   // NEW: upload config layout to ESP LittleFS
+    FLASH_DSP:           0x60,
+    RESET_DSP:           0x61,
+    CMD_START_MIDI_SCAN: 0x62,
+    READ_SD_CARD:        0x63,
+    SAVE_TO_SD:          0x64,
+    NAM_UPLOAD_START:    0x70,   // [0x70][len16][weightCount32][crc32][nameLen16][name]
+    NAM_HEADER_ACK:      0x71,   // [0x71][status]
+    NAM_UPLOAD_CHUNK:    0x72,   // [0x72][len16][chunkIndex16][data]
+    NAM_CHUNK_ACK:       0x73,   // [0x73][status][chunkIndex16]
+    NAM_UPLOAD_END:      0x74,
+    NAM_EJECT:           0x75,
+    NAM_DONE_ACK:        0x76,   // [0x76][status] final bytes/CRC result
+  },
+
+  // ----------------------------------------------------------------
+  // Simple 1-byte system packet (no payload)
+  // ----------------------------------------------------------------
+  createSystemPacket(cmdId) {
+    const buffer = new ArrayBuffer(1);
+    new DataView(buffer).setUint8(0, cmdId);
+    return buffer;
+  },
+
+  createSDCardReadCommand() {
+    return this.createSystemPacket(this.CMD.READ_SD_CARD);
+  },
+
+  // ----------------------------------------------------------------
+  // SET_PARAM  —  single flat-index parameter update
+  //
+  //   Wire format: [CMD(1)][payloadLen16LE(2)][fxId(1)][flatIdx(1)][value(1)]
+  //
+  //   flatIdx 0     = checkbox (enable/disable)  value 0 or 1
+  //   flatIdx 1..K  = knob[flatIdx-1]            value 0..255
+  //   flatIdx K+1.. = dropdown[flatIdx-1-K]      value 0..255
+  // ----------------------------------------------------------------
+  createParamUpdate(fxId, flatIdx, value) {
+    const buf  = new ArrayBuffer(6);
+    const view = new DataView(buf);
+    view.setUint8(0,  this.CMD.SET_PARAM);
+    view.setUint16(1, 3, true);
+    view.setUint8(3,  fxId);
+    view.setUint8(4,  flatIdx);
+    view.setUint8(5,  Math.round(value));
+    return buf;
+  },
+
+  // ----------------------------------------------------------------
+  // TOGGLE  —  convenience wrapper: flat index 0 = checkbox
+  // ----------------------------------------------------------------
+  createToggleUpdate(fxId, isEnabled) {
+    return this.createParamUpdate(fxId, 0, isEnabled ? 1 : 0);
+  },
+
+  // ----------------------------------------------------------------
+  // SERIALIZE STATE  →  binary blob
+  //
+  // Layout:
+  //   [ver=0x03][bpm][master][nameLen][name bytes]
+  //   For each effect i = 0..tabCount-1:
+  //     [fxId(1)][flatCount(1)][p0..p_{flatCount-1}]
+  //       p[0]        = enable (0/1)
+  //       p[1..K]     = knob values
+  //       p[K+1..K+D] = dropdown values
+  //   [0xFE][eqCount(1)][eq points, 5 bytes each]
+  //
+  // The ESP reads fxId, then flatCount, then exactly that many bytes.
+  // No separate knob/dropdown split needed anywhere in the chain.
+  // ----------------------------------------------------------------
+  serializeState(state) {
+    const parts = [];
+    const name      = (state.name || "User Preset").substring(0, 32);
+    const nameBytes = new TextEncoder().encode(name);
+
+    parts.push(new Uint8Array([0x03, state.bpm || 120, 100, nameBytes.length]));
+    parts.push(nameBytes);
+
+    for (let i = 0; i < APP_CONFIG.tabs.length; i++) {
+      const tab        = APP_CONFIG.tabs[i];
+      const fxState    = state.effectStates[i] || { enabled: false };
+      const fxParams   = state.effectParams[i]  || {};
+      const flatParams = buildFlatParams(tab, fxState, fxParams);
+      parts.push(new Uint8Array([i, flatParams.length]));
+      parts.push(flatParams);
+    }
+
+    if (state.eqPoints && state.eqPoints.length > 0) {
+      parts.push(new Uint8Array([0xFE, state.eqPoints.length]));
+      const eqBuf  = new ArrayBuffer(state.eqPoints.length * 5);
+      const eqView = new DataView(eqBuf);
+      state.eqPoints.forEach((pt, i) => {
+        const o = i * 5;
+        eqView.setUint16(o,     Math.round(pt.freq), true);
+        eqView.setInt8(o + 2,   Math.round(pt.gain));
+        eqView.setUint8(o + 3,  Math.round(pt.q * 10));
+        eqView.setUint8(o + 4,  pt.enabled ? 1 : 0);
+      });
+      parts.push(new Uint8Array(eqBuf));
+    }
+
+    const total  = parts.reduce((a, v) => a + v.length, 0);
+    const result = new Uint8Array(total);
+    let off = 0;
+    for (const p of parts) { result.set(p, off); off += p.length; }
+    return result.buffer;
+  },
+
+  // ----------------------------------------------------------------
+  // DESERIALIZE STATE  ←  binary blob
+  // Splits flat params back into effectStates / effectParams using
+  // APP_CONFIG tab definitions loaded at runtime.
+  // ----------------------------------------------------------------
+  deserializeState(buffer) {
+    const view = new DataView(buffer);
+    let off    = 0;
+    const len  = buffer.byteLength;
+
+    const state = {
+      effectStates: {}, effectParams: {},
+      eqPoints: [], bpm: 120, master: 100, name: "Loaded"
+    };
+
+    if (len < 4) return state;
+
+    /* version */ view.getUint8(off++);
+    state.bpm = view.getUint8(off++);
+    /* master */ view.getUint8(off++);
+
+    const nameLen = view.getUint8(off++);
+    if (nameLen > 0 && off + nameLen <= len) {
+      state.name = new TextDecoder().decode(new Uint8Array(buffer, off, nameLen));
+      off += nameLen;
+    }
+
+    while (off < len) {
+      const id = view.getUint8(off++);
+
+      // EQ block sentinel
+      if (id === 0xFE) {
+        if (off >= len) break;
+        const count = view.getUint8(off++);
+        for (let i = 0; i < count && i < 12; i++) {
+          if (off + 5 > len) break;
+          state.eqPoints.push({
+            freq:    view.getUint16(off,     true),
+            gain:    view.getInt8(off + 2),
+            q:       view.getUint8(off + 3) / 10,
+            enabled: view.getUint8(off + 4) !== 0
+          });
+          off += 5;
+        }
+        continue;
+      }
+
+      if (off >= len) break;
+      const flatCount = view.getUint8(off++);
+      if (off + flatCount > len) break;
+
+      state.effectStates[id] = { enabled: false, selected: false };
+      state.effectParams[id] = {};
+
+      const tab = APP_CONFIG.tabs[id];
+      if (tab && flatCount >= 1) {
+        state.effectStates[id].enabled = view.getUint8(off) !== 0;
+        const K = tab.params.knobs.length;
+        const D = tab.params.dropdowns.length;
+        for (let k = 0; k < K && (1 + k) < flatCount; k++) {
+          state.effectParams[id][`knob${k}`] = view.getUint8(off + 1 + k);
+        }
+        for (let d = 0; d < D && (1 + K + d) < flatCount; d++) {
+          state.effectParams[id][`dropdown${d}`] = view.getUint8(off + 1 + K + d);
+        }
+      }
+      off += flatCount;
+    }
+
+    return state;
+  },
+
+  // ----------------------------------------------------------------
+  // UPDATE_CONFIG (CMD 0x50) — send FX layout to ESP, saved as /config.json
+  //
+  // ESP C parser expects a compact array-of-pairs with NO object keys:
+  //   [[5,0],[8,0],[9,3],[10,2],...] — 18 pairs of [knobCount, dropCount]
+  //
+  // This is intentionally simpler than the old object schema so the ESP
+  // can parse it without ArduinoJson using plain String.indexOf().
+  //
+  // Also aliased as createConfigPacket() for back-compat.
+  // ---------------------------------------------------------------
+  createConfigUpload(config) {
+    // Build [[knobs, drops], ...] for every tab in order
+    const layout    = (config.tabs || []).map(tab => [
+      (tab.params.knobs     || []).length,
+      (tab.params.dropdowns || []).length,
+    ]);
+    const json      = JSON.stringify(layout);
+    const jsonBytes = new TextEncoder().encode(json);
+
+    const buf = new Uint8Array(3 + jsonBytes.length);
+    buf[0] = this.CMD.UPDATE_CONFIG;   // 0x50
+    buf[1] = jsonBytes.length & 0xFF;
+    buf[2] = (jsonBytes.length >> 8) & 0xFF;
+    buf.set(jsonBytes, 3);
+
+    console.log('[Protocol] createConfigUpload:', json);
+    return buf;
+  },
+
+  // Back-compat alias
+  createConfigPacket(config) { return this.createConfigUpload(config || {}); },
+
+  // ----------------------------------------------------------------
+  // SAVE PRESET
+  // ----------------------------------------------------------------
+  createSavePreset(bank, num, appState) {
+    const blob       = this.serializeState(appState);
+    const payloadLen = 2 + blob.byteLength;
+    const header     = new Uint8Array(5);
+    header[0] = this.CMD.SAVE_PRESET;
+    header[1] = payloadLen & 0xFF;
+    header[2] = (payloadLen >> 8) & 0xFF;
+    header[3] = bank;
+    header[4] = num;
+    const packet = new Uint8Array(header.length + blob.byteLength);
+    packet.set(header);
+    packet.set(new Uint8Array(blob), 5);
+    return packet;
+  },
+
+  // ----------------------------------------------------------------
+  // LOAD REQUEST
+  // ----------------------------------------------------------------
+  createLoadReq(bank, num) {
+    const buf  = new ArrayBuffer(5);
+    const view = new DataView(buf);
+    view.setUint8(0,  this.CMD.LOAD_REQ);
+    view.setUint16(1, 2, true);
+    view.setUint8(3,  bank);
+    view.setUint8(4,  num);
+    return buf;
+  },
+
+  // ----------------------------------------------------------------
+  // GET STATE  (handshake)
+  // ----------------------------------------------------------------
+  createGetState() {
+    const buf  = new ArrayBuffer(3);
+    const view = new DataView(buf);
+    view.setUint8(0,  this.CMD.GET_STATE);
+    view.setUint16(1, 0, true);
+    return buf;
+  },
+
+  // ----------------------------------------------------------------
+  // BYPASS  (CMD 0x24)
+  //   Wire format: [CMD(1)][payloadLen16LE(2)][bypassed(1)]
+  //   bypassed: 0 = signal active, 1 = bypassed
+  // ----------------------------------------------------------------
+  createBypassPacket(bypassed) {
+    const buf  = new ArrayBuffer(4);
+    const view = new DataView(buf);
+    view.setUint8(0,  this.CMD.SET_BYPASS);
+    view.setUint16(1, 1, true);
+    view.setUint8(3,  bypassed ? 1 : 0);
+    return buf;
+  },
+
+  // ----------------------------------------------------------------
+  // GLOBAL UPDATE
+  // ----------------------------------------------------------------
+  createGlobalUpdate(master, btVol, bpm, a2dpEnabled, bleEnabled, flashReq, resetReq) {
+    const buf  = new ArrayBuffer(7);
+    const view = new DataView(buf);
+    let flags = 0;
+    if (a2dpEnabled) flags |= 1;
+    if (bleEnabled)  flags |= 2;
+    if (flashReq)    flags |= 4;
+    if (resetReq)    flags |= 8;
+    view.setUint8(0,  this.CMD.SET_GLOBAL);
+    view.setUint16(1, 4, true);
+    view.setUint8(3,  Math.round(master));
+    view.setUint8(4,  Math.round(btVol));
+    view.setUint8(5,  Math.round(bpm));
+    view.setUint8(6,  flags);
+    return buf;
+  },
+
+  // ----------------------------------------------------------------
+  // EQ BAND UPDATE
+  // ----------------------------------------------------------------
+  createEQUpdate(bandIdx, enabled, freq, gain, q) {
+    const buf  = new ArrayBuffer(9);
+    const view = new DataView(buf);
+    view.setUint8(0,  this.CMD.SET_EQ_BAND);
+    view.setUint16(1, 6, true);
+    view.setUint8(3,  bandIdx);
+    view.setUint8(4,  enabled ? 1 : 0);
+    view.setUint16(5, Math.round(freq), true);
+    view.setInt8(7,   Math.max(-20, Math.min(20, Math.round(gain))));
+    view.setUint8(8,  Math.round(Math.max(0.1, Math.min(16.0, q)) * 10));
+    return buf;
+  },
+
+  // ----------------------------------------------------------------
+  // UTIL UPDATE
+  // ----------------------------------------------------------------
+  createUtilUpdate(type, enabled, level, freq) {
+    const buf  = new ArrayBuffer(8);
+    const view = new DataView(buf);
+    view.setUint8(0,  this.CMD.SET_UTIL);
+    view.setUint16(1, 5, true);
+    view.setUint8(3,  type);
+    view.setUint8(4,  enabled ? 1 : 0);
+    view.setUint8(5,  Math.round(level));
+    view.setUint16(6, Math.round(freq), true);
+    return buf;
+  },
+
+  // ----------------------------------------------------------------
+  // DRUM + LOOPER CONFIG  (CMD 0x41)
+  //
+  // Wire format: [CMD][lenL][lenH] "DRUM"(4) [payload(12)]
+  //
+  // Payload (12 bytes after the 4-byte tag, matches DSP DRUM dispatch):
+  //   [0]  drumEnable    0/1
+  //   [1]  drumLevel     0-100
+  //   [2]  bpm           0-255
+  //   [3]  drumStyle     0-10
+  //   [4]  drumFill      0-4
+  //   [5]  drumNumber    1-5
+  //   [6]  looperEnable  0/1
+  //   [7]  looperLevel   0-100
+  //   [8]  loopSync      0=SYNC_NONE,1=SYNC_BEAT,2=SYNC_BAR
+  //   [9]  autoArm       0/1   (was loopArm 3-way; Daisy uses >0 as true)
+  //   [10] loopLength    bars to auto-stop (0=free,4/8/12/16)
+  //   [11] trackSelect   0-3   (active track index; was loopTracks 1-4)
+  // Total packet = 3 (hdr) + 4 (tag) + 12 (payload) = 19 bytes
+  // ----------------------------------------------------------------
+  createDrumUpdate(drumEnable, drumLevel, bpm, style, fill, drumNumber,
+                   looperEnable, looperLevel, loopSync, autoArm, loopLength, trackSelect) {
+    const TAG        = [0x44, 0x52, 0x55, 0x4D]; // "DRUM"
+    const payloadLen = TAG.length + 12;            // 16 bytes total
+    const buf        = new ArrayBuffer(3 + payloadLen);
+    const view       = new DataView(buf);
+    const data       = new Uint8Array(buf);
+
+    view.setUint8(0,  this.CMD.SET_DRUM_UPDATE);
+    view.setUint16(1, payloadLen, true);
+
+    let o = 3;
+    TAG.forEach(b => { data[o++] = b; });
+
+    data[o++] = drumEnable    ? 1 : 0;
+    data[o++] = Math.round(drumLevel)    & 0xFF;
+    data[o++] = Math.round(bpm)          & 0xFF;
+    data[o++] = (style       || 0)       & 0xFF;
+    data[o++] = (fill        || 0)       & 0xFF;
+    data[o++] = (drumNumber  || 1)       & 0xFF;
+    data[o++] = looperEnable  ? 1 : 0;
+    data[o++] = Math.round(looperLevel)  & 0xFF;
+    data[o++] = (loopSync    || 0)       & 0xFF;  // 0=NONE,1=BEAT,2=BAR
+    data[o++] = autoArm       ? 1 : 0;             // bool; Daisy: data[13]>0
+    data[o++] = (loopLength  || 0)       & 0xFF;
+    data[o++] = (trackSelect || 0)       & 0x03;   // clamp 0-3
+
+    return buf;
+  },
+
+  // ----------------------------------------------------------------
+  // LOOPER BUTTONS + SETTINGS  (CMD 0x42)
+  //
+  // Sends a 16-byte "LOOP" packet matching jm_looper.hpp update_param:
+  //   [0]  trackSelect   0-3
+  //   [1]  rec           0/1  (record button — rising edge)
+  //   [2]  stop          0/1
+  //   [3]  clear         0/1
+  //   [4]  undo          0/1
+  //   [5]  redo          0/1
+  //   [6]  stopAll       0/1
+  //   [7]  clearAll      0/1
+  //   [8]  syncMode      0=NONE,1=BEAT,2=BAR
+  //   [9]  playbackMode  0=PARALLEL,1=SERIES
+  //   [10] bars          0-16  (auto-stop after N bars, 0=free)
+  //   [11] autoArm       0/1
+  //   [12] bounceMode    0/1
+  //   [13] muteMask      bit-field: bit n=1 mutes track n
+  //   [14] soloMask      bit-field: bit n=1 solos track n
+  //   [15] masterLevel   0-127 → 0.0–1.0 on DSP
+  // ----------------------------------------------------------------
+  createLoopButtons(trackSelect, rec, stop, clear, undo, redo, stopAll, clearAll,
+                    syncMode, playbackMode, bars, autoArm, bounceMode,
+                    muteMask, soloMask, masterLevel) {
+    const buf  = new ArrayBuffer(3 + 16);
+    const view = new DataView(buf);
+    const data = new Uint8Array(buf);
+
+    view.setUint8(0,  this.CMD.SET_LOOP_BUTTONS);
+    view.setUint16(1, 16, true);
+
+    data[3]  = (trackSelect  || 0) & 0x03;
+    data[4]  = rec       ? 1 : 0;
+    data[5]  = stop      ? 1 : 0;
+    data[6]  = clear     ? 1 : 0;
+    data[7]  = undo      ? 1 : 0;
+    data[8]  = redo      ? 1 : 0;
+    data[9]  = stopAll   ? 1 : 0;
+    data[10] = clearAll  ? 1 : 0;
+    data[11] = (syncMode     || 0) & 0xFF;
+    data[12] = (playbackMode || 0) & 0xFF;
+    data[13] = (bars         || 0) & 0xFF;
+    data[14] = autoArm    ? 1 : 0;
+    data[15] = bounceMode ? 1 : 0;
+    data[16] = (muteMask     || 0) & 0x0F;
+    data[17] = (soloMask     || 0) & 0x0F;
+    data[18] = Math.round(Math.min(127, Math.max(0, masterLevel || 100)));
+
+    return buf;
+  },
+
+  // ----------------------------------------------------------------
+  // USB MODE  (CMD 0x43)
+  // mode: 0=off  1=serial(default)  2=audio  3=MIDI-host(reserved)
+  // ----------------------------------------------------------------
+  createUSBMode(mode) {
+    const buf  = new ArrayBuffer(4);
+    const view = new DataView(buf);
+    view.setUint8(0,  this.CMD.SET_USB_MODE);
+    view.setUint16(1, 1, true);
+    view.setUint8(3,  mode & 0x03);
+    return buf;
+  },
+
+  // ----------------------------------------------------------------
+  // UART CONTROL  (CMD 0x44)
+  // enable: true=on  false=off
+  // ESP handles this locally; no DSP packet is forwarded.
+  // ----------------------------------------------------------------
+  createUARTControl(enable) {
+    const buf  = new ArrayBuffer(4);
+    const view = new DataView(buf);
+    view.setUint8(0,  this.CMD.SET_UART_CTRL);
+    view.setUint16(1, 1, true);
+    view.setUint8(3,  enable ? 1 : 0);
+    return buf;
+  },
+
+  // ----------------------------------------------------------------
+  // SAVE TO SD  (CMD 0x64)
+  // Simple 1-byte command; ESP flushes current state to SD card.
+  // ----------------------------------------------------------------
+  createSaveToSD() {
+    if (!this.CMD.SAVE_TO_SD) this.CMD.SAVE_TO_SD = 0x64;
+    return this.createSystemPacket(this.CMD.SAVE_TO_SD);
+  },
+
+  // ----------------------------------------------------------------
+  // DRUM PATTERN
+  // ----------------------------------------------------------------
+  createDrumPatternPacket(patternData) {
+    const len  = 144;
+    const buf  = new ArrayBuffer(3 + len);
+    const view = new DataView(buf);
+    const bytes = new Uint8Array(buf);
+    view.setUint8(0,  this.CMD.SET_DRUM_PATTERN);
+    view.setUint16(1, len, true);
+    let off = 3;
+    for (let row = 0; row < 9; row++)
+      for (let col = 0; col < 16; col++)
+        bytes[off++] = patternData[row][col] || 0;
+    return buf;
+  },
+
+  // ----------------------------------------------------------------
+  // NAM TRANSFER PACKETS
+  // ----------------------------------------------------------------
+  createNamStart(weightCount, crc, name) {
+    const safeName = String(name || 'model.nam').slice(0, 64);
+    const nameBytes = new TextEncoder().encode(safeName);
+
+    // Payload format, after [cmd][payloadLen16LE]:
+    //   uint32 weightCount       number of float32 weights that follow
+    //   uint32 crc32             CRC of the raw little-endian float32 weight bytes
+    //   uint16 nameLen
+    //   uint8[nameLen] UTF-8 filename/model name
+    const payloadLen = 4 + 4 + 2 + nameBytes.length;
+    const buf = new Uint8Array(3 + payloadLen);
+    const view = new DataView(buf.buffer);
+
+    buf[0] = this.CMD.NAM_UPLOAD_START;
+    view.setUint16(1, payloadLen, true);
+    view.setUint32(3, weightCount >>> 0, true);
+    view.setUint32(7, crc >>> 0, true);
+    view.setUint16(11, nameBytes.length, true);
+    buf.set(nameBytes, 13);
+    return buf;
+  },
+
+  createNamChunk(index, data) {
+    const payloadLen = 2 + data.length; // index(2) + data(N)
+    const buf = new Uint8Array(3 + payloadLen);
+    const view = new DataView(buf.buffer);
+    buf[0] = this.CMD.NAM_UPLOAD_CHUNK;
+    view.setUint16(1, payloadLen, true);
+    view.setUint16(3, index, true);
+    buf.set(data, 5);
+    return buf;
+  },
+
+  createNamEnd() {
+    return this.createSystemPacket(this.CMD.NAM_UPLOAD_END);
+  },
+
+  createNamEject() {
+    return this.createSystemPacket(this.CMD.NAM_EJECT);
+  }
+};

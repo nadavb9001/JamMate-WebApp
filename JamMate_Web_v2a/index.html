@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>JamMate BLE Controller</title>
+  <link rel="stylesheet" href="./css/main.css" />
+  <link rel="stylesheet" href="./css/components.css" />
+</head>
+<body>
+  <div id="appShell">
+    <header id="header" class="jm-topbar">
+      <div class="brand-block">
+        <div class="status-led" id="statusLed"></div>
+        <div>
+          <div class="device-name">JamMate</div>
+          <div class="device-subtitle">BLE stage controller</div>
+        </div>
+      </div>
+      <div class="transport-strip">
+        <div id="globalKnobRow" class="micro-knobs">
+          <div class="knob-container"><div class="knob" id="masterKnob"></div><div class="knob-label">Master</div></div>
+          <div class="knob-container"><div class="knob" id="bpmKnob"></div><div class="knob-label">BPM</div></div>
+        </div>
+        <button class="icon-button power" id="btnBypass" title="Toggle Bypass" aria-label="Toggle Bypass">⏻</button>
+        <button class="icon-button" id="btnFullscreen" title="Toggle Fullscreen" aria-label="Toggle Fullscreen">⛶</button>
+        <button class="icon-button" id="btnConnect" title="Connect BLE" aria-label="Connect BLE">⌁</button>
+      </div>
+    </header>
+
+    <nav class="tabs" id="tabs" aria-label="JamMate sections">
+      <div class="tab active" data-tab="effects">Effects</div>
+      <div class="tab" data-tab="drum">Drum</div>
+      <div class="tab" data-tab="looper">Looper</div>
+      <div class="tab" data-tab="tuner">Tuner</div>
+      <div class="tab" data-tab="setup">Setup</div>
+      <div class="tab" data-tab="loader">Files</div>
+      <div class="tab" data-tab="nam">NAM</div>
+    </nav>
+
+    <main id="mainDeck">
+      <section class="tab-content active" id="effects-tab">
+        <div class="panel preset-panel">
+          <div class="preset-row compact-row">
+            <button id="btnSavePreset" class="btn-preset-action" title="Save Preset">💾</button>
+            <button id="btnEasyMode" class="btn-preset-action" title="Toggle Easy Mode">📱</button>
+            <label class="field grow"><span>Bank</span><select id="presetBank"><option>Clean</option><option>Crunch</option><option>Overdrive</option><option>Distortion</option><option>Modulated</option><option>Custom1</option><option>Custom2</option></select></label>
+            <label class="field slot"><span>No.</span><select id="presetNum"><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option></select></label>
+          </div>
+        </div>
+        <div class="effects-scroll"><div class="effects-grid" id="effectsGrid"></div></div>
+        <div id="effectControls" class="control-drawer"></div>
+      </section>
+
+      <section class="tab-content" id="drum-tab">
+        <div class="panel">
+          <h3 class="panel-title">🥁 Drum Machine</h3>
+          <div class="split-head">
+            <div class="knob-container"><div class="knob" id="drumLevelKnob"></div><div class="knob-label">Level</div></div>
+            <label class="checkbox jumbo"><input type="checkbox" id="drumEnable" checked /><span>Enable</span></label>
+          </div>
+          <label class="field"><span>Style</span><select id="drumStyle"><option value="0">Rock</option><option value="1">Blues</option><option value="2">Jazz</option><option value="3">Shuffle</option><option value="4">Pop</option><option value="5">Metal</option><option value="6">Latin</option><option value="7">R&amp;B</option><option value="8">Country</option><option value="9">Funk</option><option value="10">Pattern</option></select></label>
+          <div class="two-grid">
+            <label class="field"><span>Fill</span><select id="drumFill"><option value="0">None</option><option value="1">x1</option><option value="2">x4</option><option value="3">x12</option><option value="4">x16</option></select></label>
+            <label class="field"><span>Number</span><select id="drumNumber"><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option></select></label>
+          </div>
+        </div>
+        <div class="drum-grid" id="drumGrid"></div>
+      </section>
+
+      <section class="tab-content" id="looper-tab">
+        <div class="panel looper-actions">
+          <div class="three-grid primary-actions">
+            <button id="loopBtn_rec" class="record">▶ REC</button><button id="loopBtn_stop">■ STOP</button><button id="loopBtn_clear">✖ CLR</button>
+          </div>
+          <div class="four-grid secondary-actions">
+            <button id="loopBtn_undo">← Undo</button><button id="loopBtn_redo">→ Redo</button><button id="loopBtn_stopAll">■■ All</button><button id="loopBtn_clearAll">✖ All</button>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="split-head">
+            <div class="knob-container"><div class="knob" id="loopLevelKnob"></div><div class="knob-label">Level</div></div>
+            <label class="field grow"><span>Active Track</span><select id="trackSelect"><option value="0">Track 1</option><option value="1">Track 2</option><option value="2">Track 3</option><option value="3">Track 4</option></select></label>
+          </div>
+          <div class="check-row"><label class="checkbox"><input type="checkbox" id="looperEnable" /><span>Enable</span></label><label class="checkbox"><input type="checkbox" id="autoArm" /><span>Auto Arm</span></label><label class="checkbox"><input type="checkbox" id="bounceMode" /><span>Bounce</span></label></div>
+        </div>
+        <div class="panel">
+          <div class="two-grid"><label class="field"><span>Sync</span><select id="loopSync"><option value="0">None</option><option value="1">Beat</option><option value="2">Bar</option></select></label><label class="field"><span>Playback</span><select id="playbackMode"><option value="0">Parallel</option><option value="1">Series</option></select></label></div>
+          <label class="field"><span>Auto Length</span><select id="loopLength"><option value="0" selected>Free (manual stop)</option><option value="4">4 bars</option><option value="8">8 bars</option><option value="12">12 bars</option><option value="16">16 bars</option></select></label>
+          <div class="two-grid"><label class="field"><span>Mute Tracks</span><select id="muteMask"><option value="0">None</option><option value="1">Track 1</option><option value="2">Track 2</option><option value="4">Track 3</option><option value="8">Track 4</option><option value="3">T1 + T2</option><option value="12">T3 + T4</option></select></label><label class="field"><span>Solo Track</span><select id="soloMask"><option value="0">None</option><option value="1">Track 1</option><option value="2">Track 2</option><option value="4">Track 3</option><option value="8">Track 4</option></select></label></div>
+          <button id="btnSaveToSD" class="wide-button">💾 Save to SD</button>
+        </div>
+      </section>
+
+      <section class="tab-content" id="tuner-tab">
+        <div class="panel tuner-display">
+          <label class="checkbox jumbo center"><input type="checkbox" id="tunerEnable" /><span>Enable Tuner</span></label>
+          <div class="string-display" id="stringDisplay">--</div>
+          <div class="muted">Target: <span id="targetFreq">-- Hz</span></div>
+          <div class="tuner-gauge"><div class="tuner-center"></div><div class="tuner-needle" id="tunerNeedle"></div></div>
+          <div class="freq-display" id="freqDisplay">-- Hz</div>
+          <div class="cents-display" id="centsDisplay">-- cents</div>
+        </div>
+      </section>
+
+      <section class="tab-content" id="setup-tab">
+        <div class="panel"><h2 class="panel-title">Interface</h2><button class="wide-button" id="btnTheme" title="Toggle Theme">🎨 Theme</button></div>
+        <div class="panel"><h2 class="panel-title">Daisy Control</h2><div class="two-grid"><button id="reset-btn" class="danger">Reset Daisy</button><button id="btnReadSDCard">Read SD Card</button><button id="flash-btn" class="warning">Flash Daisy</button><button id="btnUpdateConfig" title="Upload config layout to ESP LittleFS">Update Config</button></div><button id="btnToggleUART" class="wide-button btn-uart">UART: OFF</button><div class="setup-strip"><label class="checkbox"><input type="checkbox" id="btEnableCheck" checked /><span>Enable Bluetooth</span></label><label class="checkbox"><input type="checkbox" id="bleEnableCheck" checked /><span>Enable BLE</span></label><div class="knob-container"><div class="knob" id="blVolKnob"></div><div class="knob-label">BT Vol</div></div></div></div>
+        <div class="panel"><h2 class="panel-title">USB &amp; UART</h2><label class="field"><span>USB Mode</span><select id="usbMode" onchange="app.sendUSBMode()"><option value="0">Off</option><option value="1" selected>Serial</option><option value="2">Audio</option><option value="3">MIDI Host (reserved)</option></select></label><label class="checkbox"><input type="checkbox" id="uartEnable" checked onchange="app.sendUARTControl(this.checked)" /><span>UART Link to Daisy</span></label></div>
+        <div class="panel"><h2 class="panel-title">Utilities</h2><div class="utility-row"><button id="whiteNoiseBtn" class="util-toggle-btn">White<br />Noise</button><div class="knob-container"><div class="knob" id="whiteNoiseLevelKnob"></div><div class="knob-label">Level</div></div></div><div class="utility-row"><button id="toneBtn" class="util-toggle-btn">Tone</button><div class="knob-container"><div class="knob" id="toneLevelKnob"></div><div class="knob-label">Level</div></div><label class="field freq-field"><span>Freq</span><input type="number" id="toneFreqInput" value="670" min="20" max="20000" /></label></div></div>
+      </section>
+
+      <section class="tab-content" id="loader-tab">
+        <div class="panel"><div class="file-upload-btn"><input type="file" id="fileInput" accept=".wav,audio/wav" /><button onclick="document.getElementById('fileInput').click()">📂 Load WAV File</button></div></div>
+        <canvas class="waveform-canvas" id="waveformCanvas"></canvas><canvas class="spectrum-canvas" id="spectrumCanvas"></canvas>
+        <div class="panel send-panel"><label class="field"><span>Points to Send</span><select id="irPoints"><option>128</option><option>256</option><option selected>512</option><option>1024</option><option>2048</option><option>4096</option><option>8192</option></select></label><button id="btnSendIR" disabled>Send IR to Device</button></div>
+      </section>
+
+      <section class="tab-content" id="nam-tab">
+        <div class="nam-layout">
+          <div class="nam-topbar panel"><div class="nam-search-row"><input type="text" id="namSearch" class="nam-search" placeholder="Search nano NAM models…" autocomplete="off" /><button id="btnNamSearch" class="btn-nam-action">Search</button><button id="btnNamBrowseT3K" class="btn-nam-action btn-t3k" title="Pick a tone from TONE3000"><span class="t3k-logo">T3K</span> Browse</button></div><div class="nam-filter-row"><select id="namSort" class="nam-filter-select"><option value="downloads-all-time">Most Downloaded</option><option value="newest">Newest</option><option value="trending">Trending</option></select><label class="nam-filter-label checkbox"><input type="checkbox" id="namNanoOnly" checked /><span>Nano only</span></label><span class="nam-result-count" id="namResultCount"></span></div></div>
+          <div class="nam-grid" id="namGrid"><div class="nam-placeholder"><div class="nam-placeholder-icon">◌</div><div class="nam-placeholder-text">Search for nano NAM models<br />or browse TONE3000</div></div></div>
+          <div class="nam-pagination" id="namPagination" style="display:none"><button id="btnNamPrev" class="btn-nam-page">← Prev</button><span id="namPageLabel" class="nam-page-label">Page 1</span><button id="btnNamNext" class="btn-nam-page">Next →</button></div>
+          <div class="nam-local-row panel"><label class="nam-local-label">Or load local .nam file:</label><label class="btn-nam-action btn-nam-file">Choose File<input type="file" id="namFileInput" accept=".nam" hidden /></label><span id="namFileName" class="nam-filename"></span></div>
+          <div class="nam-progress-panel panel" id="namProgressPanel" style="display:none"><div class="nam-progress-title" id="namProgressTitle">Transferring…</div><div class="nam-progress-bar-wrap"><div class="nam-progress-bar" id="namProgressBar"></div></div><div class="nam-progress-msg" id="namProgressMsg"></div></div>
+          <div class="nam-device-row panel"><div><div class="nam-device-label">Loaded on device:</div><div class="nam-device-name" id="namDeviceName">—</div></div><button id="btnNamEject" class="btn-nam-eject" title="Unload model">⏏</button></div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <div id="status-bar"><span id="statusMessage">Ready</span></div>
+
+  <div id="saveModal" class="solo-effect-overlay" style="display:none;">
+    <div class="solo-effect-container modal-card">
+      <div class="solo-effect-title">Save Preset To...</div>
+      <label class="field"><span>Bank</span><select id="saveBankSelect"><option value="0">Clean</option><option value="1">Crunch</option><option value="2">Overdrive</option><option value="3">Distortion</option><option value="4">Modulated</option><option value="5">Custom1</option><option value="6">Custom2</option></select></label>
+      <label class="field"><span>Slot</span><select id="saveNumSelect"><option value="0">1</option><option value="1">2</option><option value="2">3</option><option value="3">4</option><option value="4">5</option></select></label>
+      <div class="modal-actions"><button id="btnConfirmSave" class="success">Save</button><button id="btnCancelSave" class="danger">Cancel</button></div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { app } from './js/app.js';
+    window.app = app;
+    document.addEventListener('DOMContentLoaded', () => { app.init(); });
+  </script>
+</body>
+</html>

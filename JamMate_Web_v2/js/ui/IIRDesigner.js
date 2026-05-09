@@ -109,16 +109,32 @@ export class IIRDesigner {
         this.draw();
     }
 	
-	// UPDATED: Logic to reset and sync all bands
     reset() {
+        const defaultFreqs = [80, 160, 240, 500, 800, 1000, 1600, 2400, 3200, 4000, 6000, 8000];
         this.masterPoints.forEach((pt, i) => {
+            pt.freq = defaultFreqs[i];
             pt.gain = 0;
-            pt.enabled = true;
+            pt.enabled = true; // Ensure all are re-enabled before filtering
             pt.q = (pt.type === 'peak') ? 1.41 : 0.707;
-            // Send update for EVERY point to ensure DSP is flat
-            this.triggerDataChange(null, pt);
         });
+
+        // Set number of bands to 2 (HPF/LPF)
+        const dropdown = document.getElementById('biquadCount');
+        if (dropdown) {
+            dropdown.value = "0";
+            // Trigger native select sync if using CustomSelect
+            dropdown.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+
+        // Rebuild points and sync all 12 bands (disabling 1-10, updating 0 & 11)
+        this.setBiquadCount(0);
+        
+        // Explicitly sync HPF and LPF to ensure their default frequencies are sent
+        this.triggerDataChange(0); 
+        this.triggerDataChange(11);
+
         this.draw();
+
 		if (window.app) {
 			window.app.currentEQPoints = null;
 			console.log('[IIR] Reset complete - cleared currentEQPoints cache');

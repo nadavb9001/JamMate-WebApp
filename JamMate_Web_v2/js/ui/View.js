@@ -205,7 +205,6 @@ export const View = {
 
             document.getElementById('btnEqReset').addEventListener('click', () => {
                 this.app.iirDesigner.reset();
-                document.getElementById('biquadCount').value = '10';
                 this.updateStatus('EQ Reset to Default');
             });
             document.getElementById('biquadCount').addEventListener('change', (e) => {

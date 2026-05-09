@@ -228,6 +228,16 @@ export const app = {
     this.setupPresetListeners();
     this.setupDrumControls();
     upgradeSelects();
+
+    // Default to Easy Mode button state
+    const btnEasyMode = document.getElementById('btnEasyMode');
+    if (btnEasyMode && document.getElementById('effects-tab').classList.contains('easy-mode')) {
+      btnEasyMode.style.background = 'var(--color-accent)';
+      btnEasyMode.style.color = '#000';
+      if (this._resizeEasyMode) {
+        requestAnimationFrame(() => this._resizeEasyMode());
+      }
+    }
   },
 
   // ============================================================

@@ -474,6 +474,9 @@ body.light-theme #statusMessage {
     display: flex; flex-direction: column; align-items: center;
     margin: 0; padding: 2px 0; min-width: 0; overflow: hidden;
 }
+.solo-effect-container .knob-grid {
+    grid-template-columns: repeat(3, 1fr) !important;
+}
 .solo-effect-container .knob-label {
     font-size: 11px; margin-top: 2px;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;

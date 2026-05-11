@@ -431,7 +431,10 @@ enableInput.addEventListener('change', () => {
             }
         }, { passive: false });
 
-        grid.addEventListener('touchmove', (e) => { e.preventDefault(); }, { passive: false });
+        grid.addEventListener('touchmove', (e) => {
+            e.preventDefault();
+            pendingCell = null; // cancel activation if finger drags
+        }, { passive: false });
 
         grid.addEventListener('touchend', (e) => {
             e.preventDefault();

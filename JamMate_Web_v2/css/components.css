@@ -109,8 +109,10 @@ select:focus { border-color: var(--color-accent); outline: none; }
 
 /* Utility & Shared */
 .preset-controls { background: var(--color-bg-elevated); padding: 10px; border-radius: 10px; margin-bottom: 10px; }
-.preset-row { display: flex; gap: 6px; margin-bottom: 8px; flex-wrap: nowrap; align-items: flex-end; width: 100%; }
+.preset-row { display: flex; gap: 6px; margin-bottom: 8px; flex-wrap: nowrap !important; align-items: flex-end; width: 100%; overflow: hidden; }
 .preset-row > .csel { flex: 1; min-width: 0; }
+.preset-bank-wrapper { flex: 1 1 0 !important; min-width: 0 !important; overflow: hidden; }
+.preset-num-wrapper  { flex: 0 0 80px !important; width: 80px !important; min-width: 80px !important; }
 
 button { padding: 12px 20px; background: var(--color-accent); border: none; border-radius: 5px; color: #000; font-weight: bold; font-size: 14px; cursor: pointer; transition: background 0.3s; }
 button:active { background: var(--color-accent-hover); }
@@ -193,6 +195,10 @@ button:disabled { background: var(--color-border); cursor: not-allowed; }
     height: 80px !important; /* Bigger buttons for touch */
     font-size: 14px !important;
 }
+
+/* Solo-effect popup always: 2-col dropdowns, 3-col knobs */
+.solo-effect-container .dropdowns-grid { grid-template-columns: repeat(2, 1fr) !important; }
+.solo-effect-container .knobs-grid     { grid-template-columns: repeat(3, 1fr) !important; }
 
 /* Media Queries */
 @media (max-width: 768px) {

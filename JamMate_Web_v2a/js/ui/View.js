@@ -322,12 +322,11 @@ enableInput.addEventListener('change', () => {
         const grid  = document.getElementById('drumGrid');
         grid.innerHTML = '';
 
-        const VELOCITY_STEPS = [0, 42, 85, 127];
         const parts = ['Kick','Snare','HiHat','Cymbal','Tom1','Tom2','Tom3','Perc1','Perc2'];
 
-        const nextVelocity = (current) => {
-            const i = VELOCITY_STEPS.indexOf(current < 0 ? 0 : current);
-            return VELOCITY_STEPS[(i < 0 ? 0 : i + 1) % VELOCITY_STEPS.length];
+        const increaseVelocity = (current) => {
+            if (current === 0) return 64;
+            return Math.min(127, current + 32);
         };
 
         parts.forEach((part, row) => {
@@ -363,7 +362,7 @@ enableInput.addEventListener('change', () => {
                     if (clickTimer) clearTimeout(clickTimer);
                     clickTimer = setTimeout(() => {
                         clickTimer = null;
-                        updateCallback(cell, row, col, nextVelocity(drumPattern[row][col]));
+                        updateCallback(cell, row, col, increaseVelocity(drumPattern[row][col]));
                     }, 220);
                 });
 

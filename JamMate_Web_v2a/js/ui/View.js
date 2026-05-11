@@ -353,37 +353,19 @@ enableInput.addEventListener('change', () => {
                 cell.dataset.row = row;
                 cell.dataset.col = col;
 
-                // ── Input handling ────────────────────────────────────────
-                if ('ontouchstart' in window) {
-                    // Touch devices: single tap → increase velocity, double tap → set to 0
-                    let lastTouchTime = 0;
-                    cell.addEventListener('touchstart', (e) => {
-                        e.preventDefault();
-                        const now = Date.now();
-                        if (now - lastTouchTime < 300) {
-                            // Double tap
-                            updateCallback(cell, row, col, 0);
-                        } else {
-                            // Single tap
-                            updateCallback(cell, row, col, increaseVelocity(drumPattern[row][col]));
-                        }
-                        lastTouchTime = now;
-                    });
-                } else {
-                    // Mouse devices: single click (delayed) → increase velocity, double-click → set to 0
-                    let clickTimer = null;
-                    cell.addEventListener('click', () => {
-                        if (clickTimer) clearTimeout(clickTimer);
-                        clickTimer = setTimeout(() => {
-                            clickTimer = null;
-                            updateCallback(cell, row, col, increaseVelocity(drumPattern[row][col]));
-                        }, 220);
-                    });
-                    cell.addEventListener('dblclick', () => {
-                        if (clickTimer) { clearTimeout(clickTimer); clickTimer = null; }
-                        updateCallback(cell, row, col, 0);
-                    });
-                }
+                // Single click / tap → increase velocity, double-click / double-tap → clear cell
+                let clickTimer = null;
+                cell.addEventListener('click', () => {
+                    if (clickTimer) clearTimeout(clickTimer);
+                    clickTimer = setTimeout(() => {
+                        clickTimer = null;
+                        updateCallback(cell, row, col, increaseVelocity(drumPattern[row][col]));
+                    }, 220);
+                });
+                cell.addEventListener('dblclick', () => {
+                    if (clickTimer) { clearTimeout(clickTimer); clickTimer = null; }
+                    updateCallback(cell, row, col, 0);
+                });
 
                 cell.addEventListener('contextmenu', (e) => e.preventDefault());
 
@@ -403,59 +385,7 @@ enableInput.addEventListener('change', () => {
         let isDoubleTap  = false;
         const DBL_TAP_MS = 300;
 
-        grid.addEventListener('touchstart', (e) => {
-            e.preventDefault();
-            const t  = e.touches[0];
-            const el = document.elementFromPoint(t.clientX, t.clientY);
-
-            // Handle double-tap on label to clear row
-            if (el && el.classList.contains('drum-label')) {
-                const now = Date.now();
-                if (el === lastTapCell && now - lastTapTime < DBL_TAP_MS) {
-                    const rowDiv   = el.parentElement;
-                    const rowIndex = parseInt(rowDiv.querySelector('.drum-cell').dataset.row);
-                    for (let c = 0; c < 16; c++) {
-                        const cell = rowDiv.querySelector(`.drum-cell[data-col="${c}"]`);
-                        if (cell) updateCallback(cell, rowIndex, c, 0);
-                    }
-                    lastTapCell = null; lastTapTime = 0;
-                } else {
-                    lastTapCell = el; lastTapTime = now;
-                }
-                return;
-            }
-
-            if (!el || !el.classList.contains('drum-cell')) return;
-
-            const now = Date.now();
-            if (el === lastTapCell && now - lastTapTime < DBL_TAP_MS) {
-                // Double-tap → clear
-                isDoubleTap = true;
-                pendingCell = null;
-                const r = parseInt(el.dataset.row);
-                const c = parseInt(el.dataset.col);
-                updateCallback(el, r, c, 0);
-                lastTapCell = null; lastTapTime = 0;
-            } else {
-                isDoubleTap = false;
-                pendingCell = el;
-                lastTapCell = el;
-                lastTapTime = now;
-            }
-        }, { passive: false });
-
-        grid.addEventListener('touchmove', (e) => { e.preventDefault(); }, { passive: false });
-
-        grid.addEventListener('touchend', (e) => {
-            e.preventDefault();
-            if (isDoubleTap) { isDoubleTap = false; return; }
-            const el = pendingCell;
-            if (!el) return;
-            pendingCell = null;
-            const r = parseInt(el.dataset.row);
-            const c = parseInt(el.dataset.col);
-            updateCallback(el, r, c, nextVelocity(drumPattern[r][c]));
-        }, { passive: false });
+        // Touch is handled by normal click / dblclick events, so we leave dragging and scrolling native.
     },
 
     updateDrumCell(cell, velocity) {

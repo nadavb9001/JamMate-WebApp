@@ -353,23 +353,37 @@ enableInput.addEventListener('change', () => {
                 cell.dataset.row = row;
                 cell.dataset.col = col;
 
-                // ── Mouse ────────────────────────────────────────
-                // Single click (delayed) → cycle velocity
-                // Double-click → clear cell
-                let clickTimer = null;
-
-                cell.addEventListener('click', () => {
-                    if (clickTimer) clearTimeout(clickTimer);
-                    clickTimer = setTimeout(() => {
-                        clickTimer = null;
-                        updateCallback(cell, row, col, increaseVelocity(drumPattern[row][col]));
-                    }, 220);
-                });
-
-                cell.addEventListener('dblclick', () => {
-                    if (clickTimer) { clearTimeout(clickTimer); clickTimer = null; }
-                    updateCallback(cell, row, col, 0);
-                });
+                // ── Input handling ────────────────────────────────────────
+                if ('ontouchstart' in window) {
+                    // Touch devices: single tap → increase velocity, double tap → set to 0
+                    let lastTouchTime = 0;
+                    cell.addEventListener('touchstart', (e) => {
+                        e.preventDefault();
+                        const now = Date.now();
+                        if (now - lastTouchTime < 300) {
+                            // Double tap
+                            updateCallback(cell, row, col, 0);
+                        } else {
+                            // Single tap
+                            updateCallback(cell, row, col, increaseVelocity(drumPattern[row][col]));
+                        }
+                        lastTouchTime = now;
+                    });
+                } else {
+                    // Mouse devices: single click (delayed) → increase velocity, double-click → set to 0
+                    let clickTimer = null;
+                    cell.addEventListener('click', () => {
+                        if (clickTimer) clearTimeout(clickTimer);
+                        clickTimer = setTimeout(() => {
+                            clickTimer = null;
+                            updateCallback(cell, row, col, increaseVelocity(drumPattern[row][col]));
+                        }, 220);
+                    });
+                    cell.addEventListener('dblclick', () => {
+                        if (clickTimer) { clearTimeout(clickTimer); clickTimer = null; }
+                        updateCallback(cell, row, col, 0);
+                    });
+                }
 
                 cell.addEventListener('contextmenu', (e) => e.preventDefault());
 

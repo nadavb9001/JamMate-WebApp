@@ -608,15 +608,7 @@ export const app = {
 
       (flatIdx, value) => {
         if (this.isUpdatingUI) return;
-        if (flatIdx === 0) {
-          this.effectStates[idx].enabled = (value !== 0);
-          View.updateEffectButtons(this.effectStates);
-        } else if (flatIdx <= K) {
-          this.effectParams[idx][`knob${flatIdx - 1}`] = value;
-        } else {
-          this.effectParams[idx][`dropdown${flatIdx - 1 - K}`] = value;
-        }
-        BLEService.send(Protocol.createParamUpdate(idx, flatIdx, value));
+        this.onEffectParamChanged(idx, flatIdx, value);
       },
 
       (b, en, f, g, q) => {
@@ -641,6 +633,180 @@ export const app = {
     if (!this.effectParams[idx]) this.effectParams[idx] = {};
     View.updateEffectButtons(this.effectStates);
     BLEService.send(Protocol.createParamUpdate(idx, 0, newState ? 1 : 0));
+  },
+
+  // ============================================================
+  // onEffectParamChanged — central handler for all effect param changes
+  // ============================================================
+  onEffectParamChanged(fxId, flatIdx, value) {
+    const tab = this.config.tabs[fxId];
+    const K   = tab.params.knobs.length;
+    if (!this.effectParams[fxId]) this.effectParams[fxId] = {};
+
+    // Enable checkbox
+    if (flatIdx === 0) {
+      this.effectStates[fxId].enabled = value !== 0;
+      View.updateEffectButtons(this.effectStates);
+      BLEService.send(Protocol.createParamUpdate(fxId, flatIdx, value));
+      return;
+    }
+
+    // Knob
+    if (flatIdx <= K) {
+      const kIndex = flatIdx - 1;
+      this.effectParams[fxId][`knob${kIndex}`] = value;
+
+      // Manual knob edit on RVRB → switch ReverbType to Custom
+      if (tab.short_name === 'RVRB') {
+        const typeDropdownIndex = tab.params.dropdowns.indexOf('ReverbType');
+        const customIndex = this.getDropdownOptionIndex('ReverbType', 'Custom');
+        if (typeDropdownIndex >= 0 && customIndex >= 0) {
+          this.effectParams[fxId][`dropdown${typeDropdownIndex}`] = customIndex;
+        }
+      }
+
+      BLEService.send(Protocol.createParamUpdate(fxId, flatIdx, value));
+      return;
+    }
+
+    // Dropdown
+    const dIndex       = flatIdx - 1 - K;
+    const dropdownName = tab.params.dropdowns[dIndex];
+    this.effectParams[fxId][`dropdown${dIndex}`] = value;
+
+    if (tab.short_name === 'RVRB' &&
+        (dropdownName === 'ReverbType' || dropdownName === 'ReverbEngine')) {
+      const typeDropdownIndex = tab.params.dropdowns.indexOf('ReverbType');
+      const typeIndex  = this.effectParams[fxId][`dropdown${typeDropdownIndex}`] || 0;
+      const typeName   = this.getDropdownOptionName('ReverbType', typeIndex);
+      if (typeName !== 'Custom') {
+        this.applyReverbTypePreset({ send: true });
+        return;
+      }
+    }
+
+    const presetConfig = this.config.presets && this.config.presets[tab.short_name];
+    if (presetConfig && presetConfig.triggerDropdown === dropdownName) {
+      if (this.applyBrandPreset(fxId)) return;
+    }
+
+    BLEService.send(Protocol.createParamUpdate(fxId, flatIdx, value));
+  },
+
+  // ============================================================
+  // Reverb preset helpers
+  // ============================================================
+  getEffectIndexByShortName(shortName) {
+    return this.config.tabs.findIndex(t => t.short_name === shortName);
+  },
+
+  getDropdownOptionIndex(dropdownName, optionName) {
+    const opts = this.config.dropdowns[dropdownName] || [];
+    return opts.indexOf(optionName);
+  },
+
+  getDropdownOptionName(dropdownName, index) {
+    const opts = this.config.dropdowns[dropdownName] || [];
+    return opts[index] || opts[0];
+  },
+
+  getReverbPreset(engineName, typeName) {
+    const root = this.config.presets && this.config.presets.RVRB;
+    if (!root || !root.byEngine) return null;
+    if (!root.byEngine[engineName]) return null;
+    return root.byEngine[engineName][typeName] || null;
+  },
+
+  applyReverbTypePreset({ send = true } = {}) {
+    const fxId = this.getEffectIndexByShortName('RVRB');
+    if (fxId < 0) return false;
+
+    const tab    = this.config.tabs[fxId];
+    const params = this.effectParams[fxId] || (this.effectParams[fxId] = {});
+    const K      = tab.params.knobs.length;
+
+    const engineDropdownIndex = tab.params.dropdowns.indexOf('ReverbEngine');
+    const typeDropdownIndex   = tab.params.dropdowns.indexOf('ReverbType');
+    if (engineDropdownIndex < 0 || typeDropdownIndex < 0) return false;
+
+    const engineIndex = params[`dropdown${engineDropdownIndex}`] || 0;
+    const typeIndex   = params[`dropdown${typeDropdownIndex}`]   || 0;
+    const engineName  = this.getDropdownOptionName('ReverbEngine', engineIndex);
+    const typeName    = this.getDropdownOptionName('ReverbType',   typeIndex);
+
+    if (typeName === 'Custom') {
+      if (send) this.sendEffectParams(fxId);
+      return true;
+    }
+
+    const preset = this.getReverbPreset(engineName, typeName);
+    if (!preset) return false;
+
+    tab.params.knobs.forEach((name, kIndex) => {
+      if (preset[name] !== undefined) {
+        params[`knob${kIndex}`] = Math.max(0, Math.min(100, Math.round(preset[name])));
+      }
+    });
+    params[`dropdown${engineDropdownIndex}`] = engineIndex;
+    params[`dropdown${typeDropdownIndex}`]   = typeIndex;
+
+    if (this.currentEffect === fxId) {
+      this.selectEffect(fxId);
+    }
+
+    if (send) this.sendEffectParams(fxId);
+    return true;
+  },
+
+  applyBrandPreset(fxId) {
+    const tab          = this.config.tabs[fxId];
+    const presetConfig = this.config.presets && this.config.presets[tab.short_name];
+    if (!presetConfig || !presetConfig.byBrand) return false;
+
+    const params = this.effectParams[fxId] || (this.effectParams[fxId] = {});
+
+    const triggerIndex = tab.params.dropdowns.indexOf(presetConfig.triggerDropdown);
+    if (triggerIndex < 0) return false;
+
+    const optionIndex = params[`dropdown${triggerIndex}`] || 0;
+    const optionName  = this.getDropdownOptionName(presetConfig.triggerDropdown, optionIndex);
+
+    const preset = presetConfig.byBrand[optionName];
+    if (!preset) return false;
+
+    // Apply knob values
+    tab.params.knobs.forEach((name, kIndex) => {
+      if (preset[name] !== undefined)
+        params[`knob${kIndex}`] = Math.max(0, Math.min(100, Math.round(preset[name])));
+    });
+
+    // Apply dropdown overrides (keys that match a dropdown name, e.g. dist_type)
+    tab.params.dropdowns.forEach((dropName, dIndex) => {
+      if (preset[dropName] !== undefined)
+        params[`dropdown${dIndex}`] = preset[dropName];
+    });
+
+    if (this.currentEffect === fxId) this.selectEffect(fxId);
+    this.sendEffectParams(fxId);
+    return true;
+  },
+
+  sendEffectParams(fxId) {
+    const tab    = this.config.tabs[fxId];
+    const params = this.effectParams[fxId] || {};
+    const state  = this.effectStates[fxId] || { enabled: false };
+    const K      = tab.params.knobs.length;
+    const D      = tab.params.dropdowns.length;
+
+    const flatValues = [state.enabled ? 1 : 0];
+    for (let k = 0; k < K; k++)
+      flatValues.push(params[`knob${k}`] !== undefined ? params[`knob${k}`] : 50);
+    for (let d = 0; d < D; d++)
+      flatValues.push(params[`dropdown${d}`] !== undefined ? params[`dropdown${d}`] : 0);
+
+    flatValues.forEach((value, flatIdx) => {
+      BLEService.send(Protocol.createParamUpdate(fxId, flatIdx, value));
+    });
   },
 
   // ============================================================

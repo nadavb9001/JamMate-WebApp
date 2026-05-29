@@ -179,7 +179,7 @@ export const APP_CONFIG = {
       "dsp_tag": "RVRB",
       "params": {
         "checkbox": "enable",
-        "knobs": ["level", "feedback", "damp", "dry", "wet", "freeze", "gain", "depth", "rate", "type"],
+        "knobs": ["level", "feedback", "damp", "dry", "wet", "tone", "predelay", "depth", "rate", "size"],
         "dropdowns": ["ReverbEngine", "ReverbType"]
       }
     },
@@ -229,6 +229,67 @@ export const APP_CONFIG = {
     "awah_filter":      ["LowPass","BandPass","HighPass"],
     "awah_mode":        ["Envelope","Humanizer"],
     "awah_direction":   ["Up","Down"]
+  },
+
+  "presets": {
+    "RVRB": {
+      "engineDropdown": "ReverbEngine",
+      "typeDropdown":   "ReverbType",
+      "knobs": ["level","feedback","damp","dry","wet","tone","predelay","depth","rate","size"],
+      "byEngine": {
+        "Freeverb": {
+          "Room":   { "level":100,"feedback":45,"damp":35,"dry":0,"wet":35,"tone":50,"predelay":5, "depth":0, "rate":0, "size":35 },
+          "Hall":   { "level":100,"feedback":65,"damp":40,"dry":0,"wet":45,"tone":55,"predelay":15,"depth":0, "rate":0, "size":60 },
+          "Plate":  { "level":100,"feedback":55,"damp":30,"dry":0,"wet":50,"tone":70,"predelay":20,"depth":0, "rate":0, "size":50 },
+          "Spring": { "level":100,"feedback":50,"damp":25,"dry":0,"wet":45,"tone":65,"predelay":8, "depth":0, "rate":0, "size":40 },
+          "Pads":   { "level":100,"feedback":80,"damp":50,"dry":0,"wet":60,"tone":60,"predelay":25,"depth":0, "rate":0, "size":80 }
+        },
+        "Dattorro": {
+          "Room":   { "level":100,"feedback":42,"damp":45,"dry":0,"wet":35,"tone":55,"predelay":5, "depth":8, "rate":8, "size":35 },
+          "Hall":   { "level":100,"feedback":70,"damp":42,"dry":0,"wet":45,"tone":58,"predelay":15,"depth":12,"rate":12,"size":65 },
+          "Plate":  { "level":100,"feedback":58,"damp":30,"dry":0,"wet":50,"tone":72,"predelay":20,"depth":10,"rate":10,"size":55 },
+          "Spring": { "level":100,"feedback":52,"damp":28,"dry":0,"wet":45,"tone":68,"predelay":10,"depth":18,"rate":18,"size":38 },
+          "Pads":   { "level":100,"feedback":86,"damp":52,"dry":0,"wet":60,"tone":62,"predelay":28,"depth":18,"rate":16,"size":85 }
+        },
+        "FDN": {
+          "Room":   { "level":100,"feedback":38,"damp":38,"dry":0,"wet":35,"tone":50,"predelay":5, "depth":8, "rate":8, "size":35 },
+          "Hall":   { "level":100,"feedback":70,"damp":40,"dry":0,"wet":45,"tone":55,"predelay":20,"depth":18,"rate":12,"size":65 },
+          "Plate":  { "level":100,"feedback":58,"damp":30,"dry":0,"wet":50,"tone":68,"predelay":18,"depth":12,"rate":10,"size":50 },
+          "Spring": { "level":100,"feedback":48,"damp":25,"dry":0,"wet":45,"tone":62,"predelay":8, "depth":22,"rate":20,"size":35 },
+          "Pads":   { "level":100,"feedback":88,"damp":48,"dry":0,"wet":62,"tone":58,"predelay":30,"depth":28,"rate":16,"size":90 }
+        },
+        "Lux": {
+          "Room":   { "level":100,"feedback":45,"damp":35,"dry":0,"wet":38,"tone":52,"predelay":6, "depth":8, "rate":10,"size":35 },
+          "Hall":   { "level":100,"feedback":68,"damp":36,"dry":0,"wet":48,"tone":58,"predelay":22,"depth":16,"rate":22,"size":55 },
+          "Plate":  { "level":100,"feedback":56,"damp":28,"dry":0,"wet":52,"tone":72,"predelay":18,"depth":10,"rate":18,"size":48 },
+          "Spring": { "level":100,"feedback":52,"damp":22,"dry":0,"wet":45,"tone":68,"predelay":10,"depth":18,"rate":28,"size":38 },
+          "Pads":   { "level":100,"feedback":88,"damp":45,"dry":0,"wet":65,"tone":62,"predelay":32,"depth":24,"rate":18,"size":85 }
+        }
+      }
+    },
+
+    "OVRD": {
+      "triggerDropdown": "ovrd_brand",
+      "knobs": ["level","drive","type","PreLPF","PreHPF","PostLPF","PostHPF","midFreq","Mid","Blend"],
+      "byBrand": {
+        "TubeScreamer": { "level":70,"drive":55,"type":50,"PreLPF":70,"PreHPF":18,"PostLPF":75,"PostHPF":15,"midFreq":55,"Mid":70,"Blend":100, "dist_type":1 },
+        "Blues Driver": { "level":70,"drive":45,"type":45,"PreLPF":85,"PreHPF":15,"PostLPF":85,"PostHPF":12,"midFreq":45,"Mid":50,"Blend":100, "dist_type":0 },
+        "Klon":         { "level":75,"drive":30,"type":60,"PreLPF":90,"PreHPF":10,"PostLPF":90,"PostHPF":8, "midFreq":55,"Mid":55,"Blend":65,  "dist_type":1 },
+        "ODR1":         { "level":70,"drive":50,"type":52,"PreLPF":80,"PreHPF":18,"PostLPF":82,"PostHPF":14,"midFreq":48,"Mid":60,"Blend":100, "dist_type":5 }
+      }
+    },
+
+    "DIST": {
+      "triggerDropdown": "dist_brand",
+      "knobs": ["level","drive","type","PreLPF","PreHPF","PostLPF","PostHPF","midFreq","Mid","blend"],
+      "byBrand": {
+        "Rat":      { "level":70,"drive":75,"type":50,"PreLPF":65,"PreHPF":28,"PostLPF":60,"PostHPF":22,"midFreq":42,"Mid":48,"blend":100, "dist_type":2 },
+        "DS2":      { "level":70,"drive":80,"type":55,"PreLPF":65,"PreHPF":30,"PostLPF":65,"PostHPF":25,"midFreq":48,"Mid":45,"blend":100, "dist_type":6 },
+        "MetalZone":{ "level":70,"drive":88,"type":65,"PreLPF":58,"PreHPF":35,"PostLPF":58,"PostHPF":30,"midFreq":32,"Mid":20,"blend":100, "dist_type":3 },
+        "MXR+":     { "level":70,"drive":65,"type":50,"PreLPF":72,"PreHPF":22,"PostLPF":72,"PostHPF":18,"midFreq":50,"Mid":55,"blend":100, "dist_type":2 },
+        "BigMuff":  { "level":70,"drive":90,"type":52,"PreLPF":68,"PreHPF":20,"PostLPF":65,"PostHPF":15,"midFreq":35,"Mid":35,"blend":100, "dist_type":4 }
+      }
+    }
   }
 };
 

@@ -19,6 +19,8 @@ export const BLEService = {
     onStatusChange: null,
     onDataReceived: null,
 
+    _keepAliveTimer: null,
+
     async connect() {
         if (!navigator.bluetooth) {
             alert("Web Bluetooth not supported.");
@@ -62,10 +64,17 @@ export const BLEService = {
 
         this.isConnected = true;
         this._setStatus('connected');
-        
+
         // Handshake
         console.log("[BLE] Requesting state...");
         this.send(Protocol.createGetState());
+
+        // Keep-alive: prevents Windows BLE adapter from suspending idle connections
+        this._keepAliveTimer = setInterval(() => {
+            if (this.isConnected) {
+                this.send(Protocol.createGetState()).catch(() => {});
+            }
+        }, 10000);
     },
 
     async disconnect() {
@@ -98,6 +107,12 @@ export const BLEService = {
     },
 
     _handleDisconnect() {
+        // Stop keep-alive
+        if (this._keepAliveTimer) {
+            clearInterval(this._keepAliveTimer);
+            this._keepAliveTimer = null;
+        }
+
         // Clear handles (But keep this.device if we want to reconnect)
         this.server = null;
         this.characteristic = null;

@@ -166,7 +166,10 @@ export const BLEService = {
 
     _handleData(event) {
         const incoming = new Uint8Array(event.target.value.buffer);
-        
+
+        // Ignore ESP-side heartbeat
+        if (incoming.length === 1 && incoming[0] === 0xFF) return;
+
         // --- REASSEMBLY LOGIC ---
 
         // Case 1: We are already building a packet

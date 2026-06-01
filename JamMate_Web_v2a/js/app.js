@@ -943,8 +943,23 @@ export const app = {
   setupGlobalListeners() {
     const btnTheme = document.getElementById('btnTheme');
     if (btnTheme) {
+      const THEMES = [
+        { cls: '',               label: '🌑 Dark'    },
+        { cls: 'light-theme',   label: '☀️ Light'   },
+        { cls: 'vintage-theme', label: '🍂 Vintage' },
+        { cls: 'color-theme',   label: '🎨 Color'   },
+      ];
+      let themeIdx = 0;
+      const applyTheme = (idx) => {
+        THEMES.forEach(t => { if (t.cls) document.body.classList.remove(t.cls); });
+        if (THEMES[idx].cls) document.body.classList.add(THEMES[idx].cls);
+        btnTheme.textContent = THEMES[idx].label;
+      };
+      applyTheme(0);
       btnTheme.onclick = () => {
-        document.body.classList.toggle('light-theme');
+        themeIdx = (themeIdx + 1) % THEMES.length;
+        applyTheme(themeIdx);
+        document.querySelectorAll('.knob').forEach(el => el.knob?.draw());
         if (this.iirDesigner) this.iirDesigner.draw();
       };
     }

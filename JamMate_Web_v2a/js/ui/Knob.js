@@ -39,12 +39,22 @@ export class Knob {
     const sweep = 1.52 * Math.PI;
     const angle = start + t * sweep;
 
+    const cs = getComputedStyle(document.body);
+    const arcA    = cs.getPropertyValue('--knob-arc-a').trim()    || '#bf7dff';
+    const arcB    = cs.getPropertyValue('--knob-arc-b').trim()    || '#7cf7ff';
+    const arcC    = cs.getPropertyValue('--knob-arc-c').trim()    || '#72ff98';
+    const glow    = cs.getPropertyValue('--knob-glow').trim()     || 'rgba(124,247,255,.65)';
+    const haloA   = cs.getPropertyValue('--knob-halo-a').trim()   || 'rgba(124,247,255,.16)';
+    const haloB   = cs.getPropertyValue('--knob-halo-b').trim()   || 'rgba(191,125,255,.07)';
+    const bezelHi = cs.getPropertyValue('--knob-bezel-hi').trim() || '#89a8bd';
+    const faceHi  = cs.getPropertyValue('--knob-face-hi').trim()  || '#d8edf0';
+
     ctx.clearRect(0, 0, w, h);
 
     // halo / shadow
     const halo = ctx.createRadialGradient(cx, cy, 8, cx, cy, 44);
-    halo.addColorStop(0, 'rgba(124,247,255,0.16)');
-    halo.addColorStop(0.62, 'rgba(191,125,255,0.07)');
+    halo.addColorStop(0, haloA);
+    halo.addColorStop(0.62, haloB);
     halo.addColorStop(1, 'rgba(0,0,0,0)');
     ctx.fillStyle = halo;
     ctx.beginPath();
@@ -54,7 +64,7 @@ export class Knob {
     // outer bezel
     const bezel = ctx.createLinearGradient(cx - outer, cy - outer, cx + outer, cy + outer);
     bezel.addColorStop(0, '#33465c');
-    bezel.addColorStop(0.16, '#89a8bd');
+    bezel.addColorStop(0.16, bezelHi);
     bezel.addColorStop(0.34, '#182332');
     bezel.addColorStop(0.7, '#070b11');
     bezel.addColorStop(1, '#3b4b5f');
@@ -65,7 +75,7 @@ export class Knob {
 
     // face
     const face = ctx.createRadialGradient(cx - 11, cy - 13, 3, cx, cy, inner + 8);
-    face.addColorStop(0, '#d8edf0');
+    face.addColorStop(0, faceHi);
     face.addColorStop(0.08, '#6e8797');
     face.addColorStop(0.38, '#1d2b39');
     face.addColorStop(0.72, '#0d141d');
@@ -85,11 +95,11 @@ export class Knob {
 
     // value arc
     const arc = ctx.createLinearGradient(cx - 35, cy + 30, cx + 35, cy - 32);
-    arc.addColorStop(0, '#bf7dff');
-    arc.addColorStop(0.45, '#7cf7ff');
-    arc.addColorStop(1, '#72ff98');
+    arc.addColorStop(0, arcA);
+    arc.addColorStop(0.45, arcB);
+    arc.addColorStop(1, arcC);
     ctx.strokeStyle = arc;
-    ctx.shadowColor = 'rgba(124,247,255,0.65)';
+    ctx.shadowColor = glow;
     ctx.shadowBlur = 8;
     ctx.beginPath();
     ctx.arc(cx, cy, inner, start, angle);
@@ -107,7 +117,7 @@ export class Knob {
     // center cap
     const cap = ctx.createRadialGradient(cx - 4, cy - 5, 1, cx, cy, 11);
     cap.addColorStop(0, '#ffffff');
-    cap.addColorStop(0.2, '#bfeef4');
+    cap.addColorStop(0.2, faceHi);
     cap.addColorStop(1, '#192533');
     ctx.fillStyle = cap;
     ctx.beginPath();

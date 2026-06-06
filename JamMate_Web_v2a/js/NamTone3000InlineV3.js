@@ -254,14 +254,12 @@ async function doSearch(page = 1) {
   }
 
   state.page = page;
-  const nanoOnly = $('namNanoOnly')?.checked ?? true;
-  const sizes = nanoOnly ? 'nano' : '';
 
   renderEmpty('Searching TONE3000…');
   showInfo(`<strong>Searching TONE3000 NAM models…</strong><small>${esc(state.query || 'Popular models')} · page ${page}</small>`);
 
   try {
-    const data = await NamLoader.search(state.query, page, state.sort, sizes);
+    const data = await NamLoader.search(state.query, page, state.sort);
     const tones = normalizeTones(data);
     state.total = Number(data?.total ?? tones.length ?? 0);
 

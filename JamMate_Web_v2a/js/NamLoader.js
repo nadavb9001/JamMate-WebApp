@@ -1979,31 +1979,36 @@ export const NamLoader = {
       `Transferring ${weightCount} weights (${Math.round(total / 1024)}KB)…`
     );
 
-    let ackWait = this._waitForAck(Protocol.CMD.NAM_HEADER_ACK);
-    await BLEService.send(Protocol.createNamStart(weightCount, csum, name));
-    await ackWait;
-
-    for (let i = 0; i < nchunks; i++) {
-      const slice = bytes.slice(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE);
-
-      // Arm ACK before the write, then await the write. This avoids losing a
-      // fast ESP notification and keeps the browser BLE queue flow-controlled.
-      ackWait = this._waitForAck(Protocol.CMD.NAM_CHUNK_ACK, i);
-      await BLEService.send(Protocol.createNamChunk(i, slice));
+    BLEService._pingBlocked = true;
+    try {
+      let ackWait = this._waitForAck(Protocol.CMD.NAM_HEADER_ACK);
+      await BLEService.send(Protocol.createNamStart(weightCount, csum, name));
       await ackWait;
 
-      onProgress(
-        42 + Math.round(((i + 1) / nchunks) * 50),
-        `Weights chunk ${i + 1}/${nchunks}`
-      );
+      for (let i = 0; i < nchunks; i++) {
+        const slice = bytes.slice(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE);
 
-      await sleep(8);
+        // Arm ACK before the write, then await the write. This avoids losing a
+        // fast ESP notification and keeps the browser BLE queue flow-controlled.
+        ackWait = this._waitForAck(Protocol.CMD.NAM_CHUNK_ACK, i);
+        await BLEService.send(Protocol.createNamChunk(i, slice));
+        await ackWait;
+
+        onProgress(
+          42 + Math.round(((i + 1) / nchunks) * 50),
+          `Weights chunk ${i + 1}/${nchunks}`
+        );
+
+        await sleep(8);
+      }
+
+      ackWait = this._waitForAck(Protocol.CMD.NAM_DONE_ACK);
+      await BLEService.send(Protocol.createNamEnd());
+      onProgress(94, 'Waiting for device CRC…');
+      await ackWait;
+    } finally {
+      BLEService._pingBlocked = false;
     }
-
-    ackWait = this._waitForAck(Protocol.CMD.NAM_DONE_ACK);
-    await BLEService.send(Protocol.createNamEnd());
-    onProgress(94, 'Waiting for device CRC…');
-    await ackWait;
 
     const details = makeTransferDetails(
       name,

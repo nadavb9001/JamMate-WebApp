@@ -18,6 +18,7 @@ import { APP_CONFIG, buildFlatParams } from '../config.js';
 
 export const Protocol = {
   CMD: {
+    PING:                0x01,
     SET_PARAM:           0x20,
     SET_TOGGLE:          0x21,   // legacy; prefer SET_PARAM idx=0
     SET_EQ_BAND:         0x22,
@@ -59,6 +60,10 @@ export const Protocol = {
     const buffer = new ArrayBuffer(1);
     new DataView(buffer).setUint8(0, cmdId);
     return buffer;
+  },
+
+  createPing() {
+    return this.createSystemPacket(this.CMD.PING);
   },
 
   createSDCardReadCommand() {

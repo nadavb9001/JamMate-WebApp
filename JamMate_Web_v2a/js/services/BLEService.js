@@ -20,6 +20,7 @@ export const BLEService = {
     onDataReceived: null,
 
     _keepAliveTimer: null,
+    _pingBlocked: false,
 
     async connect() {
         if (!navigator.bluetooth) {
@@ -71,8 +72,8 @@ export const BLEService = {
 
         // Keep-alive: prevents Windows BLE adapter from suspending idle connections
         this._keepAliveTimer = setInterval(() => {
-            if (this.isConnected) {
-                this.send(Protocol.createGetState()).catch(() => {});
+            if (this.isConnected && !this.isSyncing && !this._pingBlocked) {
+                this.send(Protocol.createPing()).catch(() => {});
             }
         }, 10000);
     },

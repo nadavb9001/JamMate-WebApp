@@ -66,9 +66,11 @@ export const BLEService = {
         this.isConnected = true;
         this._setStatus('connected');
 
-        // Handshake
-        console.log("[BLE] Requesting state...");
-        this.send(Protocol.createGetState());
+        // Handshake — skip if NAM transfer in progress to avoid triggering rxBuffer assembly
+        if (!this._pingBlocked) {
+            console.log("[BLE] Requesting state...");
+            this.send(Protocol.createGetState());
+        }
 
         // Keep-alive: prevents Windows BLE adapter from suspending idle connections
         this._keepAliveTimer = setInterval(() => {
@@ -170,6 +172,13 @@ export const BLEService = {
 
         // Ignore ESP-side heartbeat
         if (incoming.length === 1 && incoming[0] === 0xFF) return;
+
+        // NAM ACKs must never be swallowed by rxBuffer assembly
+        const cmd0 = incoming[0];
+        if (cmd0 === 0x71 || cmd0 === 0x73 || cmd0 === 0x76) {
+            if (this.onDataReceived) this.onDataReceived(event.target.value);
+            return;
+        }
 
         // --- REASSEMBLY LOGIC ---
 

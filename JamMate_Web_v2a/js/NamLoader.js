@@ -544,7 +544,7 @@
 //     if (bar) bar.style.width = pct + '%';
 //     if (msgEl) msgEl.textContent = msg;
 //     if (this._options.onProgress) this._options.onProgress(pct, msg);
-//     if (pct >= 100) setTimeout(() => { if (panel) panel.style.display = 'none'; }, 1500);
+//     if (pct >= 100 || pct === 0) setTimeout(() => { if (panel) panel.style.display = 'none'; }, 2500);
 //   },
 
 //   _handleDone(ok, msg, details) {
@@ -1554,7 +1554,7 @@ export const NamLoader = {
     if (bar) bar.style.width = pct + '%';
     if (msgEl) msgEl.textContent = msg;
     if (this._options.onProgress) this._options.onProgress(pct, msg);
-    if (pct >= 100) setTimeout(() => { if (panel) panel.style.display = 'none'; }, 1500);
+    if (pct >= 100 || pct === 0) setTimeout(() => { if (panel) panel.style.display = 'none'; }, 2500);
   },
 
   _handleDone(ok, msg, details) {

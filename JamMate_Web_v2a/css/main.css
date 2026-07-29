@@ -446,3 +446,45 @@ body.easy-popup-open #easyEffectPopup {
   border-color: rgba(124,247,255,.45) !important;
   box-shadow: inset 0 1px 18px rgba(0,0,0,.25), 0 0 22px rgba(124,247,255,.11) !important;
 }
+
+/* =========================================================
+   4-knob-per-row overrides — beats the repeat(3,1fr) defaults above
+   ========================================================= */
+#generatedKnobs,
+#generatedKnobs.knobs-grid,
+.solo-effect-container #generatedKnobs,
+.solo-effect-overlay #generatedKnobs {
+  grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+  gap: 6px !important;
+}
+/* Shrink containers so 4 fit */
+#generatedKnobs .knob-container {
+  min-width: 0 !important;
+  min-height: 0 !important;
+  padding: 4px !important;
+}
+/* Knob div: fill container, cap at 68px */
+#generatedKnobs .knob {
+  width: 100% !important;
+  max-width: 68px !important;
+  height: auto !important;
+  flex: none !important;
+  aspect-ratio: 1 !important;
+}
+/* Canvas: override the 90px!important rule */
+#generatedKnobs .knob canvas,
+#generatedKnobs .knob-canvas {
+  width: 100% !important;
+  height: 100% !important;
+}
+
+/* =========================================================
+   NAM results: single-line rows
+   ========================================================= */
+#namGrid.nam-v3-grid {
+  display: flex !important;
+  flex-direction: column !important;
+  grid-template-columns: none !important;
+  min-height: 0 !important;
+  gap: 4px !important;
+}

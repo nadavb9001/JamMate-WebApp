@@ -1510,6 +1510,7 @@ export const NamLoader = {
   _renderGrid(tones) {
     const grid = document.getElementById('namGrid');
     if (!grid) return;
+    grid.classList.add('nam-v3-grid');
     grid.innerHTML = '';
 
     if (!tones.length) {
@@ -1523,9 +1524,9 @@ export const NamLoader = {
       const author = tone.user?.username || tone.author_username || '';
       const dl = (tone.downloads || tone.download_count || 0).toLocaleString();
       card.innerHTML = `
-        <div class="nam-v3-card-title">${tone.title || tone.name || 'Unnamed'}</div>
-        <div class="nam-v3-meta">@${author} · ⬇ ${dl}</div>
-        <button class="btn-nam-action" style="width:100%">Send to Device</button>
+        <div class="nam-v3-card-title" title="${tone.title || tone.name || 'Unnamed'}">${tone.title || tone.name || 'Unnamed'}</div>
+        <div class="nam-v3-meta">${author ? `@${author} · ` : ''}⬇ ${dl}</div>
+        <button class="nam-v3-send">Send</button>
       `;
       card.querySelector('button').addEventListener('click', async () => {
         if (!BLEService.isConnected) { alert('Connect BLE first'); return; }

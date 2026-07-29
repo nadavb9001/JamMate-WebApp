@@ -63,35 +63,43 @@ function injectStyle() {
       background: rgba(255,70,70,.13);
     }
     .nam-v3-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
-      gap: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
       margin-top: 10px;
     }
     .nam-v3-card {
-      padding: 12px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 10px;
       border: 1px solid var(--color-border, rgba(255,255,255,.14));
-      border-radius: 12px;
+      border-radius: 8px;
       background: rgba(0,0,0,.16);
       min-width: 0;
     }
     .nam-v3-card-title {
-      font-weight: 800;
-      margin-bottom: 5px;
+      font-weight: 700;
+      font-size: 13px;
+      flex: 1 1 0;
+      min-width: 0;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
     }
     .nam-v3-meta {
       color: var(--color-text-secondary, #aaa);
-      font-size: 12px;
-      margin-bottom: 10px;
+      font-size: 11px;
+      white-space: nowrap;
+      flex-shrink: 0;
     }
     .nam-v3-send {
-      width: 100%;
-      min-height: 34px;
-      border-radius: 9px;
+      flex-shrink: 0;
+      padding: 4px 10px;
+      min-height: 28px;
+      border-radius: 7px;
       cursor: pointer;
+      font-size: 12px;
     }
     .nam-v3-send[disabled] { opacity: .6; cursor: wait; }
   `;
@@ -197,10 +205,8 @@ function renderCards(tones) {
     card.className = 'nam-v3-card';
     card.innerHTML = `
       <div class="nam-v3-card-title" title="${esc(title)}">${esc(title)}</div>
-      <div class="nam-v3-meta">
-        ${author ? `@${esc(author)} · ` : ''}${esc(gear)} · ${esc(sizes)} · ⬇ ${Number(downloads || 0).toLocaleString()}
-      </div>
-      <button type="button" class="nam-v3-send">Send to Device</button>
+      <div class="nam-v3-meta">${author ? `@${esc(author)} · ` : ''}${esc(gear) ? `${esc(gear)} · ` : ''}${esc(sizes)} · ⬇ ${Number(downloads || 0).toLocaleString()}</div>
+      <button type="button" class="nam-v3-send">Send</button>
     `;
 
     card.querySelector('.nam-v3-send').addEventListener('click', async () => {

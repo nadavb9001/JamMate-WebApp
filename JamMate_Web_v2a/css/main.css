@@ -224,8 +224,8 @@ body.color-theme .effect-btn:hover:not(.enabled) {
   grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)) !important;
 }
 .easy-effect-shell #generatedKnobs {
-  grid-template-columns: repeat(auto-fit, minmax(112px, 1fr)) !important;
-  gap: 11px !important;
+  grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+  gap: 6px !important;
 }
 .easy-effect-shell .solo-effect-title {
   padding-right: 44px !important;

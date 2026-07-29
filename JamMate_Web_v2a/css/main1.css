@@ -457,19 +457,45 @@ body.light-theme #statusMessage {
    Easy Mode Popup - 3-Column Knob Grid
    ======================================== */
 
-/* Default knobs grid (normal effect controls) */
+/* Default knobs grid (normal effect controls) — 4 per row */
 #generatedKnobs.knobs-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(85px, 1fr));
-  gap: 10px 12px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px 8px;
   margin-top: 12px;
 }
 
-/* Easy Mode Popup - Force 3 Columns (tight) */
+/* Constrain knob size so 4 fit comfortably */
+#generatedKnobs .knob-container .knob {
+  max-width: 68px;
+  max-height: 68px;
+  width: 100%;
+  aspect-ratio: 1;
+}
+#generatedKnobs .knob-container .knob canvas {
+  width: 100%;
+  height: 100%;
+}
+#generatedKnobs .knob-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 0;
+}
+#generatedKnobs .knob-label {
+  font-size: 10px;
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+/* Easy Mode Popup - Force 4 Columns */
 .solo-effect-overlay #generatedKnobs.knobs-grid,
 .solo-effect-container #generatedKnobs.knobs-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   column-gap: 4px;
   row-gap: 4px;
   margin-top: 8px;
@@ -489,7 +515,7 @@ body.light-theme #statusMessage {
 }
 
 .solo-effect-container .knob-label {
-  font-size: 11px;
+  font-size: 10px;
   margin-top: 2px;
   white-space: nowrap;
   overflow: hidden;

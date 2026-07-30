@@ -1399,17 +1399,65 @@ export const NamLoader = {
     this._injectStyle();
     this._patchControls();
 
-    // Check for OAuth callback
+    // If we're inside the OAuth popup, relay params to parent and close
+    if (window.opener && !window.opener.closed) {
+      const popupParams = new URLSearchParams(window.location.search);
+      if (popupParams.get('code') || popupParams.get('error') || popupParams.get('canceled')) {
+        window.opener.postMessage(
+          { type: 't3k_callback', search: window.location.search },
+          window.location.origin
+        );
+        window.close();
+        return;
+      }
+    }
+
+    // Listen for OAuth callback from popup (main window only)
+    if (!this._oauthListenerAttached) {
+      this._oauthListenerAttached = true;
+      window.addEventListener('message', (evt) => {
+        if (evt.origin !== window.location.origin) return;
+        if (evt.data?.type !== 't3k_callback') return;
+        const params = new URLSearchParams(evt.data.search);
+        this.handleCallback(
+          params,
+          (p, m) => this._updateUIProgress(p, m),
+          (ok, msg, d) => {
+            this._handleDone(ok, msg, d);
+            document.querySelector('[data-tab="nam"]')?.click();
+          }
+        );
+      });
+    }
+
+    // Fallback: handle OAuth callback via redirect (popup was blocked)
     const params = new URLSearchParams(window.location.search);
     if (params.get('code') || params.get('error') || params.get('canceled')) {
-      this.handleCallback(params, 
-        (p, m) => this._updateUIProgress(p, m), 
-        (ok, msg, d) => this._handleDone(ok, msg, d)
+      this.handleCallback(params,
+        (p, m) => this._updateUIProgress(p, m),
+        (ok, msg, d) => {
+          this._handleDone(ok, msg, d);
+          document.querySelector('[data-tab="nam"]')?.click();
+        }
       );
     }
 
     this._refreshAuthUI();
     if (this.isAuthed()) this._doSearch(1);
+  },
+
+  _openOAuthPopup(url) {
+    const w = 520, h = 680;
+    const left = Math.round(screen.width / 2 - w / 2);
+    const top  = Math.round(screen.height / 2 - h / 2);
+    const popup = window.open(
+      url, 't3k_auth',
+      `width=${w},height=${h},left=${left},top=${top},menubar=no,toolbar=no,location=yes`
+    );
+    if (!popup || popup.closed) {
+      window.location.href = url;
+    }
+    return popup;
   },
 
   _injectStyle() {
@@ -1704,7 +1752,7 @@ export const NamLoader = {
       state,
     });
 
-    window.location.href = `${T3K_BASE}/oauth/authorize?${params}`;
+    this._openOAuthPopup(`${T3K_BASE}/oauth/authorize?${params}`);
   },
 
   async startSelect() {
@@ -1728,7 +1776,7 @@ export const NamLoader = {
       menubar: 'false',
     });
 
-    window.location.href = `${T3K_BASE}/oauth/authorize?${params}`;
+    this._openOAuthPopup(`${T3K_BASE}/oauth/authorize?${params}`);
   },
 
   async handleCallback(searchParams, onProgress, onDone) {

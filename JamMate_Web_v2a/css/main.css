@@ -479,7 +479,7 @@ body.easy-popup-open #easyEffectPopup {
 }
 
 /* =========================================================
-   NAM results: single-line rows
+   NAM results: single-line rows, full app width
    ========================================================= */
 #namGrid.nam-v3-grid {
   display: flex !important;
@@ -487,4 +487,22 @@ body.easy-popup-open #easyEffectPopup {
   grid-template-columns: none !important;
   min-height: 0 !important;
   gap: 4px !important;
+  width: 100% !important;
+  box-sizing: border-box !important;
+}
+#namGrid.nam-v3-grid .nam-v3-card {
+  width: 100% !important;
+  box-sizing: border-box !important;
+}
+
+/* =========================================================
+   FIR effect: ir_file dropdown spans full width
+   ========================================================= */
+#generatedDropdowns > div:last-child:nth-child(odd) {
+  grid-column: 1 / -1;
+}
+/* Also stretch the select inside to fill */
+#generatedDropdowns > div:last-child:nth-child(odd) select,
+#generatedDropdowns > div:last-child:nth-child(odd) .csel-trigger {
+  width: 100% !important;
 }

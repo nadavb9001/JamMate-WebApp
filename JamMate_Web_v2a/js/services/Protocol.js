@@ -38,7 +38,9 @@ export const Protocol = {
     SET_UART_CTRL:       0x44,  // UART link on/off (ESP-only, no DSP packet)
     NAM_LIST_DATA:       0x45,
     IR_LIST_DATA:        0x46,
-    UPDATE_CONFIG:       0x50,   // NEW: upload config layout to ESP LittleFS
+    UPDATE_CONFIG:       0x50,   // legacy: [[k,d],...] counts-only upload
+    UPDATE_CONFIG_CHUNK: 0x52,  // chunked full-name config upload
+    CONFIG_CHUNK_ACK:   0x53,  // ESP→webapp ACK for each chunk
     FLASH_DSP:           0x60,
     RESET_DSP:           0x61,
     CMD_START_MIDI_SCAN: 0x62,
@@ -223,32 +225,74 @@ export const Protocol = {
   },
 
   // ----------------------------------------------------------------
-  // UPDATE_CONFIG (CMD 0x50) — send FX layout to ESP, saved as /config.json
+  // buildConfigText — build pipe-delimited config text for ESP /config.json
   //
-  // ESP C parser expects a compact array-of-pairs with NO object keys:
-  //   [[5,0],[8,0],[9,3],[10,2],...] — 18 pairs of [knobCount, dropCount]
+  // Format (one effect per line):
+  //   shortName|knob0,knob1,...|drop0,drop1,...|opts_g0_0:opts_g0_1:...;opts_g1_0:...
   //
-  // This is intentionally simpler than the old object schema so the ESP
-  // can parse it without ArduinoJson using plain String.indexOf().
-  //
-  // Also aliased as createConfigPacket() for back-compat.
+  // Field separators: | between fields, , between names, : between options,
+  // ; between dropdown option groups.  None of these chars appear in labels.
+  // ---------------------------------------------------------------
+  buildConfigText(config) {
+    const tabs = config.tabs || [];
+    const drops = config.dropdowns || {};
+    const esc = (s, bad) => String(s).replace(new RegExp(`[${bad}]`, 'g'), '_');
+
+    return tabs.map(tab => {
+      const name      = esc(tab.short_name || '', '|\\n');
+      const knobStr   = (tab.params.knobs     || []).map(k => esc(k, '|,;:\\n')).join(',');
+      const dropStr   = (tab.params.dropdowns || []).map(d => esc(d, '|,;:\\n')).join(',');
+      const optsStr   = (tab.params.dropdowns || []).map(dname => {
+        const opts = drops[dname] || [];
+        return opts.map(o => esc(o, '|,;:\\n')).join(':');
+      }).join(';');
+      return `${name}|${knobStr}|${dropStr}|${optsStr}`;
+    }).join('\n');
+  },
+
+  // ----------------------------------------------------------------
+  // createConfigChunk — one 0x52 packet for the chunked upload
+  //   textBytes: Uint8Array of the full config text
+  //   chunkIdx:  0-based chunk counter
+  //   offset:    byte offset into textBytes for this chunk
+  //   chunkSize: max bytes of text data per chunk
+  // Returns { packet, isLast, nextOffset }
+  // ---------------------------------------------------------------
+  createConfigChunk(textBytes, chunkIdx, offset, chunkSize = 480) {
+    const end    = Math.min(offset + chunkSize, textBytes.length);
+    const data   = textBytes.slice(offset, end);
+    const isLast = end >= textBytes.length ? 1 : 0;
+
+    const payload = new Uint8Array(3 + data.length); // chunkIdx16LE + isLast8 + data
+    payload[0] = chunkIdx & 0xFF;
+    payload[1] = (chunkIdx >> 8) & 0xFF;
+    payload[2] = isLast;
+    payload.set(data, 3);
+
+    const pkt = new Uint8Array(3 + payload.length);
+    pkt[0] = this.CMD.UPDATE_CONFIG_CHUNK;
+    pkt[1] = payload.length & 0xFF;
+    pkt[2] = (payload.length >> 8) & 0xFF;
+    pkt.set(payload, 3);
+
+    return { packet: pkt, isLast, nextOffset: end };
+  },
+
+  // ----------------------------------------------------------------
+  // UPDATE_CONFIG (CMD 0x50) — legacy counts-only upload, kept for back-compat
   // ---------------------------------------------------------------
   createConfigUpload(config) {
-    // Build [[knobs, drops], ...] for every tab in order
     const layout    = (config.tabs || []).map(tab => [
       (tab.params.knobs     || []).length,
       (tab.params.dropdowns || []).length,
     ]);
     const json      = JSON.stringify(layout);
     const jsonBytes = new TextEncoder().encode(json);
-
     const buf = new Uint8Array(3 + jsonBytes.length);
-    buf[0] = this.CMD.UPDATE_CONFIG;   // 0x50
+    buf[0] = this.CMD.UPDATE_CONFIG;
     buf[1] = jsonBytes.length & 0xFF;
     buf[2] = (jsonBytes.length >> 8) & 0xFF;
     buf.set(jsonBytes, 3);
-
-    console.log('[Protocol] createConfigUpload:', json);
     return buf;
   },
 

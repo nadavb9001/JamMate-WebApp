@@ -929,12 +929,24 @@ export const app = {
   },
 
   // ============================================================
-  // sendConfigUpdate
+  // sendConfigUpdate — chunked full-name config upload (0x52 packets)
   // ============================================================
-  sendConfigUpdate() {
+  async sendConfigUpdate() {
     View.updateStatus('Uploading config...');
-    BLEService.send(Protocol.createConfigUpload(this.config));
-    View.updateStatus('Config upload sent');
+    const text      = Protocol.buildConfigText(this.config);
+    const textBytes = new TextEncoder().encode(text);
+    const CHUNK     = 480;
+    const total     = Math.ceil(textBytes.length / CHUNK);
+    let offset = 0, idx = 0;
+    while (offset < textBytes.length) {
+      const { packet, isLast, nextOffset } = Protocol.createConfigChunk(textBytes, idx, offset, CHUNK);
+      await BLEService.send(packet);
+      View.updateStatus(`Config chunk ${idx + 1}/${total}`);
+      offset = nextOffset;
+      idx++;
+      if (!isLast) await new Promise(r => setTimeout(r, 40));
+    }
+    View.updateStatus('Config uploaded — ' + textBytes.length + ' bytes in ' + total + ' chunks');
   },
 
   // ============================================================
@@ -974,9 +986,9 @@ export const app = {
 
     const btnUpdateConfig = document.getElementById('btnUpdateConfig');
     if (btnUpdateConfig) {
-      btnUpdateConfig.onclick = () => {
+      btnUpdateConfig.onclick = async () => {
         if (!BLEService.isConnected) { View.updateStatus('Not connected — connect first'); return; }
-        if (confirm('Upload current config.js to ESP?')) this.sendConfigUpdate();
+        if (confirm('Upload current config.js to ESP?')) await this.sendConfigUpdate();
       };
     }
 

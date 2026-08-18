@@ -80,7 +80,7 @@ export const APP_CONFIG = {
       "params": {
         "checkbox": "enable",
         "knobs": ["Level", "Dry", "Wet1", "Wet2", "ArpegRate","Gate","Glide"],
-        "dropdowns": ["Scale", "Mode", "Harm1", "Harm2","Arpg","Synth"]
+        "dropdowns": ["Scale", "Mode", "Harm1", "Harm2","Arpg","arpg_mode"]
       }
     },
     {
@@ -228,7 +228,8 @@ export const APP_CONFIG = {
     "ir_file":          ["1","2","3"],
     "awah_filter":      ["LowPass","BandPass","HighPass"],
     "awah_mode":        ["Envelope","Humanizer"],
-    "awah_direction":   ["Up","Down"]
+    "awah_direction":   ["Up","Down"],
+    "arpg_mode":   ["none","Loop","Env","Loop+Env"]
   },
 
   "presets": {

@@ -213,8 +213,8 @@ export const APP_CONFIG = {
     "division":         ["1/32","1/16","1/16t","1/16d","1/8","1/8t","1/8d","1/4","1/4t","1/4d","1/2","1"],
     "generic1":         ["A1","B1","C1","D1","E1"],
     "generic2":         ["A2","B2","C2","D2","E2"],
-    "ReverbEngine":     ["Freeverb","Dattorro","FDN","Lux"],
-    "ReverbType":       ["Room","Hall","Plate","Spring","Pads","Custom"],
+    "ReverbEngine":     ["Dattorro","FDN"],
+    "ReverbType":       ["None","Room","Hall","Plate","Spring","Pads","Custom"],
     "shift_direction":  ["up","down"],
     "shift_semitone":   ["detune","1","2","3","4","5","6","7","8","9","11","12"],
     "phaser_poles":     ["1","2","3","4"],
@@ -233,6 +233,42 @@ export const APP_CONFIG = {
   },
 
   "presets": {
+    "RVRB": {
+      "engineDropdown": "ReverbEngine",
+      "typeDropdown":   "ReverbType",
+      "knobs": ["level","feedback","damp","dry","wet","tone","predelay","depth","rate","size"],
+      "byEngine": {
+        "Freeverb": {
+          "Room":   { "level":100,"feedback":45,"damp":35,"dry":100,"wet":35,"tone":50,"predelay":5, "depth":0, "rate":0, "size":35 },
+          "Hall":   { "level":100,"feedback":65,"damp":40,"dry":100,"wet":45,"tone":55,"predelay":15,"depth":0, "rate":0, "size":60 },
+          "Plate":  { "level":100,"feedback":55,"damp":30,"dry":100,"wet":50,"tone":70,"predelay":20,"depth":0, "rate":0, "size":50 },
+          "Spring": { "level":100,"feedback":50,"damp":25,"dry":100,"wet":45,"tone":65,"predelay":8, "depth":0, "rate":0, "size":40 },
+          "Pads":   { "level":100,"feedback":80,"damp":50,"dry":0,"wet":60,"tone":60,"predelay":25,"depth":0, "rate":0, "size":80 }
+        },
+        "Dattorro": {
+          "Room":   { "level":100,"feedback":42,"damp":45,"dry":100,"wet":35,"tone":55,"predelay":5, "depth":8, "rate":8, "size":35 },
+          "Hall":   { "level":100,"feedback":70,"damp":42,"dry":100,"wet":45,"tone":58,"predelay":15,"depth":12,"rate":12,"size":65 },
+          "Plate":  { "level":100,"feedback":58,"damp":30,"dry":100,"wet":50,"tone":72,"predelay":20,"depth":10,"rate":10,"size":55 },
+          "Spring": { "level":100,"feedback":52,"damp":28,"dry":100,"wet":45,"tone":68,"predelay":10,"depth":18,"rate":18,"size":38 },
+          "Pads":   { "level":100,"feedback":86,"damp":52,"dry":0,"wet":60,"tone":62,"predelay":28,"depth":18,"rate":16,"size":85 }
+        },
+        "FDN": {
+          "Room":   { "level":100,"feedback":38,"damp":38,"dry":100,"wet":35,"tone":50,"predelay":5, "depth":8, "rate":8, "size":35 },
+          "Hall":   { "level":100,"feedback":70,"damp":40,"dry":100,"wet":45,"tone":55,"predelay":20,"depth":18,"rate":12,"size":65 },
+          "Plate":  { "level":100,"feedback":58,"damp":30,"dry":100,"wet":50,"tone":68,"predelay":18,"depth":12,"rate":10,"size":50 },
+          "Spring": { "level":100,"feedback":48,"damp":25,"dry":100,"wet":45,"tone":62,"predelay":8, "depth":22,"rate":20,"size":35 },
+          "Pads":   { "level":100,"feedback":88,"damp":48,"dry":100,"wet":62,"tone":58,"predelay":30,"depth":28,"rate":16,"size":90 }
+        },
+        "Lux": {
+          "Room":   { "level":100,"feedback":45,"damp":35,"dry":100,"wet":38,"tone":52,"predelay":6, "depth":8, "rate":10,"size":35 },
+          "Hall":   { "level":100,"feedback":68,"damp":36,"dry":100,"wet":48,"tone":58,"predelay":22,"depth":16,"rate":22,"size":55 },
+          "Plate":  { "level":100,"feedback":56,"damp":28,"dry":100,"wet":52,"tone":72,"predelay":18,"depth":10,"rate":18,"size":48 },
+          "Spring": { "level":100,"feedback":52,"damp":22,"dry":100,"wet":45,"tone":68,"predelay":10,"depth":18,"rate":28,"size":38 },
+          "Pads":   { "level":100,"feedback":88,"damp":45,"dry":100,"wet":65,"tone":62,"predelay":32,"depth":24,"rate":18,"size":85 }
+        }
+      }
+    },
+
     "OVRD": {
       "triggerDropdown": "ovrd_brand",
       "knobs": ["level","drive","type","PreLPF","PreHPF","PostLPF","PostHPF","midFreq","Mid","Blend"],

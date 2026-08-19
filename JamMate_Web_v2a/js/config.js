@@ -230,31 +230,6 @@ export const APP_CONFIG = {
     "awah_mode":        ["Envelope","Humanizer"],
     "awah_direction":   ["Up","Down"],
     "arpg_mode":   ["none","Loop","Env","Loop+Env"]
-  },
-
-  "presets": {
-    "OVRD": {
-      "triggerDropdown": "ovrd_brand",
-      "knobs": ["level","drive","type","PreLPF","PreHPF","PostLPF","PostHPF","midFreq","Mid","Blend"],
-      "byBrand": {
-        "TubeScreamer": { "level":70,"drive":55,"type":50,"PreLPF":70,"PreHPF":18,"PostLPF":75,"PostHPF":15,"midFreq":55,"Mid":70,"Blend":100, "dist_type":1 },
-        "Blues Driver": { "level":70,"drive":45,"type":45,"PreLPF":85,"PreHPF":15,"PostLPF":85,"PostHPF":12,"midFreq":45,"Mid":50,"Blend":100, "dist_type":0 },
-        "Klon":         { "level":75,"drive":30,"type":60,"PreLPF":90,"PreHPF":10,"PostLPF":90,"PostHPF":8, "midFreq":55,"Mid":55,"Blend":65,  "dist_type":1 },
-        "ODR1":         { "level":70,"drive":50,"type":52,"PreLPF":80,"PreHPF":18,"PostLPF":82,"PostHPF":14,"midFreq":48,"Mid":60,"Blend":100, "dist_type":5 }
-      }
-    },
-
-    "DIST": {
-      "triggerDropdown": "dist_brand",
-      "knobs": ["level","drive","type","PreLPF","PreHPF","PostLPF","PostHPF","midFreq","Mid","blend"],
-      "byBrand": {
-        "Rat":      { "level":70,"drive":75,"type":50,"PreLPF":65,"PreHPF":28,"PostLPF":60,"PostHPF":22,"midFreq":42,"Mid":48,"blend":100, "dist_type":2 },
-        "DS2":      { "level":70,"drive":80,"type":55,"PreLPF":65,"PreHPF":30,"PostLPF":65,"PostHPF":25,"midFreq":48,"Mid":45,"blend":100, "dist_type":6 },
-        "MetalZone":{ "level":70,"drive":88,"type":65,"PreLPF":58,"PreHPF":35,"PostLPF":58,"PostHPF":30,"midFreq":32,"Mid":20,"blend":100, "dist_type":3 },
-        "MXR+":     { "level":70,"drive":65,"type":50,"PreLPF":72,"PreHPF":22,"PostLPF":72,"PostHPF":18,"midFreq":50,"Mid":55,"blend":100, "dist_type":2 },
-        "BigMuff":  { "level":70,"drive":90,"type":52,"PreLPF":68,"PreHPF":20,"PostLPF":65,"PostHPF":15,"midFreq":35,"Mid":35,"blend":100, "dist_type":4 }
-      }
-    }
   }
 };
 

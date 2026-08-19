@@ -179,7 +179,7 @@ export const APP_CONFIG = {
       "dsp_tag": "RVRB",
       "params": {
         "checkbox": "enable",
-        "knobs": ["level", "feedback", "damp", "dry", "wet", "tone", "predelay", "depth", "rate", "size","diffusion"],
+        "knobs": ["level", "feedback", "damp", "dry", "wet", "tone", "predelay", "depth", "rate", "size","diffusion","er"],
         "dropdowns": ["ReverbEngine", "ReverbType"]
       }
     },

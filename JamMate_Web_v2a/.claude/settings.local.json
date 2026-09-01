@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//c/Users/buada/Desktop/DaisyExamples/seed/**)",
+      "Read(//c/Users/buada/Documents/DaisyExamples/seed/**)"
+    ]
+  }
+}

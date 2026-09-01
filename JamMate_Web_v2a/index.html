@@ -57,7 +57,11 @@
           <h3 class="panel-title">🥁 Drum Machine</h3>
           <div class="split-head">
             <div class="knob-container"><div class="knob" id="drumLevelKnob"></div><div class="knob-label">Level</div></div>
-            <label class="checkbox jumbo"><input type="checkbox" id="drumEnable" checked /><span>Enable</span></label>
+            <label class="checkbox jumbo"><input type="checkbox" id="drumEnable" /><span>Enable</span></label>
+          </div>
+          <div class="midi-load-row">
+            <input type="file" id="drumMidiFile" accept=".mid,.midi" style="display:none" />
+            <button id="btnLoadDrumMidi" class="btn-secondary">Load MIDI</button>
           </div>
           <label class="field"><span>Style</span><select id="drumStyle"><option value="0">Rock</option><option value="1">Blues</option><option value="2">Jazz</option><option value="3">Shuffle</option><option value="4">Pop</option><option value="5">Metal</option><option value="6">Latin</option><option value="7">R&amp;B</option><option value="8">Country</option><option value="9">Funk</option><option value="10">Pattern</option></select></label>
           <div class="two-grid">

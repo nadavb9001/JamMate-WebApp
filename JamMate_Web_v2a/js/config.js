@@ -80,7 +80,7 @@ export const APP_CONFIG = {
       "params": {
         "checkbox": "enable",
         "knobs": ["Level", "Dry", "Wet1", "Wet2", "ArpegRate","Gate","Glide"],
-        "dropdowns": ["Scale", "Mode", "Harm1", "Harm2","Arpg","arpg_mode"]
+        "dropdowns": ["Scale", "Mode", "Harm1", "Harm2","Arpg","arpg_mode","SynthType","HarmonizerType","SynthPreset","DryTone"]
       }
     },
     {
@@ -229,6 +229,11 @@ export const APP_CONFIG = {
     "awah_filter":      ["LowPass","BandPass","HighPass"],
     "awah_mode":        ["Envelope","Humanizer"],
     "awah_direction":   ["Up","Down"],
+    "SynthType":   ["Guitar","Analog","Hammond","Pipe Organ","Strings","Brass","Choir","Celesta"],
+    "SynthPreset":   ["Generic","Dreams","Shade","Jump","Take","Cars","Monday","Countdown"],
+    "HarmonizerType":   ["Harmonizer","Pitch Shifter"],
+    "awah_direction":   ["Up","Down"],
+    "DryTone":   ["Guitar","Synth"],
     "arpg_mode":   ["none","Loop","Env","Loop+Env"]
   }
 };

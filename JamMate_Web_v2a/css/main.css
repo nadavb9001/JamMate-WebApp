@@ -506,3 +506,6 @@ body.easy-popup-open #easyEffectPopup {
 #generatedDropdowns > div:last-child:nth-child(odd) .csel-trigger {
   width: 100% !important;
 }
+
+.midi-load-row { margin: 8px 0; }
+.midi-load-row button { width: 100%; }

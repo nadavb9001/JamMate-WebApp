@@ -312,6 +312,48 @@ export const app = {
         View.updateStatus('Saving to SD...');
       });
     }
+
+    const midiFileInput = document.getElementById('drumMidiFile');
+    const btnLoadMidi   = document.getElementById('btnLoadDrumMidi');
+    if (btnLoadMidi && midiFileInput) {
+      btnLoadMidi.addEventListener('click', () => midiFileInput.click());
+      midiFileInput.addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        midiFileInput.value = '';
+        const reader = new FileReader();
+        reader.onload = (ev) => this.streamMidiToESP(file.name, ev.target.result);
+        reader.readAsArrayBuffer(file);
+      });
+    }
+  },
+
+  // ============================================================
+  // streamMidiToESP — sends raw MIDI bytes to ESP in BLE chunks
+  // ============================================================
+  async streamMidiToESP(name, buffer) {
+    const CHUNK = 200;
+    const bytes = new Uint8Array(buffer);
+    const total = bytes.length;
+    const nchunks = Math.ceil(total / CHUNK);
+
+    View.updateStatus(`MIDI: sending ${name} (${total} B)…`);
+    BLEService._pingBlocked = true;
+    try {
+      await BLEService.send(Protocol.createMidiStart(total, name));
+      for (let i = 0; i < nchunks; i++) {
+        const slice = bytes.slice(i * CHUNK, (i + 1) * CHUNK);
+        await BLEService.send(Protocol.createMidiChunk(i, slice));
+        View.updateStatus(`MIDI: chunk ${i + 1}/${nchunks}`);
+        await new Promise(r => setTimeout(r, 8));
+      }
+      await BLEService.send(Protocol.createMidiEnd());
+      View.updateStatus(`MIDI sent: ${name}`);
+    } catch (err) {
+      View.updateStatus(`MIDI send error: ${err.message}`);
+    } finally {
+      BLEService._pingBlocked = false;
+    }
   },
 
   // ============================================================

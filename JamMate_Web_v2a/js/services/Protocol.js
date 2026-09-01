@@ -53,6 +53,9 @@ export const Protocol = {
     NAM_UPLOAD_END:      0x74,
     NAM_EJECT:           0x75,
     NAM_DONE_ACK:        0x76,   // [0x76][status] final bytes/CRC result
+    MIDI_UPLOAD_START:   0x80,   // [0x80][len16][fileSize32LE][nameLen8][name]
+    MIDI_UPLOAD_CHUNK:   0x81,   // [0x81][len16][chunkIdx16LE][data]
+    MIDI_UPLOAD_END:     0x82,   // [0x82][0x00][0x00]
   },
 
   // ----------------------------------------------------------------
@@ -602,5 +605,36 @@ export const Protocol = {
 
   createNamEject() {
     return this.createSystemPacket(this.CMD.NAM_EJECT);
-  }
+  },
+
+  // ----------------------------------------------------------------
+  // MIDI FILE TRANSFER PACKETS
+  // ----------------------------------------------------------------
+  createMidiStart(fileSize, name) {
+    const nameBytes = new TextEncoder().encode(String(name || 'pattern.mid').slice(0, 64));
+    const payloadLen = 4 + 1 + nameBytes.length; // fileSize32 + nameLen8 + name
+    const buf = new Uint8Array(3 + payloadLen);
+    const view = new DataView(buf.buffer);
+    buf[0] = this.CMD.MIDI_UPLOAD_START;
+    view.setUint16(1, payloadLen, true);
+    view.setUint32(3, fileSize >>> 0, true);
+    buf[7] = nameBytes.length;
+    buf.set(nameBytes, 8);
+    return buf;
+  },
+
+  createMidiChunk(index, data) {
+    const payloadLen = 2 + data.length; // chunkIdx16LE + data
+    const buf = new Uint8Array(3 + payloadLen);
+    const view = new DataView(buf.buffer);
+    buf[0] = this.CMD.MIDI_UPLOAD_CHUNK;
+    view.setUint16(1, payloadLen, true);
+    view.setUint16(3, index, true);
+    buf.set(data, 5);
+    return buf;
+  },
+
+  createMidiEnd() {
+    return this.createSystemPacket(this.CMD.MIDI_UPLOAD_END);
+  },
 };

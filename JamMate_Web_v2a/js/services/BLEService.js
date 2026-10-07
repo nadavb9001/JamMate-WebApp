@@ -1,12 +1,19 @@
 import { Protocol } from './Protocol.js';
 
 export const BLEService = {
-    SERVICE_UUID: "6e400001-b5a3-f393-e0a9-e50e24dcca9f",
+    // ESP32 Nordic UART Service
+    SERVICE_UUID:        "6e400001-b5a3-f393-e0a9-e50e24dcca9f",
     CHARACTERISTIC_UUID: "6e400002-b5a3-f393-e0a9-e50e24dcca9f",
+
+    // JDY-67 / JDY-series custom service
+    JDY_SERVICE_UUID: "0000ffe0-0000-1000-8000-00805f9b34fb",
+    JDY_WRITE_UUID:   "0000ffe1-0000-1000-8000-00805f9b34fb", // FFE1: transparent UART (write→UART TX, notify←UART RX)
+    JDY_NOTIFY_UUID:  "0000ffe1-0000-1000-8000-00805f9b34fb",
 
     device: null,
     server: null,
-    characteristic: null,
+    characteristic: null,       // write characteristic
+    notifyCharacteristic: null,  // notify characteristic (same as above for NUS, separate for JDY)
     isConnected: false,
     isSyncing: false,
     shouldReconnect: false, // [NEW] Flag to distinguish intentional vs accidental disconnects
@@ -34,8 +41,8 @@ export const BLEService = {
 
             // 1. Request Device (User Gesture Required)
             this.device = await navigator.bluetooth.requestDevice({
-                filters: [{ namePrefix: 'JamMate' }],
-                optionalServices: [this.SERVICE_UUID]
+                filters: [{ namePrefix: 'JamMate' }, { namePrefix: 'JDY' }],
+                optionalServices: [this.SERVICE_UUID, this.JDY_SERVICE_UUID]
             });
 
             // 2. Setup Disconnect Listener (Once per device instance)
@@ -56,12 +63,22 @@ export const BLEService = {
         if (!this.device) return;
 
         this.server = await this.device.gatt.connect();
-        
-        const service = await this.server.getPrimaryService(this.SERVICE_UUID);
-        this.characteristic = await service.getCharacteristic(this.CHARACTERISTIC_UUID);
 
-        await this.characteristic.startNotifications();
-        this.characteristic.addEventListener('characteristicvaluechanged', this._handleData.bind(this));
+        let writeChar, notifyChar;
+        try {
+            const svc = await this.server.getPrimaryService(this.SERVICE_UUID);
+            writeChar  = await svc.getCharacteristic(this.CHARACTERISTIC_UUID);
+            notifyChar = writeChar; // NUS: same characteristic for both directions
+        } catch {
+            const svc = await this.server.getPrimaryService(this.JDY_SERVICE_UUID);
+            writeChar  = await svc.getCharacteristic(this.JDY_WRITE_UUID);
+            notifyChar = await svc.getCharacteristic(this.JDY_NOTIFY_UUID);
+        }
+        this.characteristic       = writeChar;
+        this.notifyCharacteristic = notifyChar;
+
+        await this.notifyCharacteristic.startNotifications();
+        this.notifyCharacteristic.addEventListener('characteristicvaluechanged', this._handleData.bind(this));
 
         this.isConnected = true;
         this._setStatus('connected');
@@ -98,6 +115,7 @@ export const BLEService = {
         }
 
         try {
+            console.log('[BLE TX]', BLEService._decodePacket(data));
             if (typeof this.characteristic.writeValueWithResponse === 'function') {
                 await this.characteristic.writeValueWithResponse(data);
             } else {
@@ -119,6 +137,7 @@ export const BLEService = {
         // Clear handles (But keep this.device if we want to reconnect)
         this.server = null;
         this.characteristic = null;
+        this.notifyCharacteristic = null;
         this.isConnected = false;
         this.isSyncing = false;
         
@@ -242,5 +261,34 @@ export const BLEService = {
     
     _setStatus(status) {
         if (this.onStatusChange) this.onStatusChange(status);
-    }
+    },
+
+    _decodePacket(data) {
+        const b = new Uint8Array(data instanceof ArrayBuffer ? data : data.buffer);
+        const hex = Array.from(b).map(x => x.toString(16).padStart(2,'0')).join(' ');
+        const FX = ['GATE','COMP','AWAH','OVRD','DIST','EQUL','HARM','VIBR','CHOR','OCTV','FLNG','PHAS','TREM','_FIR','DELY','_NAM','RVRB','GNRC'];
+        const CMD = {
+            0x01:'PING', 0x20:'SET_PARAM', 0x21:'SET_TOGGLE', 0x22:'SET_EQ',
+            0x23:'SET_UTIL', 0x24:'BYPASS', 0x25:'GLOBAL', 0x30:'GET_STATE',
+            0x32:'SAVE_PRESET', 0x33:'LOAD_PRESET', 0x40:'DRUM_PATTERN',
+            0x41:'DRUM_UPDATE', 0x42:'LOOP_BTN', 0x43:'USB_MODE',
+            0x50:'CONFIG', 0x60:'FLASH', 0x61:'RESET',
+            0x70:'NAM_START', 0x72:'NAM_CHUNK', 0x74:'NAM_END',
+            0x80:'MIDI_START', 0x81:'MIDI_CHUNK', 0x82:'MIDI_END',
+        };
+        const cmd  = b[0];
+        const name = CMD[cmd] || `CMD_${cmd.toString(16)}`;
+        if (cmd === 0x20 && b.length >= 4) {
+            const fx    = FX[b[3]] || `fx${b[3]}`;
+            const param = b[4];
+            const val   = b[5];
+            return `${name} ${fx} param=${param} val=${val}  [${hex}]`;
+        }
+        if (cmd === 0x21 && b.length >= 4) {
+            const fx = FX[b[3]] || `fx${b[3]}`;
+            const en = b[4];
+            return `${name} ${fx} en=${en}  [${hex}]`;
+        }
+        return `${name}  [${hex}]`;
+    },
 };

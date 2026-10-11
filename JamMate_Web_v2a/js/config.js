@@ -39,8 +39,11 @@ export const APP_CONFIG = {
       "dsp_tag": "AWAH",
       "params": {
         "checkbox": "enable",
-        "knobs": ["dry", "wet", "sensitivity", "Q", "freq_center", "freq_min", "freq_max", "attack", "decay"],
-        "dropdowns": ["awah_filter", "awah_mode", "awah_direction"]
+        "knobs": ["dry", "wet", "sensitivity", "Q", "base_freq", "sweep_span",
+                  "env_amount", "attack", "release", "detector_hpf", "drive",
+                  "output", "pedal", "lfo_rate", "formant_shift"],
+        "dropdowns": ["awah_mode", "awah_filter", "awah_vowel_a", "awah_vowel_b",
+                      "awah_pedal_mode", "awah_preset"]
       }
     },
     {
@@ -226,13 +229,16 @@ export const APP_CONFIG = {
     "waveform":         ["Sine","Triangle","Saw","Square"],
     "delay-multi":      ["1","2","3"],
     "ir_file":          ["1","2","3"],
-    "awah_filter":      ["LowPass","BandPass","HighPass"],
-    "awah_mode":        ["Envelope","Humanizer"],
-    "awah_direction":   ["Up","Down"],
+    "awah_mode":        ["Filter","Humanizer"],
+    "awah_filter":      ["LowPass","BandPass","HighPass","Notch","LP+BP"],
+    "awah_vowel_a":     ["A","E","I","O","U"],
+    "awah_vowel_b":     ["A","E","I","O","U"],
+    "awah_pedal_mode":  ["Off","Wah","Offset","Depth"],
+    // Names only: the preset values live in the DSP (autowah_effect::presetRow).
+    "awah_preset":      ["Custom","Classic Auto-Wah","Funk Band-Pass","Warm Bass LP","Reverse Quack","Broad Notch","Bass/Synth LP+BP","Pedal Wah","Humanizer Wow","Humanizer Talk LFO","Bass Humanizer"],
     "SynthType":   ["Guitar","Analog","Hammond","Pipe Organ","Strings","Brass","Choir","Celesta"],
     "SynthPreset":   ["Generic","Dreams","Shade","Jump","Take","Cars","Monday","Countdown"],
     "HarmonizerType":   ["Harmonizer","Pitch Shifter"],
-    "awah_direction":   ["Up","Down"],
     "DryTone":   ["Guitar","Synth"],
     "arpg_mode":   ["none","Loop","Env","Loop+Env"]
   }

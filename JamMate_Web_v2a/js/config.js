@@ -224,7 +224,7 @@ export const APP_CONFIG = {
     "phaser_poles":     ["1","2","3","4"],
     "Harm1":        	["-12","-2","-3","-4","-5","-6","2","3","4","5","6","12"],
     "Harm2":       		["-12","-2","-3","-4","-5","-6","2","3","4","5","6","12"],
-	"Arpg":        		["None","Classic up","Classic down","Up-down","Full scale up","Full scale down","Triad bounce","Seventh chord","Suspended","Octave jumps","Thirds run","Alberti bass"],
+	"Arpg": ["None","Pitched delay","Triad up","Triad down","Up-down","Full scale up","Full scale down","Triad loop","Seventh chord","Fifth bounce","Octave jumps","Zigzag ascent","Triad bounce","Harmony alternating","Harmony switch","Chord triad climb","Chord open triad","Seventh weave","Vivaldi run","Vivaldi pedal"],
 	"Synth":            ["None","Bass","Church","Hammond1","Hammond2","Hammond3","String","Brass","Pad1","Pad2","Saw","Square","Moog","Sync","Pluck","Vibes"],
     "tremolo_mode":     ["vintage","harmonic"],
     "waveform":         ["Sine","Triangle","Saw","Square"],

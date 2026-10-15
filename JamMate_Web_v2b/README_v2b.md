@@ -45,3 +45,13 @@ The existing NAM loader recognizes only the compatible A2 Lite weight layout (18
 TONE3000's published documentation says `/tones/search` is rate-limited and that commercial integrations require permission/agreement. The official **Browse TONE3000** OAuth Select option is kept as a first-class path. Ensure the API terms appropriate for your distribution are satisfied: https://www.tone3000.com/api
 
 The interface is independently styled for JamMate; it borrows the thumbnail + pack-detail + model-variant selection concept, not the TONE3000 plugin source or its JUCE UI.
+
+## v2b inline NAM model selection update (2026-10-15)
+
+Selecting a NAM tone card now opens its detailed model selector **at that position in the results**, instead of using the permanently positioned panel above the model list. Desktop expands beneath the current two-card row, mobile expands directly below the tapped card. The selected card is highlighted and may be tapped a second time to collapse the details. Selecting a different pack moves the same details panel to its row; search, pagination and viewport resizing also maintain valid panel placement. The A2 variants, OAuth, local NAM loading, existing BLE model transfer and NAM validation logic are unchanged.
+
+This update keeps the **`JamMate_Web_v2b/` deployment folder unchanged**, so the GitHub Pages OAuth redirect URI remains the one already used for v2b. Deploy files to the *existing folder*, not a new v2b-inline folder. `index.html` and `app.js` include simple asset-version query parameters to avoid old JavaScript/CSS remaining cached after deployment.
+
+Changed files: `js/ui/NamBrowserV2b.js`, `css/nam-v2b.css`, `index.html`, `js/app.js`. Added `tests/nam-inline-harness.html` and `tests/test-inline.py` for isolated mocked-browser regression testing. No changes to the ESP protocol or TONE3000 API configuration.
+
+Checks: node syntax, A2 API/transfer integration, browser mocked desktop/mobile expansion, switching packs, toggling open/closed, selecting A2 variants, disconnected BLE guard, search-and-reselect and resize all pass. Real TONE3000 account and actual ESP32 BLE transfer require live verification on your setup.

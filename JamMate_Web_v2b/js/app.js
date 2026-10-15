@@ -14,7 +14,7 @@
  *     flatIdx K+1..  → dropdown d value: selectedIndex
  */
 import { NamLoader } from './NamLoader.js';
-import { NamBrowserV2b } from './ui/NamBrowserV2b.js';
+import { NamBrowserV2b } from './ui/NamBrowserV2b.js?v=2b-inline-1';
 import { APP_CONFIG } from './config.js';
 import { View } from './ui/View.js';
 import { Knob } from './ui/Knob.js';

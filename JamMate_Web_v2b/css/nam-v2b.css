@@ -81,3 +81,36 @@
 @media (max-width:800px) {#nam-tab .nam-browser-intro {flex-wrap:wrap;}#nam-tab .nam-browser-account {width:100%;flex-direction:row;align-items:center;justify-content:space-between;}#nam-tab .nam-library-hint {display:none;}}
 @media (max-width:680px) {#nam-tab #namGrid,#nam-tab #namGrid.nam-v2b-grid {grid-template-columns:1fr!important;}#nam-tab .nam-browser-intro {padding:15px;gap:12px;}#nam-tab .nam-browser-mark {width:58px;height:66px;flex-basis:58px;}#nam-tab .nam-browser-heading h2 {font-size:22px;}#nam-tab .nam-browser-heading p {font-size:11px;}#nam-tab .nam-detail-art {width:96px;height:96px;}#nam-tab .nam-detail-content {gap:12px;}#nam-tab .nam-detail-title {font-size:20px;}#nam-tab .nam-model-actions {flex-direction:column;}#nam-tab .nam-detail-send {width:100%;}#nam-tab .nam-filter-row {gap:8px;}#nam-tab .nam-filter-field {flex:1;gap:5px;}#nam-tab .nam-filter-field select {min-width:0;width:100%;}#nam-tab .nam-result-count {width:100%;text-align:right;}#nam-tab .btn-t3k {flex:1;}#nam-tab .nam-search-button {padding:0 12px;}}
 @media (max-width:410px) {#nam-tab .nam-browser-mark {display:none;}#nam-tab .nam-detail-content {flex-direction:column;}#nam-tab .nam-detail-art {width:100%;max-width:160px;}#nam-tab .nam-browser-account {flex-wrap:wrap;}#nam-tab .nam-auth-pill {text-align:left;}#nam-tab .nam-tone-card {min-height:96px;}#nam-tab .nam-card-art {width:76px;height:76px;}}
+
+/* v2b inline selection: the full-width details panel is a grid item placed
+   directly after the selected tone's row (or card on mobile). */
+#nam-tab #namGrid > #namDetailPanel {
+  grid-column: 1 / -1;
+  min-width: 0;
+  width: 100%;
+  margin: 0;
+  animation: nam-inline-expand .18s ease-out;
+}
+#nam-tab .nam-tone-card.is-selected .nam-tone-chevron {
+  color: var(--color-accent);
+  transform: rotate(90deg);
+}
+#nam-tab .nam-tone-chevron { transition: transform .16s; }
+@keyframes nam-inline-expand {
+  from { opacity: .7; transform: translateY(-5px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  #nam-tab #namGrid > #namDetailPanel { animation: none; }
+  #nam-tab .nam-tone-chevron { transition: none; }
+}
+
+#nam-tab .nam-detail-back {
+  color: var(--color-accent);
+  border: 1px solid rgba(124,247,255,.28);
+  background: rgba(124,247,255,.08);
+  border-radius: 8px;
+  padding: 7px 12px;
+  font-weight: 800;
+}
+#nam-tab .nam-detail-back:hover { background: rgba(124,247,255,.16); }

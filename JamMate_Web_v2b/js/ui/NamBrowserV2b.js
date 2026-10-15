@@ -66,9 +66,17 @@ export const NamBrowserV2b = {
   models: [],
   selectedModel: null,
   transferBusy: false,
+  selectedCard: null,
+  detailPanel: null,
 
   init(loader) {
     this.loader = loader;
+    this.detailPanel = $('namDetailPanel');
+    // A card is one grid column on phones and two columns on desktop.
+    // Keep the open panel immediately below the selected card's current row.
+    window.addEventListener('resize', () => {
+      if (this.selectedCard?.isConnected && this.tone) this.positionDetails(this.selectedCard);
+    });
     this.updateAuth();
     $('btnNamSearch')?.addEventListener('click', () => this.search(1));
     $('namSearch')?.addEventListener('keydown', e => {
@@ -150,8 +158,11 @@ export const NamBrowserV2b = {
     grid.classList.add('nam-v2b-grid');
     if (!tones.length) { this.showMessage('No compatible NAM A2 tones found. Try another search or gear filter.'); return; }
     for (const tone of tones) {
-      const card = button('', 'nam-tone-card', () => this.openDetails(tone));
+      const card = button('', 'nam-tone-card', () => this.openDetails(tone, card));
+      card.dataset.toneId = String(tone.id);
       card.setAttribute('aria-label', `Show models for ${titleOf(tone)}`);
+      card.setAttribute('aria-controls', 'namDetailPanel');
+      card.setAttribute('aria-expanded', 'false');
       card.append(makeArt(tone, 'nam-card-art'));
       const body = node('span', 'nam-tone-body');
       const meta = node('span', 'nam-tone-format');
@@ -170,23 +181,65 @@ export const NamBrowserV2b = {
   },
 
   closeDetails() {
+    // Keep the panel connected to the DOM when the result grid is replaced by
+    // a new search. Otherwise getElementById('namDetailPanel') disappears.
     ++this.detailSerial;
     this.tone = null;
     this.models = [];
     this.selectedModel = null;
-    const detail = $('namDetailPanel');
-    if (detail) { detail.hidden = true; detail.replaceChildren(); }
-    document.querySelectorAll('.nam-tone-card.is-selected').forEach(el => el.classList.remove('is-selected'));
+    this.selectedCard = null;
+    const panel = this.detailPanel || $('namDetailPanel');
+    if (panel) {
+      panel.hidden = true;
+      panel.replaceChildren();
+      const grid = $('namGrid');
+      if (grid && panel.parentElement === grid) grid.before(panel);
+    }
+    document.querySelectorAll('#namGrid > .nam-tone-card.is-selected').forEach(el => {
+      el.classList.remove('is-selected');
+      el.setAttribute('aria-expanded', 'false');
+    });
   },
 
-  async openDetails(tone) {
+  positionDetails(card) {
+    const grid = $('namGrid');
+    const panel = this.detailPanel || $('namDetailPanel');
+    if (!grid || !panel || !card || card.parentElement !== grid) return;
+
+    // First remove the old expansion from the grid so previous selections do
+    // not distort row positions. Then find the last card on the selected row.
+    // This works for both the two-column desktop and one-column mobile grid.
+    if (panel.parentElement === grid) grid.before(panel);
+    const rowTop = card.getBoundingClientRect().top;
+    let rowEnd = card;
+    while (rowEnd.nextElementSibling?.classList.contains('nam-tone-card') &&
+           Math.abs(rowEnd.nextElementSibling.getBoundingClientRect().top - rowTop) < 3) {
+      rowEnd = rowEnd.nextElementSibling;
+    }
+    rowEnd.after(panel);
+  },
+
+  async openDetails(tone, card = null) {
+    const grid = $('namGrid');
+    if (!card) card = Array.from(grid?.querySelectorAll('.nam-tone-card') || [])
+      .find(el => el.dataset.toneId === String(tone.id));
+    if (!card || card.parentElement !== grid) return;
+    // Clicking the open card collapses it; clicking another swaps the panel.
+    if (this.selectedCard === card && this.tone) {
+      this.closeDetails();
+      return;
+    }
     const id = ++this.detailSerial;
     this.tone = tone;
     this.models = [];
     this.selectedModel = null;
-    document.querySelectorAll('.nam-tone-card').forEach(el => {
-      el.classList.toggle('is-selected', el.getAttribute('aria-label') === `Show models for ${titleOf(tone)}`);
+    this.selectedCard = card;
+    grid.querySelectorAll('.nam-tone-card').forEach(el => {
+      const selected = el === card;
+      el.classList.toggle('is-selected', selected);
+      el.setAttribute('aria-expanded', selected ? 'true' : 'false');
     });
+    this.positionDetails(card);
     this.renderDetails('loading');
     try {
       const models = await this.loader.listToneModels(tone.id);
@@ -201,20 +254,22 @@ export const NamBrowserV2b = {
   },
 
   renderDetails(status, errorMessage = '') {
-    const panel = $('namDetailPanel');
+    const panel = this.detailPanel || $('namDetailPanel');
     if (!panel || !this.tone) return;
     const tone = this.tone;
     panel.hidden = false;
     panel.replaceChildren();
     const top = node('div', 'nam-detail-top');
-    top.append(button('← All tones', 'nam-detail-back', () => this.closeDetails()));
+    top.append(button('× Close details', 'nam-detail-back', () => this.closeDetails()));
     top.append(node('span', 'nam-detail-eyebrow', 'TONE PACK / MODEL SELECTION'));
     panel.append(top);
     const content = node('div', 'nam-detail-content');
     content.append(makeArt(tone, 'nam-detail-art'));
     const info = node('div', 'nam-detail-info');
     info.append(node('span', 'nam-section-eyebrow', `${gearNames[tone.gear] || tone.gear || 'Amplifier'} · NAM · TONE3000`));
-    info.append(node('h3', 'nam-detail-title', titleOf(tone)));
+    const detailTitle = node('h3', 'nam-detail-title', titleOf(tone));
+    detailTitle.id = 'namInlineDetailTitle';
+    info.append(detailTitle);
     info.append(node('p', 'nam-detail-by', `Captured by ${authorOf(tone)}`));
     if (tone.description) info.append(node('p', 'nam-detail-description', tone.description));
     const bottom = node('div', 'nam-detail-picker');

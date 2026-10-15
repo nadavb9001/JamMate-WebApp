@@ -6,7 +6,7 @@
   <title>JamMate Web v2b · BLE Controller</title>
   <link rel="stylesheet" href="./css/main.css" />
   <link rel="stylesheet" href="./css/components.css" />
-  <link rel="stylesheet" href="./css/nam-v2b.css" />
+  <link rel="stylesheet" href="./css/nam-v2b.css?v=2b-inline-1" />
 </head>
 <body>
   <div id="appShell">
@@ -128,7 +128,7 @@
             <div class="nam-browser-heading">
               <div class="nam-browser-eyebrow">JAMMATE MODEL BROWSER <span class="nam-brand-dot">◆</span> POWERED BY TONE3000</div>
               <h2>Find your next tone</h2>
-              <p>Explore real amp captures. Tap a tone to see its model variations, then send an A2 model to JamMate.</p>
+              <p>Explore real amp captures. Tap a tone to expand its model variations right below the selection, then send an A2 model to JamMate.</p>
             </div>
             <div class="nam-browser-account"><span class="nam-auth-pill" id="namAuthStatus">Sign in to browse</span><button id="btnNamLogin" class="btn-nam-action nam-signin">Connect TONE3000</button></div>
           </div>
@@ -170,7 +170,7 @@
 
   <script src="./js/ui/easy-popup.js"></script>
   <script type="module">
-    import { app } from './js/app.js';
+    import { app } from './js/app.js?v=2b-inline-1';
     window.app = app;
     document.addEventListener('DOMContentLoaded', () => {
       app.init();

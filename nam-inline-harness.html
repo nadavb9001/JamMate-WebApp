@@ -1,0 +1,20 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NAM inline expansion regression harness</title>
+<link rel="stylesheet" href="../css/nam-v2b.css">
+<style>
+:root {--color-accent:#81edf5;--color-text-primary:#f2f7fa;--color-text-secondary:#9caeb9;--color-muted:#8297a5;--color-border:#456274;--color-enabled:#78d69c;--color-accent-2:#e5bd80;--panel-2:#1b2a3a;--panel:#101c29;}
+*{box-sizing:border-box}html{background:#07121c;color:var(--color-text-primary);font-family:system-ui,sans-serif;}body{margin:0;padding:20px 14px 80px;}button,select,input{font:inherit;color:inherit}button{cursor:pointer}#nam-tab .nam-layout{max-width:850px;margin:auto;display:flex;flex-direction:column;gap:14px}.panel{border-radius:13px;border:1px solid #31485a;padding:14px;background:#142233}.nam-tone-card{font:inherit}#nam-tab .nam-detail{border-radius:15px;}#nam-tab .nam-model-select{background:#20384c;color:white;min-height:46px;border-radius:8px}
+</style></head>
+<body><main id="nam-tab"><div class="nam-layout"><h1>NAM inline expansion test</h1>
+<div class="nam-library-head"><div><span class="nam-section-eyebrow">TONE LIBRARY</span><h3>Explore models</h3></div><span class="nam-library-hint">Mock A2 model packs</span></div>
+<div id="namDetailPanel" class="nam-detail panel" hidden></div>
+<div id="namGrid" class="nam-grid nam-v2b-grid"></div>
+<div id="namResultCount"></div><div id="namPagination"><span id="namPageLabel"></span></div>
+</div></main>
+<script type="module">
+import {NamBrowserV2b as browser} from '../js/ui/NamBrowserV2b.js';
+const tones=Array.from({length:12},(_,i)=>({id:i+1,title:`Tone Pack ${i+1}`,user:{display_name:`Maker ${i+1}`},gear:'amp',format:'nam',a2_models_count:3,downloads_count:1200+i*141}));
+const loader={isAuthed:()=>true,search:async()=>({data:tones,total:tones.length,total_pages:1}),listToneModels:async id=> [{name:`${id} Clean`,size:'lite',model_url:'https://example.invalid/clean.nam'},{name:`${id} Crunch`,size:'lite',model_url:'https://example.invalid/crunch.nam'}]};
+browser.init(loader);window.browser=browser;
+</script>
+</body></html>

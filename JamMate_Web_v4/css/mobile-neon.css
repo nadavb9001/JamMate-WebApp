@@ -1,0 +1,431 @@
+/* JamMate mobile-first neon skin. The original app remains mounted for BLE and data flows. */
+body.jm-mobile-active{background:#020817!important;color:#effaff!important;overflow:hidden!important;height:100dvh!important;font-family:Inter,system-ui,-apple-system,'Segoe UI',Arial,sans-serif}
+body.jm-mobile-active #appShell,body.jm-mobile-active #status-bar{display:none!important}
+#jmMobile{--teal:#02ecfa;--bg:#020817;--ink:#f4fbff;position:fixed;inset:0;z-index:1500;display:flex;flex-direction:column;max-width:700px;margin:auto;background:radial-gradient(ellipse 130% 34% at 50% -12%,#133b70aa,transparent 64%),linear-gradient(160deg,#030e21 5%,#000913 55%,#020510);color:var(--ink);isolation:isolate}
+#jmMobile *{box-sizing:border-box}
+#jmMobile button,#jmMobile select,#jmMobile input{font-family:inherit}
+#jmMobile button{cursor:pointer;color:inherit;touch-action:manipulation}
+#jmMobile .jm-head{flex:0 0 auto;min-height:56px;padding:6px 12px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #168bad66;background:linear-gradient(180deg,#07182e,#041022)}
+.jm-head>strong{font-size:clamp(22px,6vw,31px);font-weight:1000;letter-spacing:.035em;color:#f6fcff;text-shadow:0 0 14px #12bfff8a}
+#jmMobile .jm-icon,#jmMobile .jm-connect{border:0;background:transparent;font-size:26px;font-weight:950;width:46px;min-width:46px;height:44px}
+#jmMobile .jm-connect{color:#05eab8;border:1px solid #05ebbb77;border-radius:12px;font-size:28px}
+#jmMobile .jm-scroll{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;padding:9px 12px 14px;scrollbar-width:thin;scrollbar-color:#069ec6 transparent}
+#jmMobile .jm-foot{flex:0 0 41px;padding:7px 14px;display:flex;align-items:center;gap:10px;background:#030d1c;border-top:1px solid #167b9c;white-space:nowrap;font-size:13px;font-weight:950;letter-spacing:.01em}
+#jmMobile .jm-foot-meter{height:8px;background:#102d47;border:1px solid #20577b;border-radius:10px;flex:1;overflow:hidden;min-width:10px}
+#jmMobile .jm-foot-meter i{display:block;width:0%;height:100%;background:#05e3ec}
+#jmBeatText{color:#7bddf9;margin-left:auto}
+#jmBeatLed{height:18px;width:18px;flex:0 0 18px;border:2px solid #356366;border-radius:50%;background:#0b232a;box-shadow:0 0 0 3px #050f1a}
+#jmMobile .jm-home{display:flex;flex-direction:column;gap:10px}
+#jmMobile .jm-preset{position:relative;overflow:hidden;isolation:isolate;min-height:129px;padding:11px 11px 8px;background:radial-gradient(circle at 18% 120%,#0e74c96e,transparent 57%),radial-gradient(circle at 98% 120%,#7b0bbb78,transparent 48%),linear-gradient(135deg,#06152f,#070b20 65%,#1b0b36);border:2px solid #0de6fc;border-right-color:#e632ff;border-bottom-color:#bf35ff;border-radius:15px;box-shadow:0 0 15px #03dbff33,inset 0 0 18px #026be031}
+.jm-preset .jm-eyebrow{font-size:14px;font-weight:950;color:#b5efff}
+.jm-preset-line{position:relative;z-index:2;display:grid;grid-template-columns:35px minmax(0,1fr) 35px;align-items:center;min-height:85px;text-align:center;gap:0}
+.jm-preset-line strong{font-size:clamp(25px,8vw,44px);white-space:nowrap;letter-spacing:-.04em;overflow:hidden;text-overflow:ellipsis;font-weight:1000;color:#fff;text-shadow:0 2px 10px #5075ff88}
+#jmMobile .jm-preset-line button{border:0;background:transparent;color:#76ebff;font-size:24px;min-width:35px;min-height:52px;padding:0}
+#jmMobile .jm-wave{pointer-events:none;position:absolute;inset:64% -2% 0;background:repeating-radial-gradient(ellipse 130% 64% at 50% 135%,transparent 0px,transparent 8px,#0899ff5a 9px,#0fceff41 10px,transparent 11px,transparent 17px);mask-image:linear-gradient(0deg,#000,transparent 92%);opacity:.95}
+#jmMobile .jm-globals{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+#jmMobile .jm-data{padding:10px;border:2px solid var(--panel-color);border-radius:12px;min-width:0;box-shadow:inset 0 0 18px #04396350,0 0 10px color-mix(in srgb,var(--panel-color),transparent 72%);background:linear-gradient(150deg,#06213a,#041021 77%)}
+#jmMobile .jm-bpm{--panel-color:#04dfee}#jmMobile .jm-vol{--panel-color:#ffac0b}
+#jmMobile .jm-data>span{font-size:14px;font-weight:1000;letter-spacing:.03em}
+#jmMobile .jm-data>div{display:flex;align-items:center;justify-content:space-between;gap:3px;margin-top:7px}
+#jmMobile .jm-data strong{font-size:clamp(31px,10vw,51px);font-weight:1000;line-height:1;letter-spacing:-.03em}
+#jmMobile .jm-data button{background:#0c253c;border:1px solid #275b7c;border-radius:9px;font-size:21px;font-weight:950;min-width:29px;height:41px}
+#jmMobile .jm-menu{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px}
+#jmMobile .jm-menu-tile{border:2px solid var(--tone);background:linear-gradient(155deg,color-mix(in srgb,var(--tone),transparent 84%),#051025 66%);box-shadow:inset 0 0 15px color-mix(in srgb,var(--tone),transparent 85%),0 0 13px color-mix(in srgb,var(--tone),transparent 75%);border-radius:11px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;min-height:88px;min-width:0;padding:6px 4px;font-size:13px;font-weight:1000;letter-spacing:.01em}
+#jmMobile .jm-symbol{font-size:32px;line-height:1;color:var(--tone);filter:drop-shadow(0 0 7px color-mix(in srgb,var(--tone),transparent 50%));font-weight:950}
+#jmMobile .jm-save{min-height:49px;border:2px solid #03eb80;border-radius:11px;background:linear-gradient(120deg,#002c1c,#003923);box-shadow:0 0 13px #05ee8a3b;font-size:17px;font-weight:1000;color:#daffea}
+#jmMobile .jm-easy-switch{font-weight:900;text-align:center;font-size:13px;min-height:44px;background:#06152d;border:1px solid #1d6288;border-radius:10px;color:#a7eaff}
+#jmMobile .jm-title{color:#8beeff;font-size:28px;font-weight:1000;margin:4px 0 10px;letter-spacing:.03em}
+#jmMobile .jm-section-cap{display:flex;justify-content:space-between;align-items:center;margin:2px 0 8px;font-size:12px;color:#9dcae2;font-weight:850}
+#jmMobile .jm-effects{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px}
+#jmMobile .jm-effect{min-width:0;min-height:109px;border-radius:12px;background:radial-gradient(circle at 50% 15%,color-mix(in srgb,var(--tone),transparent 82%),transparent 63%),linear-gradient(165deg,#071b31,#030a17);border:2px solid var(--tone);box-shadow:0 0 12px color-mix(in srgb,var(--tone),transparent 75%);display:flex;flex-direction:column;align-items:stretch;justify-content:space-between;padding:5px 3px 6px}
+#jmMobile .jm-effect-open{display:flex;flex:1;align-items:center;justify-content:center;flex-direction:column;gap:3px;background:transparent;border:0;min-height:69px;padding:0;overflow:hidden}
+#jmMobile .jm-effect-glyph{font-size:32px;font-weight:1000;line-height:1;color:var(--tone);text-shadow:0 0 16px var(--tone)}
+#jmMobile .jm-effect-open b{font-size:14px;font-weight:1000;line-height:1.2}
+#jmMobile .jm-effect-toggle{height:25px;align-self:center;padding:0 12px;min-width:45px;border:1px solid #7695b8;border-radius:9px;background:#122238;color:#99aaba;font-size:12px;font-weight:1000}
+#jmMobile .jm-effect-toggle.on{color:#072915;background:#42fc94;border-color:#36ffaa;box-shadow:0 0 8px #36ffaa80}
+#jmMobile .jm-effects-easy .jm-effect{min-height:70px}.jm-effects-easy .jm-effect-open{min-height:46px!important}.jm-effects-easy .jm-effect-glyph{font-size:22px!important}.jm-effects-easy .jm-effect-open b{font-size:12px!important}.jm-effects-easy .jm-effect-toggle{height:22px;font-size:11px}
+#jmMobile .jm-param-head{display:flex;justify-content:space-between;align-items:center;gap:10px;border:1px solid var(--param-tone,#12faff);border-radius:12px;background:linear-gradient(110deg,color-mix(in srgb,var(--param-tone),transparent 85%),#070f24 70%);padding:10px 12px;margin-bottom:10px}
+.jm-param-head span{font-weight:950;font-size:11px;color:#a3cddd}.jm-param-head h2{font-size:clamp(22px,7vw,32px);line-height:1.1;margin-top:3px;font-weight:1000;overflow-wrap:anywhere}
+#jmMobile .jm-param-enable{display:flex;align-items:center;gap:6px;color:#7bffa9;font-weight:900}
+#jmMobile input[type=checkbox]{width:25px;height:25px;accent-color:#0eef82}
+#jmMobile .jm-param-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;align-content:start}
+#jmMobile .jm-param{min-width:0;border:1px solid #246e95;border-radius:10px;min-height:87px;padding:9px 8px;display:flex;flex-direction:column;gap:2px;background:linear-gradient(165deg,#091e35,#030d1e);color:#f2faff}
+#jmMobile .jm-param span{font-weight:850;font-size:12px;overflow-wrap:anywhere;line-height:1.1}
+#jmMobile .jm-param strong{color:#c0efff;font-size:18px;line-height:1.2;font-weight:1000}
+#jmMobile .jm-param input[type=range]{width:100%;margin:auto 0 2px;accent-color:#02dcec;min-height:24px;touch-action:pan-y}
+#jmMobile .jm-param select{min-width:0;width:100%;background:#07182c;color:#eef9ff;font-size:14px;font-weight:850;border:1px solid #4783a6;min-height:40px;margin:auto 0 0;border-radius:8px;padding:0 3px}
+#jmMobile .jm-ring{margin:4px auto 10px;width:min(60vw,238px,30dvh);aspect-ratio:1;border-radius:50%;padding:17px;position:relative;background:conic-gradient(from -90deg,#113049 0 25%,#0a2336 25% 100%);box-shadow:0 0 18px #11beea2a,inset 0 0 18px #071f39}
+#jmMobile .jm-ring::before{content:'';position:absolute;inset:0;border-radius:50%;border:14px solid #136d9366;border-top-color:#1dcbef;opacity:.45}
+#jmMobile .jm-ring.looper::before{border-top-color:#ff345f;opacity:.6}
+#jmMobile .jm-ring-inner{height:100%;width:100%;background:#041122;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:3px}
+#jmMobile .jm-ring-inner small{font-size:13px;font-weight:950;color:#87d3fa}
+#jmMobile .jm-ring-inner strong{font-size:clamp(35px,12vw,58px);font-weight:1000;line-height:1.2}
+#jmMobile .jm-ring-inner span{font-size:9px;font-weight:1000;color:#638fa6;letter-spacing:.02em}
+#jmMobile .jm-metric-row{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:9px}
+#jmMobile .jm-metric-row>div{padding:9px 7px;border:1px solid #17658a;background:#071b32;border-radius:8px;font-weight:850;font-size:12px;display:flex;justify-content:space-between;gap:4px}.jm-metric-row b{color:#00e9f6}
+#jmMobile .jm-three-actions{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;margin:8px 0}
+#jmMobile .jm-three-actions button{min-height:56px;background:#051d2f;border:2px solid #08cdf1;border-radius:10px;font-weight:1000;font-size:14px}
+#jmMobile .jm-three-actions button.red{border-color:#ff2854;color:#ff5a79}#jmMobile .jm-three-actions button.green{border-color:#0bf695;color:#68ffba}#jmMobile .jm-three-actions button.blue{border-color:#178bff;color:#7bbaff}
+#jmMobile .jm-edit-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}
+#jmMobile .jm-edit-list label,#jmMobile .jm-drum-settings label{padding:7px 9px;min-width:0;min-height:54px;border:1px solid #1b658b;border-radius:9px;background:#07172b;display:flex;flex-direction:column;gap:3px;font-size:12px;font-weight:950}
+#jmMobile select,#jmMobile .jm-edit-list input{min-width:0;color:#f2fbff;background:#102b43;border:1px solid #366d95;border-radius:6px;font-size:14px;font-weight:850;padding:3px;min-height:28px}
+#jmMobile .jm-secondary-actions{display:flex;gap:7px;margin:8px 0}
+#jmMobile .jm-secondary-actions button{flex:1;min-height:40px;background:#10233d;border:1px solid #387aa4;border-radius:7px;font-size:12px;font-weight:950}
+#jmMobile .jm-drum-settings{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+#jmMobile .jm-drum-settings label{min-height:71px}.jm-drum-settings input[type=range]{max-width:100%;accent-color:#20f0aa}.jm-drum-settings strong{color:#20e6fd}.jm-drum-settings label>span{display:flex;gap:4px}.jm-drum-settings label button{background:#123454;border:1px solid #326b88;min-height:27px;width:30px}
+#jmMobile .jm-note{color:#7fb7cd;display:block;margin:10px 5px;font-weight:750;font-size:12px}
+#jmMobile .jm-embedded-tab{display:block!important;position:static!important;width:100%!important;height:auto!important;min-height:0!important;padding:0!important;margin:0!important;overflow:visible!important;max-width:100%!important}
+#jmMobile .jm-embedded-tab .panel{margin:8px 0!important;padding:12px!important;background:#08182d!important;border:1px solid #16658b!important}
+#jmMobile .jm-embedded-tab .panel button{min-height:44px}
+#jmMobile .jm-embedded-tab .tab-content{display:block!important}
+#jmMobile .jm-overlay{position:fixed;inset:0;z-index:2100;background:#000b;backdrop-filter:blur(7px);padding:12px;display:flex;align-items:center;justify-content:center}
+#jmMobile .jm-overlay[hidden]{display:none!important}
+#jmMobile .jm-sheet{width:min(100%,540px);height:min(90dvh,870px);min-height:0;display:flex;flex-direction:column;border:2px solid #12cef4;border-radius:17px;background:linear-gradient(150deg,#071b37,#020a18 68%);box-shadow:0 0 30px #05cefb55,0 18px 100px #000c;overflow:hidden}
+#jmMobile .jm-sheet-head{height:53px;flex:0 0 53px;padding:8px 14px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #145c86;font-size:22px;font-weight:1000}
+#jmMobile .jm-sheet-head button{min-width:42px;min-height:42px;border:1px solid #3682aa;border-radius:8px;background:#071e31;font-size:20px}
+#jmMobile .jm-sheet-body{flex:1;overflow:auto;min-height:0;padding:10px;overscroll-behavior:contain}
+#jmMobile .jm-mode-list{display:grid;gap:12px}.jm-mode-list button{min-height:55px;background:#09243b;border:1px solid #03daf5;border-radius:10px;font-weight:950}
+#jmMobile .jm-hud{position:absolute;z-index:2600;pointer-events:none;left:50%;top:17%;transform:translateX(-50%) scale(.96);min-width:min(85vw,320px);max-width:92%;text-align:center;opacity:0;transition:opacity .15s,transform .15s;padding:20px 18px;border:2px solid #0bdfff;border-radius:15px;background:linear-gradient(160deg,#0a2c4dec,#000912f2);box-shadow:0 0 32px #06e3ff77,0 18px 56px #000c;color:#fff;font-size:clamp(22px,6vw,32px);font-weight:1000;line-height:1.16;text-wrap:balance;letter-spacing:-.02em}
+#jmMobile .jm-hud.is-visible{opacity:1;transform:translateX(-50%) scale(1)}
+#jmMobile .jm-modal-open{overflow:hidden}
+/* Old save modal remains functional, but raised above the new app. */
+body.jm-mobile-active #saveModal.active{z-index:3500!important}
+body.jm-mobile-active #saveModal .solo-effect-container{width:min(92vw,440px)!important;padding:20px!important}
+body.jm-mobile-active #saveModal .solo-effect-title{font-size:24px!important;font-weight:1000!important}
+@media(max-width:359px){#jmMobile .jm-menu-tile{min-height:74px}#jmMobile .jm-effect{min-height:90px}.jm-preset-line strong{font-size:26px!important}#jmMobile .jm-data strong{font-size:30px}#jmMobile .jm-param{min-height:79px}#jmMobile .jm-ring{width:min(54vw,180px)}}
+@media(min-width:600px){#jmMobile{border-left:1px solid #258fb8;border-right:1px solid #258fb8}.jm-head>strong{font-size:30px!important}}
+@media(max-height:690px){#jmMobile .jm-head{min-height:45px}#jmMobile .jm-foot{flex-basis:34px}#jmMobile .jm-preset{min-height:99px}.jm-preset-line{min-height:56px}#jmMobile .jm-menu-tile{min-height:67px}#jmMobile .jm-ring{width:min(43vw,185px)}}
+@media(prefers-reduced-motion:reduce){#jmMobile .jm-hud{transition:none}}
+/* Stub transport telemetry endpoint: beat beacon lights only after real events arrive. */
+#jmMobile .jm-beat.is-on{border-color:#37fca2;background:#57ffa7;box-shadow:0 0 9px #00e66b,0 0 0 3px #082118}
+#jmMobile .jm-beat.is-downbeat{border-color:#ffbb13;background:#ffe036;box-shadow:0 0 11px #ffbc13}
+#jmMobile{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+#jmMobile .jm-wave{background: url('../assets/neon-wave.svg') center bottom / 110% 100% no-repeat;mask-image:linear-gradient(0deg,#000,transparent 98%)}
+#jmMobile .jm-connect.is-connected{color:#70ffa5;box-shadow:inset 0 0 12px #0dc87e66,0 0 12px #08e48544}
+/* Data-driven ring progress only; undefined phase never animates. */
+#jmMobile .jm-ring.looper{--ring-progress:0%;background:conic-gradient(from -90deg,#ff365d 0 var(--ring-progress),#0d2e44 var(--ring-progress) 100%)}
+/* Responsive finishing for the original NAM / Files / Setup / Tuner components. */
+#jmMobile .jm-embedded-tab .two-grid,#jmMobile .jm-embedded-tab .four-grid,#jmMobile .jm-embedded-tab .three-grid{gap:7px}
+#jmMobile .jm-embedded-tab .utility-row,#jmMobile .jm-embedded-tab .setup-strip{display:flex;flex-wrap:wrap;gap:8px}
+#jmMobile .jm-embedded-tab select,#jmMobile .jm-embedded-tab button,#jmMobile .jm-embedded-tab input:not([type=checkbox]){font-size:clamp(13px,3.7vw,17px);min-height:44px;max-width:100%}
+#jmMobile .jm-embedded-tab .nam-grid{grid-template-columns:repeat(auto-fit,minmax(min(100%,160px),1fr))}
+#jmMobile .jm-embedded-tab .nam-search{min-width:0;flex-basis:100%}
+#jmMobile .jm-embedded-tab .nam-browser-heading h2{font-size:clamp(22px,7vw,33px)}
+#jmMobile .jm-embedded-tab .nam-topbar,#jmMobile .jm-embedded-tab .nam-browser-intro,#jmMobile .jm-embedded-tab .nam-local-row{max-width:100%;min-width:0}
+#jmMobile .jm-embedded-tab .nam-search-row,#jmMobile .jm-embedded-tab .nam-filter-row{flex-wrap:wrap}
+#jmMobile .jm-embedded-tab .tuner-display{min-height:440px;display:flex;flex-direction:column;align-items:center;justify-content:space-around;gap:13px}
+#jmMobile .jm-embedded-tab .string-display{font-size:clamp(76px,29vw,116px);font-weight:1000;line-height:1;color:#5cff8b;text-shadow:0 0 28px #0be16b6e}
+#jmMobile .jm-embedded-tab .freq-display{font-size:clamp(22px,6vw,34px);font-weight:950;color:#c3f4ff}
+#jmMobile .jm-embedded-tab .cents-display{font-size:clamp(18px,5vw,28px);font-weight:950;color:#0ceffc}
+#jmMobile .jm-embedded-tab .tuner-gauge{max-width:100%}
+/* v0.2 — explicit bank/slot, slider-style BPM + volume, single-row Easy nav. */
+#jmMobile .jm-preset{display:flex;flex-direction:column;gap:6px;min-height:160px;padding:10px 12px 12px}
+#jmMobile .jm-preset .jm-eyebrow{position:relative;z-index:1;line-height:1.1}
+#jmMobile .jm-preset-name{display:block;position:relative;z-index:2;text-align:center;font-size:clamp(28px,8.5vw,44px);font-weight:1000;line-height:1.08;letter-spacing:-.035em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-shadow:0 0 18px #71baff8c;padding:0 2px}
+#jmMobile .jm-preset-fields{position:relative;z-index:2;display:grid;grid-template-columns:minmax(0,1fr) 92px;gap:9px;align-items:end}
+#jmMobile .jm-preset-fields label{display:flex;flex-direction:column;gap:3px;color:#bcdef4;font-size:11px;font-weight:950;letter-spacing:.06em;min-width:0}
+#jmMobile .jm-preset-fields select{width:100%;height:43px;min-height:43px;padding:0 10px;border:1px solid #21c6f3;border-radius:9px;color:#fff;background:#061e37;box-shadow:inset 0 0 9px #087bb93b;font-weight:900;font-size:clamp(15px,4vw,18px)}
+#jmMobile .jm-preset-fields select:focus-visible{outline:3px solid #ffce1b;outline-offset:2px}
+#jmMobile .jm-data{display:grid;grid-template-columns:1fr auto;grid-template-rows:auto 1fr auto;min-height:120px;gap:4px 7px;align-items:center;padding:10px 11px 12px}
+#jmMobile .jm-data>span{grid-column:1;grid-row:1;font-size:15px}
+#jmMobile .jm-data>strong{grid-column:1/-1;grid-row:2;text-align:center;font-size:clamp(34px,10.8vw,52px);line-height:1;font-weight:1000;font-variant-numeric:tabular-nums;color:white}
+#jmMobile .jm-data>input[type=range]{grid-column:1/-1;grid-row:3;width:100%;height:30px;margin:0;border:0;accent-color:var(--panel-color);cursor:pointer;background:transparent;touch-action:pan-y}
+#jmMobile .jm-data>input[type=range]::-webkit-slider-runnable-track{height:10px;border-radius:99px;background:linear-gradient(to right,var(--panel-color) var(--value-progress,0%),#13334d var(--value-progress,0%));box-shadow:inset 0 0 2px #000;border:1px solid #295879}
+#jmMobile .jm-data>input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;background:#f5ffff;width:23px;height:23px;border:3px solid var(--panel-color);border-radius:50%;margin-top:-7px;box-shadow:0 0 10px var(--panel-color)}
+#jmMobile .jm-data>input[type=range]{-webkit-appearance:none;appearance:none}
+#jmMobile .jm-data>input[type=range]::-moz-range-track{height:10px;border-radius:99px;background:#13334d;border:1px solid #295879}
+#jmMobile .jm-data>input[type=range]::-moz-range-progress{background:var(--panel-color);height:10px;border-radius:99px}
+#jmMobile .jm-data>input[type=range]::-moz-range-thumb{background:#f5ffff;width:18px;height:18px;border:3px solid var(--panel-color);border-radius:50%}
+#jmMobile .jm-data>input[type=range]:focus-visible{outline:3px solid #fff;outline-offset:3px}
+/* Easy mode: all seven destinations in ONE row, never collapsed into a grid. At
+   <=359px, allow horizontal access rather than making touch targets too small. */
+#jmMobile .jm-menu-easy{grid-template-columns:repeat(7,minmax(0,1fr));gap:4px}
+#jmMobile .jm-menu-easy .jm-menu-tile{min-height:57px;gap:2px;padding:4px 0 3px;border-width:1.5px;border-radius:8px;font-size:clamp(9px,2.4vw,11px);line-height:1.1;letter-spacing:0;overflow:hidden}
+#jmMobile .jm-menu-easy .jm-symbol{font-size:clamp(17px,5vw,22px)}
+@media(max-width:359px){#jmMobile .jm-menu-easy{display:flex;gap:4px;overflow-x:auto;scroll-snap-type:x proximity;padding-bottom:4px}#jmMobile .jm-menu-easy .jm-menu-tile{flex:0 0 44px;scroll-snap-align:start;font-size:9px}#jmMobile .jm-preset{min-height:155px}#jmMobile .jm-preset-name{font-size:clamp(26px,8.5vw,34px)}}
+@media(max-height:690px){#jmMobile .jm-preset{min-height:148px}#jmMobile .jm-data{min-height:105px}}
+/* Compact NAM auth area replaces the large promotional intro; original IDs and
+   TONE3000 login action remain mounted/connected. */
+#jmMobile .jm-nam-auth{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:10px;min-width:0}
+#jmMobile .jm-nam-auth .nam-auth-pill{font-size:12px;font-weight:900}
+#jmMobile .jm-nam-auth button{flex:0 1 auto}
+/* v0.3: dedicated portrait application viewport and compact two-selector preset. */
+html,body{margin:0;min-width:0}
+body.jm-mobile-active{height:100vh!important;height:100dvh!important;min-height:0!important;overscroll-behavior:none}
+#jmMobile{width:100%;height:100vh;height:100dvh;min-height:0;max-width:700px;box-sizing:border-box;overflow:hidden}
+#jmMobile .jm-scroll{-webkit-overflow-scrolling:touch;scrollbar-gutter:stable;flex:1 1 0;min-height:0}
+#jmMobile .jm-head{padding-left:max(8px,env(safe-area-inset-left,0px));padding-right:max(8px,env(safe-area-inset-right,0px))}
+#jmMobile .jm-foot{padding-left:max(12px,env(safe-area-inset-left,0px));padding-right:max(12px,env(safe-area-inset-right,0px))}
+/* No PRESET eyebrow and no redundant preset family/slot title. Only two large selectors. */
+#jmMobile .jm-preset{min-height:102px;display:flex;align-items:center;justify-content:center;padding:12px 12px 14px;overflow:hidden}
+#jmMobile .jm-preset-fields{width:100%;display:grid;grid-template-columns:minmax(0,1fr) minmax(87px,.46fr);gap:10px;align-items:stretch}
+#jmMobile .jm-preset-fields label{font-size:14px;line-height:1.1;gap:7px;color:#d7efff;letter-spacing:.065em;font-weight:1000;text-shadow:0 0 10px #00caff66}
+#jmMobile .jm-preset-fields select{width:100%;height:62px;min-height:62px;padding:0 7px 0 9px;font-size:clamp(19px,5.5vw,26px);font-weight:1000;border:2px solid #00c6ff;border-radius:11px;background:#05203c;color:#fff;box-shadow:0 0 11px #00bdf94c,inset 0 0 16px #005fa75c;position:relative;z-index:1}
+#jmMobile .jm-preset-fields label:last-child select{text-align:center;border-color:#a750ff;box-shadow:0 0 11px #aa40ed60}
+#jmMobile .jm-wave{inset:38% -2% 0;opacity:.52}
+#jmMobile .jm-home>.jm-easy-switch{display:none!important}
+/* Setup is the sole place to choose Easy Mode or manually enter fullscreen. */
+#jmMobile .jm-setup-display{padding:9px 11px 11px;border:1px solid #117ca3;background:linear-gradient(135deg,#073155,#061024);border-radius:12px;margin:3px 0 12px;box-shadow:inset 0 0 13px #0082c02c}
+#jmMobile .jm-setup-display-title{font-size:13px;letter-spacing:.09em;font-weight:1000;color:#8eecff;margin-bottom:9px}
+#jmMobile .jm-setup-choices{display:grid;grid-template-columns:minmax(0,1fr) minmax(118px,.9fr);gap:9px;align-items:stretch}
+#jmMobile .jm-easy-setting{display:flex;align-items:center;justify-content:space-between;gap:5px;padding:0 8px;min-height:46px;color:#fff;font-size:12px;font-weight:950;border-radius:9px;border:1px solid #5f8da7;background:#08172e;white-space:nowrap}
+#jmMobile .jm-easy-setting input[type=checkbox]{width:25px;height:25px;flex:0 0 25px}
+#jmMobile .jm-fullscreen-btn{min-width:0;min-height:46px;padding:4px 6px;border-radius:9px;border:1px solid #05d8f6;background:linear-gradient(160deg,#084467,#041c32);font-weight:950;font-size:12px}
+#jmMobile .jm-fullscreen-btn:focus-visible,#jmMobile .jm-easy-setting:focus-within{outline:3px solid white;outline-offset:2px}
+/* Layouts never create sideways body scrolling; long parameter lists scroll only in page/sheet. */
+#jmMobile .jm-param-screen,#jmMobile .jm-embedded-tab,#jmMobile .jm-home,#jmMobile .jm-preset-fields,#jmMobile .jm-globals{min-width:0;max-width:100%}
+#jmMobile .jm-sheet{max-height:calc(100dvh - max(20px,env(safe-area-inset-top,0px)) - max(20px,env(safe-area-inset-bottom,0px)))}
+@media(max-width:359px){
+ #jmMobile .jm-preset{min-height:90px;padding:10px 8px}
+ #jmMobile .jm-preset-fields{grid-template-columns:minmax(0,1fr) 87px;gap:7px}
+ #jmMobile .jm-preset-fields select{font-size:18px;min-height:56px;height:56px;padding:0 4px}
+ #jmMobile .jm-preset-fields label{font-size:13px}
+ #jmMobile .jm-setup-choices{gap:6px;grid-template-columns:minmax(0,1fr) minmax(102px,.8fr)}
+ #jmMobile .jm-fullscreen-btn{font-size:11px}
+}
+@media(max-height:750px){
+ #jmMobile .jm-preset{min-height:88px;padding-top:8px;padding-bottom:8px}
+ #jmMobile .jm-preset-fields select{min-height:50px;height:50px}
+ #jmMobile .jm-data{min-height:96px;padding:8px 9px}
+ #jmMobile .jm-menu-tile{min-height:72px}
+ #jmMobile .jm-home{gap:8px}
+ #jmMobile .jm-scroll{padding-top:7px;padding-bottom:9px}
+}
+@media(max-height:590px){
+ #jmMobile .jm-head{min-height:43px;padding-top:2px;padding-bottom:2px}
+ #jmMobile .jm-foot{flex-basis:36px}
+ #jmMobile .jm-globals{gap:7px}
+ #jmMobile .jm-data>strong{font-size:30px}
+}
+
+#jmMobile button.jm-easy-setting{cursor:pointer;min-width:0;font-family:inherit}
+#jmMobile .jm-easy-setting-state{display:inline-flex;align-items:center;justify-content:center;min-width:39px;min-height:26px;border-radius:7px;background:#152b3b;color:#95b4c6;border:1px solid #47667a;padding:0 5px;font-size:12px}
+#jmMobile .jm-easy-setting.active{border-color:#00de9c;background:#082c30}
+#jmMobile .jm-easy-setting.active .jm-easy-setting-state{background:#07e7a0;color:#002a1e;border-color:#07e7a0}
+
+/* ======================================================================
+   JamMate Mobile Neon v0.4 — viewport-fit FX + unified legacy-page skin
+   No alternate controls or protocol objects are created by these styles.
+   ====================================================================== */
+
+/* FX selection: 18 tiles occupy the entire available content viewport.
+   Title only, no instructional subheading; safe at 320x568 and modern phones. */
+#jmMobile .jm-scroll[data-view="fx"]{
+  display:flex;flex-direction:column;overflow:hidden;padding:7px 9px 9px;
+}
+#jmMobile .jm-fx-page{
+  flex:1;min-height:0;min-width:0;display:flex;flex-direction:column;
+}
+#jmMobile .jm-fx-page>.jm-title{
+  flex:0 0 auto;line-height:1.05;margin:0 0 clamp(5px,1vh,10px);
+  font-size:clamp(22px,4.3dvh,34px);
+}
+#jmMobile .jm-effects.jm-effects-fit{
+  flex:1 1 0;min-height:0;height:100%;width:100%;overflow:hidden;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  grid-template-rows:repeat(6,minmax(0,1fr));
+  gap:clamp(4px,.75dvh,9px);
+}
+#jmMobile .jm-effects-fit .jm-effect{
+  min-height:0;height:100%;padding:clamp(2px,.5dvh,5px) 3px;
+  border-width:1.5px;border-radius:10px;
+}
+#jmMobile .jm-effects-fit .jm-effect-open{
+  flex:1 1 0;min-height:0;height:auto;gap:clamp(0px,.35dvh,3px);
+}
+#jmMobile .jm-effects-fit .jm-effect-glyph{
+  font-size:clamp(19px,3.8dvh,33px);line-height:1;
+}
+#jmMobile .jm-effects-fit .jm-effect-open b{
+  font-size:clamp(10px,1.72dvh,14px);font-weight:1000;line-height:1.05;
+}
+#jmMobile .jm-effects-fit .jm-effect-toggle{
+  flex:0 0 auto;height:clamp(19px,2.6dvh,25px);min-height:0;
+  min-width:44px;padding:0 7px;font-size:clamp(10px,1.42dvh,12px);
+}
+@media(max-height:610px){
+ #jmMobile .jm-scroll[data-view="fx"]{padding:4px 7px 6px}
+ #jmMobile .jm-fx-page>.jm-title{margin:0 0 4px;font-size:22px}
+ #jmMobile .jm-effects-fit .jm-effect-glyph{font-size:20px}
+ #jmMobile .jm-effects-fit .jm-effect-open b{font-size:10px}
+ #jmMobile .jm-effects-fit .jm-effect-toggle{height:18px;font-size:10px}
+}
+
+/* Large stage-grade HUD. The HUD reports a requested operation/value, not an
+   acknowledgement from the Daisy unless a real BLE response says so. */
+#jmMobile .jm-hud{
+  position:fixed;left:50%;top:calc(env(safe-area-inset-top,0px) + 24%);
+  display:flex;flex-direction:column;gap:8px;align-items:center;justify-content:center;
+  width:min(88vw,430px);max-width:88vw;min-width:0;min-height:124px;
+  padding:16px 14px 18px;border:2px solid #03ebff;border-radius:17px;
+  background:radial-gradient(ellipse at 50% 0%,#164479f2,#03152cef 70%),#061426f0;
+  box-shadow:0 0 34px #05d9fa77,0 22px 90px #000e,inset 0 0 25px #0a8cd744;
+  text-align:center;overflow-wrap:anywhere;letter-spacing:0;
+}
+#jmMobile .jm-hud-title{
+  color:#91edff;font-size:clamp(15px,3.6vw,21px);font-weight:950;
+  letter-spacing:.075em;line-height:1.12;text-transform:uppercase;
+}
+#jmMobile .jm-hud-value{
+  color:#fff;font-size:clamp(32px,9vw,57px);font-weight:1000;
+  line-height:1.02;letter-spacing:-.035em;text-shadow:0 0 15px #65d9ff88;
+}
+
+/* Consistent embedded page treatment: the original elements continue to own
+   BLE event handlers, NAM login, tuner telemetry and file transfer. */
+#jmMobile .jm-mounted-title{
+  font-size:clamp(25px,7vw,33px);color:#bcf9ff;margin:1px 0 10px;
+  padding-bottom:7px;border-bottom:2px solid #05b9ef;
+  text-shadow:0 0 14px #0bafff78;
+}
+#jmMobile .jm-embedded-tab .panel{
+  background:radial-gradient(ellipse at 10% 0%,#0b44704d,transparent 69%),
+    linear-gradient(140deg,#081b36,#030d20 75%)!important;
+  border:1.5px solid #177fac!important;border-radius:13px!important;
+  box-shadow:inset 0 0 14px #0372bb28,0 0 11px #03a4db1c!important;
+  padding:12px!important;margin:0 0 10px!important;
+}
+#jmMobile .jm-embedded-tab .panel-title{
+  font-size:17px!important;font-weight:1000;letter-spacing:.02em;
+  color:#90ebff;text-shadow:0 0 10px #00d5ff66;margin:0 0 10px;
+}
+#jmMobile .jm-embedded-tab button,
+#jmMobile .jm-embedded-tab .btn-nam-action,
+#jmMobile .jm-embedded-tab .btn-nam-eject{
+  min-height:44px;border-radius:9px;border:1.5px solid #11b9e5;
+  background:linear-gradient(135deg,#0d3a60,#061a35);
+  color:#f4fbff;font-weight:950;font-size:clamp(12px,3.6vw,16px);
+  box-shadow:inset 0 0 8px #0a93d33b;
+}
+#jmMobile .jm-embedded-tab button:focus-visible,
+#jmMobile .jm-embedded-tab input:focus-visible,
+#jmMobile .jm-embedded-tab select:focus-visible{outline:3px solid #ffbd20;outline-offset:2px}
+#jmMobile .jm-embedded-tab button.danger,#jmMobile #reset-btn{
+  border-color:#fa385d;background:linear-gradient(130deg,#4b142f,#160b1d);
+  color:#ffc1ce;
+}
+#jmMobile .jm-embedded-tab button.warning,#jmMobile #flash-btn{
+  border-color:#ffb829;background:linear-gradient(130deg,#50320c,#201629);color:#ffe09b;
+}
+#jmMobile .jm-embedded-tab .checkbox,
+#jmMobile .jm-embedded-tab .field,
+#jmMobile .jm-embedded-tab .nam-filter-field{
+  color:#cbeeff;font-weight:850;font-size:clamp(12px,3.6vw,15px);
+}
+#jmMobile .jm-embedded-tab .checkbox{
+  background:#081d35;border:1px solid #276d92;border-radius:9px;
+  min-height:44px;padding:9px 10px;
+}
+#jmMobile .jm-embedded-tab input:not([type=checkbox]):not([type=file]),
+#jmMobile .jm-embedded-tab select{
+  width:100%;min-width:0;max-width:100%;min-height:43px;
+  background:#06172e;color:#f4ffff;border:1px solid #296d99;
+  border-radius:8px;padding:6px 8px;font-weight:850;
+}
+#jmMobile .jm-embedded-tab input[type=checkbox]{width:23px;height:23px;accent-color:#0beca4}
+#jmMobile .jm-embedded-tab input[type=range]{accent-color:#08e6f4}
+
+/* Setup: utility controls and settings stay usable in a scrollable list. */
+#jmMobile .jm-setup-display{
+  border:1.5px solid #05d7ef;background:linear-gradient(115deg,#062641,#07102b);
+}
+#jmMobile #setup-tab .two-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+#jmMobile #setup-tab .utility-row{display:grid;grid-template-columns:minmax(90px,1fr) minmax(90px,1fr);gap:8px;align-items:center}
+#jmMobile #setup-tab .utility-row .freq-field{grid-column:1/-1}
+#jmMobile #setup-tab .setup-strip{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+#jmMobile #setup-tab .setup-strip .knob-container{grid-column:1/-1;justify-self:center}
+#jmMobile #setup-tab .knob-container{max-width:100%}
+#jmMobile #setup-tab .field>span{font-size:12px;color:#a9dff4;font-weight:900}
+#jmMobile #setup-tab #btnToggleUART{width:100%;margin:10px 0}
+
+/* Tuner: high contrast note and meter, never the old grey panel. */
+#jmMobile .jm-scroll[data-view="tuner"]{display:flex;flex-direction:column}
+#jmMobile #tuner-tab{flex:1;display:flex!important;min-height:0;flex-direction:column}
+#jmMobile #tuner-tab .tuner-display{
+  flex:1;min-height:min(430px,calc(100dvh - 150px));
+  display:flex;align-items:center;justify-content:space-evenly;gap:7px;
+  border-color:#05bdf4!important;background:radial-gradient(ellipse at center,#092542,#020d20 75%)!important;
+}
+#jmMobile #tuner-tab .jumbo{width:100%;max-width:290px;justify-content:center;flex:0 0 auto}
+#jmMobile #tuner-tab .string-display{
+  color:#3cff86;background:none;-webkit-text-fill-color:#3cff86;
+  font-size:clamp(86px,27vw,132px);font-weight:1000;line-height:1;
+  filter:drop-shadow(0 0 13px #04fb7377);
+}
+#jmMobile #tuner-tab .tuner-gauge{
+  width:min(100%,330px);height:clamp(85px,16vh,130px);
+  border-bottom:4px solid #07b5ec;
+  background:repeating-conic-gradient(from -55deg at 50% 100%,#198cc755 0deg 1deg,transparent 1deg 8deg),
+   radial-gradient(ellipse at center bottom,#055d9466,transparent 65%);
+  box-shadow:inset 0 -4px 12px #0968ba2a;
+}
+#jmMobile #tuner-tab .tuner-needle{background:#65ff91;box-shadow:0 0 12px #2cff6f;width:4px}
+#jmMobile #tuner-tab .freq-display{font-size:clamp(25px,6.8vw,35px);color:#ddfaff;font-weight:1000}
+#jmMobile #tuner-tab .cents-display{font-size:clamp(21px,6vw,29px);color:#06e6fb;font-weight:1000}
+
+/* Files / IR upload and waveform: neon waveform panels, practical buttons. */
+#jmMobile #loader-tab{width:100%}
+#jmMobile #loader-tab .panel:first-child{
+  border-color:#0bf2cf!important;box-shadow:0 0 14px #03d9c633!important;
+}
+#jmMobile #loader-tab .file-upload-btn{width:100%}
+#jmMobile #loader-tab .file-upload-btn button{
+  width:100%;border:2px solid #00e5d7;background:linear-gradient(120deg,#064b4e,#082340);
+  min-height:58px;font-size:17px;font-weight:1000;
+}
+#jmMobile #loader-tab .waveform-canvas,
+#jmMobile #loader-tab .spectrum-canvas{
+  display:block;width:100%;height:clamp(95px,18vh,148px);margin:0 0 10px;
+  border:1.5px solid #168be5;border-radius:11px;
+  background:#031327;box-shadow:inset 0 0 14px #0f7ed944;
+}
+#jmMobile #loader-tab .send-panel{
+  display:grid;grid-template-columns:1fr;gap:10px;border-color:#0cc6ed!important;
+}
+#jmMobile #loader-tab #btnSendIR{width:100%;min-height:51px;background:linear-gradient(135deg,#076a88,#042b4c)}
+
+/* NAM: preserve search, filters, authentication, capture details and transfers. */
+#jmMobile #nam-tab .nam-layout{gap:11px}
+#jmMobile #nam-tab .nam-topbar{
+  border-color:#a65aff!important;background:radial-gradient(ellipse at 70% 0%,#52257b66,transparent 65%),#061426!important;
+}
+#jmMobile #nam-tab .nam-search-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:7px;align-items:stretch}
+#jmMobile #nam-tab .nam-search{grid-column:1/-1;width:100%;min-width:0;flex:auto;font-size:15px}
+#jmMobile #nam-tab #btnNamSearch{background:linear-gradient(135deg,#0b81af,#043b75);font-weight:1000}
+#jmMobile #nam-tab #btnNamBrowseT3K{white-space:normal;min-width:0;padding:7px 8px;font-size:12px}
+#jmMobile #nam-tab .nam-filter-row{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+#jmMobile #nam-tab .nam-filter-field{display:flex;flex-direction:column;align-items:stretch;gap:5px;min-width:0}
+#jmMobile #nam-tab .nam-filter-field select{min-width:0;width:100%}
+#jmMobile #nam-tab .nam-result-count{grid-column:1/-1;text-align:left}
+#jmMobile #nam-tab .nam-library-head{display:flex;gap:5px;align-items:center;justify-content:space-between;border-bottom:1px solid #136c97;padding:4px 0}
+#jmMobile #nam-tab .nam-library-head h3{font-size:21px;color:#c6eeff;font-weight:1000}
+#jmMobile #nam-tab .nam-library-hint{display:none}
+#jmMobile #nam-tab #namGrid{display:grid;grid-template-columns:1fr!important;gap:10px}
+#jmMobile #nam-tab .nam-tone-card,#jmMobile #nam-tab .nam-card{
+  border:1.5px solid #945cff;border-radius:12px;
+  background:linear-gradient(130deg,#111e3a,#071128);
+  box-shadow:inset 0 0 16px #922de525,0 0 12px #9b44ff20;
+}
+#jmMobile #nam-tab .nam-detail{
+  border:2px solid #a15cff!important;background:linear-gradient(140deg,#1a1641,#060e27)!important;
+}
+#jmMobile #nam-tab .nam-local-row,#jmMobile #nam-tab .nam-device-row{
+  border-color:#1acfe6!important;gap:9px;
+}
+#jmMobile #nam-tab .nam-local-info{min-width:0}
+#jmMobile #nam-tab .nam-device-name{font-size:17px;font-weight:1000;color:#ecfcff;overflow-wrap:anywhere}
+#jmMobile #nam-tab .nam-progress-bar-wrap{height:13px;background:#0a2943}
+#jmMobile #nam-tab .nam-progress-bar{background:linear-gradient(90deg,#7b36ff,#00dff0)}
+
+@media(max-width:359px){
+ #jmMobile #nam-tab .nam-search-row{grid-template-columns:1fr}
+ #jmMobile #nam-tab #btnNamBrowseT3K{grid-column:1}
+ #jmMobile #tuner-tab .string-display{font-size:81px}
+ #jmMobile .jm-hud{top:25%;min-height:108px}
+ #jmMobile .jm-hud-value{font-size:clamp(28px,9vw,42px)}
+}
+@media(max-height:650px){
+ #jmMobile #tuner-tab .tuner-display{min-height:min(375px,calc(100dvh - 143px))}
+ #jmMobile #tuner-tab .string-display{font-size:77px}
+ #jmMobile #tuner-tab .tuner-gauge{height:80px}
+}

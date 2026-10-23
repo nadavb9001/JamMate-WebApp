@@ -1,0 +1,164 @@
+/* JAMMATE | ULTRA MODERN METAL
+   Satin titanium / graphite / anodized controls. Built from CSS + local SVG:
+   no downloads, images, extra widgets, or changes to BLE/preset protocol.
+   Loaded exclusively when data-jm-theme="metal" is active. */
+:root{color-scheme:dark}
+body.jm-mobile-active{
+ --bg-0:#080e15;--bg-1:#141f2a;--bg-2:#1b2a36;
+ --panel:#172430;--panel-2:#1d2e3b;--raised:#2a3b48;
+ --color-accent:#a9eaff;--color-accent-2:#ddebf2;--color-accent-3:#49bbda;
+ --color-accent-hover:#e1f7ff;--color-text-primary:#f3f7fc;
+ --color-text-secondary:#b5c9d6;--color-border:#526c7e;
+ --color-border-strong:#b5d2e4;--knob-arc-a:#73d9f3;
+ --knob-arc-b:#bed7e1;--knob-arc-c:#f7ac56;
+ background:#080d13!important;color:#edf3f8!important;
+ font-family:Inter,system-ui,-apple-system,'Segoe UI',sans-serif!important;
+}
+#jmMobile{
+ --teal:#78d7ed;--bg:#0b141d;--ink:#eff6fc;--gold:#e5a85f;
+ --edge:#536a7a;--metal-hi:#b7c8d2;--metal-low:#0c151d;
+ color:#ecf3fa!important;
+ background:
+   radial-gradient(ellipse 100% 38% at 50% -12%,#7493a93b,transparent 74%),
+   linear-gradient(113deg,#ffffff06 0 1px,transparent 1px 11px),
+   linear-gradient(158deg,#192735 0%,#0a121a 47%,#101b25 100%)!important;
+ font-family:Inter,system-ui,-apple-system,'Segoe UI',sans-serif!important;
+}
+#jmMobile::before{content:"";position:absolute;inset:5px;border:1px solid #aecddd1c;pointer-events:none;z-index:0;border-radius:6px}
+#jmMobile .jm-head,#jmMobile .jm-scroll,#jmMobile .jm-foot{position:relative;z-index:1}
+#jmMobile button,#jmMobile input,#jmMobile select,body.jm-mobile-active .csel-trigger,body.jm-mobile-active .csel-item{font-family:inherit}
+/* Header: machined graphite and a subtle laser-etched title. */
+#jmMobile .jm-head{
+ background:linear-gradient(180deg,#334656 0%,#1b2a35 22%,#0a121b 100%)!important;
+ border-bottom:1px solid #7e9bad!important;
+ box-shadow:0 5px 15px #0009,inset 0 1px #c9dce8b3,inset 0 -1px #050b12!important;
+}
+#jmMobile .jm-head>strong{
+ color:#f3f9ff!important;text-shadow:0 1px #000,0 0 13px #81bad65c!important;
+ font-family:Inter,system-ui,sans-serif!important;font-weight:1000!important;
+ letter-spacing:.12em!important;
+}
+#jmMobile .jm-head .jm-icon,#jmMobile .jm-connect{
+ color:#e7f5ff!important;filter:drop-shadow(0 1px #0b1014);
+}
+#jmMobile .jm-connect{background:linear-gradient(#3d5365,#15232d)!important;border:1px solid #92afc1!important;box-shadow:inset 0 1px #d8eaf57a!important}
+#jmMobile .jm-foot{
+ color:#d8e9f3!important;background:linear-gradient(180deg,#263744,#0c151e)!important;
+ border-top:1px solid #a0bacb!important;box-shadow:inset 0 1px #d2e6f53b,0 -4px 20px #030a10!important;
+}
+#jmMobile .jm-foot-meter{background:#07121b!important;border:1px solid #6b8292!important}
+#jmMobile .jm-foot-meter i{background:linear-gradient(90deg,#3b8ea1,#a0edfa,#f3fcff)!important}
+#jmBeatText{color:#c4e7f3!important}
+#jmBeatLed{background:#263b46!important;border-color:#7c9eac!important;box-shadow:0 0 0 3px #0b1821!important}
+#jmMobile .jm-beat.is-on{background:#64d2b1!important;border-color:#c0f5e3!important;box-shadow:0 0 10px #77e8c29d!important}
+#jmMobile .jm-beat.is-downbeat{background:#f9b55c!important;border-color:#ffe5ab!important;box-shadow:0 0 12px #f9aa4c!important}
+/* Satin steel control islands, beveled rails, luminous neutral typography. */
+#jmMobile .jm-preset,#jmMobile .jm-data,#jmMobile .jm-param-head,
+#jmMobile .jm-setup-display,#jmMobile .jm-param,
+#jmMobile .jm-edit-list label,#jmMobile .jm-drum-settings label,
+#jmMobile .jm-embedded-tab .panel,#jmMobile .jm-metric-row>div{
+ background-image:url('../assets/metal-grain.svg'),linear-gradient(154deg,#364958,#192835 49%,#0c151e 100%)!important;
+ background-size:160px 160px,auto!important;
+ background-repeat:repeat,no-repeat!important;
+ border:1px solid #7c98ab!important;
+ border-radius:11px!important;
+ box-shadow:inset 0 1px 0 #f5fbff7b,inset 0 -2px 0 #050b12,0 3px 10px #0009!important;
+}
+#jmMobile .jm-preset{position:relative;border:2px solid #aac3d1!important;overflow:hidden}
+#jmMobile .jm-preset::after{
+ content:"";pointer-events:none;position:absolute;inset:0;
+ background:linear-gradient(115deg,transparent 20%,#ffffff08 34%,transparent 40% 59%,#e1edfa0c 62%,transparent 68%);
+}
+#jmMobile .jm-wave{background:linear-gradient(90deg,transparent,#a9c3d23d,transparent)!important;opacity:.28!important;filter:none!important}
+#jmMobile .jm-preset-fields label{color:#d1e4f0!important;font-weight:950;letter-spacing:.06em}
+#jmMobile .jm-preset-fields select,#jmMobile .jm-preset-fields .csel-trigger{
+ background:linear-gradient(#314656,#111f2b)!important;color:#f7fbff!important;
+ border:1px solid #9ab4c5!important;border-bottom-color:#344a5b!important;
+ box-shadow:inset 0 1px #e4f4ff83,0 2px 5px #0006!important;
+ font-weight:1000!important;border-radius:8px!important;
+}
+#jmMobile .jm-preset-fields label:last-child select,#jmMobile .jm-preset-fields label:last-child .csel-trigger{border-color:#e0b87a!important}
+#jmMobile .jm-preset-fields .csel-arrow{color:#e4f0f7!important}
+#jmMobile .jm-data{--panel-color:#9dc5d5!important}
+#jmMobile .jm-vol{--panel-color:#eab475!important}
+#jmMobile .jm-data>span{color:#c2d6e4!important;letter-spacing:.08em!important}
+#jmMobile .jm-data strong{color:#fff!important;text-shadow:0 2px 0 #000d!important;letter-spacing:-.05em!important;font-variant-numeric:tabular-nums}
+#jmMobile .jm-data input[type=range]{accent-color:#8cd4ea!important}
+#jmMobile .jm-vol input[type=range]{accent-color:#f7b865!important}
+#jmMobile .jm-data>input[type=range]::-webkit-slider-runnable-track{
+ background:linear-gradient(to right,#87bed4 var(--value-progress,0%),#081620 var(--value-progress,0%))!important;
+ border:1px solid #58768b!important;
+}
+#jmMobile .jm-vol>input[type=range]::-webkit-slider-runnable-track{background:linear-gradient(to right,#e8ae6b var(--value-progress,0%),#081620 var(--value-progress,0%))!important}
+/* Raised metal effect/preset navigation buttons, no distracting rainbow outline. */
+#jmMobile .jm-menu-tile,#jmMobile .jm-effect{
+ background:url('../assets/metal-grain.svg') 0 0/140px repeat,linear-gradient(164deg,#293f51 0%,#172836 43%,#0b1520 100%)!important;
+ border:1.5px solid #91aab9!important;border-radius:11px!important;
+ color:#f0f7fc!important;box-shadow:inset 0 1px #e5f6ff7d,inset 0 -3px #040b12,0 3px 8px #0009!important;
+}
+#jmMobile .jm-menu-tile::after{content:"";pointer-events:none;position:absolute;inset:2px;border:1px solid #c7e1f51d;border-radius:8px}
+#jmMobile .jm-menu-tile .jm-symbol,#jmMobile .jm-effect-glyph{color:#b6e9f6!important;filter:drop-shadow(0 1px #000)!important;text-shadow:none!important}
+#jmMobile .jm-effect:has(.jm-effect-toggle.on),#jmMobile .jm-menu-tile:active{border-color:#c6ebfa!important;box-shadow:inset 0 1px #fff9,0 0 0 1px #4a9fbf,0 2px 11px #000a!important}
+#jmMobile .jm-menu-tile b,#jmMobile .jm-effect-open b{color:#f5f9fd!important;text-shadow:0 1px #000e!important}
+#jmMobile .jm-effect-toggle{
+ background:linear-gradient(#303f4b,#111c24)!important;color:#cbdbe6!important;
+ border:1px solid #667d8b!important;border-radius:5px!important;box-shadow:inset 0 1px #d4e8f44a!important;
+}
+#jmMobile .jm-effect-toggle.on{background:linear-gradient(#77deba,#2c846f)!important;border-color:#c3f3df!important;color:#051e17!important;box-shadow:inset 0 1px #e8ffef78!important}
+#jmMobile .jm-save{background:linear-gradient(160deg,#30566b,#102e40)!important;border:1.5px solid #7de0ed!important;border-radius:9px!important;color:#f2fcff!important;box-shadow:inset 0 1px #e0fcff8a,0 3px 10px #0009!important}
+#jmMobile .jm-title,#jmMobile .jm-mounted-title{color:#eaf5fd!important;text-shadow:0 1px #000b!important;letter-spacing:.05em!important}
+#jmMobile .jm-section-cap{color:#bed5e2!important}
+/* Compact parameter tiles should feel like individual brushed aluminium modules. */
+#jmMobile .jm-param-head{border-color:#b8d6e6!important}
+#jmMobile .jm-param-head h2{color:#f1f8fd!important}
+#jmMobile .jm-param-head span{color:#afcadc!important}
+#jmMobile .jm-param span{color:#c7dce9!important}
+#jmMobile .jm-param strong{color:#f6fbff!important}
+#jmMobile .jm-param input[type=range],#jmMobile .jm-drum-settings input[type=range]{accent-color:#99e0ef!important}
+#jmMobile .jm-param select,#jmMobile .jm-param .csel-trigger{
+ color:#eef8ff!important;background:linear-gradient(#243f52,#142431)!important;
+ border:1px solid #7799ae!important;border-radius:6px!important;
+}
+#jmMobile input[type=checkbox]{accent-color:#4bc1ab!important}
+/* Loop/beat rings are reserved for actual DSP telemetry. */
+#jmMobile .jm-ring{
+ background:conic-gradient(from -90deg,#a4d5e4 0 22%,#263b49 22% 100%)!important;
+ border:3px solid #9bb7c8!important;
+ box-shadow:0 0 0 3px #0a141c,0 0 0 4px #627d8f,inset 0 0 13px #000b!important;
+}
+#jmMobile .jm-ring.looper{background:conic-gradient(from -90deg,#efa46a 0 var(--ring-progress,0%),#243846 var(--ring-progress,0%) 100%)!important}
+#jmMobile .jm-ring::before{border-color:#7ba0b944!important;border-top-color:#c5e6f2!important;opacity:.6!important}
+#jmMobile .jm-ring.looper::before{border-top-color:#efaa76!important}
+#jmMobile .jm-ring-inner{background:radial-gradient(circle at 40% 24%,#2b4556,#08141e)!important;border:1px solid #668798!important}
+#jmMobile .jm-ring-inner small,#jmMobile .jm-ring-inner span{color:#aecada!important}
+#jmMobile .jm-ring-inner strong{color:#f7faff!important;text-shadow:0 2px #000}
+#jmMobile .jm-note{background:#172936!important;color:#b9d8e8!important;border:1px solid #617d90!important}
+/* Modal overlays use stainless edges and fixed-size readable menus. */
+#jmMobile .jm-overlay{background:#02070bc9!important;backdrop-filter:blur(8px)!important}
+#jmMobile .jm-sheet{background:linear-gradient(160deg,#344857,#13212d 42%,#08131d)!important;border:2px solid #aac8d9!important;border-radius:13px!important;box-shadow:inset 0 1px #f9feffc2,0 12px 38px #000e!important}
+#jmMobile .jm-sheet-head{background:linear-gradient(#435c6d,#172a39)!important;border-bottom:1px solid #91abbb!important;color:#fff!important}
+#jmMobile .jm-sheet-head button{background:linear-gradient(#3e5363,#182631)!important;border-color:#8ca8b7!important;color:#edf6fc!important}
+#jmMobile .jm-mode-list button,#jmMobile .jm-three-actions button,#jmMobile .jm-secondary-actions button{background:linear-gradient(#3c5060,#10202d)!important;border:1px solid #819aaa!important;border-radius:9px!important;box-shadow:inset 0 1px #cfe5f45d!important;color:#f4f8fe!important}
+#jmMobile .jm-three-actions button.red{border-color:#f1a085!important;color:#ffc4b6!important}#jmMobile .jm-three-actions button.green{border-color:#8adcc4!important;color:#c8f6e8!important}
+#jmMobile .jm-hud{background:linear-gradient(155deg,#485e6d,#162635 65%,#0d1c27)!important;border:2px solid #bad3df!important;border-radius:11px!important;color:#fff!important;box-shadow:inset 0 1px #fff9,0 5px 30px #000b!important}
+/* Theme setup controls: maintain >44px tap size and compact menu. */
+#jmMobile .jm-setup-display{border:1px solid #9ab7c9!important}
+#jmMobile .jm-setup-display-title{color:#d2e8f4!important}
+#jmMobile .jm-easy-setting,#jmMobile .jm-fullscreen-btn{background:linear-gradient(#344b5b,#142432)!important;border-color:#9ab4c7!important;color:#f4f9fd!important}
+#jmMobile .jm-theme-mobile-label{color:#e2eff7!important}
+#jmMobile .jm-theme-mobile-label .csel-trigger{background:linear-gradient(#304859,#142533)!important;border-color:#aac4d4!important;color:#f8fcff!important}
+body.jm-mobile-active .csel-panel{background:linear-gradient(#344e5f,#111f2b)!important;border:1px solid #9ab8cb!important;box-shadow:0 10px 26px #000d!important}
+body.jm-mobile-active .csel-panel .csel-item{color:#ebf8ff!important;border-bottom:1px solid #99b7c433!important}
+body.jm-mobile-active .csel-panel .csel-item--active{background:#36596a!important;color:#fff!important}
+/* Legacy NAM, Files, Setup, Tuner controls remain functional and receive steel plates. */
+#jmMobile .jm-embedded-tab .panel{background-image:url('../assets/metal-grain.svg'),linear-gradient(155deg,#334858,#111f2a)!important;border-color:#819fae!important}
+#jmMobile .jm-embedded-tab .panel button{border-color:#83a6b9!important;color:#ecf6fc!important;background:linear-gradient(#415869,#1b2d3b)!important}
+#jmMobile .jm-embedded-tab input:not([type=checkbox]),#jmMobile .jm-embedded-tab .csel-trigger{background:#12232f!important;color:#f7fbff!important;border-color:#90aabc!important}
+#jmMobile .jm-embedded-tab .string-display{color:#e8fafc!important;text-shadow:0 0 20px #70dded55!important}
+#jmMobile .jm-embedded-tab .freq-display,#jmMobile .jm-embedded-tab .cents-display{color:#c0eaf7!important}
+body.jm-mobile-active #saveModal .solo-effect-container{background:linear-gradient(#344758,#101d28)!important;border:2px solid #a5c1d4!important;color:#fff!important}
+body.jm-mobile-active #saveModal .solo-effect-title{color:#f4fbff!important}
+/* Focus styling and phone height safety. */
+#jmMobile button:focus-visible,#jmMobile .csel-trigger:focus-visible{outline:2px solid #f7c177!important;outline-offset:3px!important}
+@media(max-width:359px){#jmMobile .jm-menu-tile{border-radius:8px!important}#jmMobile .jm-effect{border-radius:8px!important}}
+@media(prefers-reduced-motion:reduce){#jmMobile *{animation-duration:.01ms!important}}

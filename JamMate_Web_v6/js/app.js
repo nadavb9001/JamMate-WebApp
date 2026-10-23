@@ -775,7 +775,7 @@ export const app = {
     createKnob('bpmKnob', 'BPM', 255, 120, () => {
       const el = document.getElementById('bpmKnob');
       if (el && el.knob) this.bpm = el.knob.value;
-      if (this.drumEnabled) this.sendDrumUpdate();
+      // ESP SET_GLOBAL 0x25 forwards tempo to DSP TCTL independently of drums.
       this.sendGlobalUpdate();
     });
     createKnob('blVolKnob', 'BT Vol', 100, 50, () => {

@@ -21,11 +21,12 @@ try:
     page.goto(f'http://127.0.0.1:{server.server_port}/JamMate_Web_v{version}/',wait_until='networkidle')
     page.evaluate('document.fonts.ready');pages.append(page)
    for theme in ['neon','metal','medieval']:
-    for version,page in zip((7,8),pages):page.evaluate("async ({theme,version})=>{const q=version===7?'16-uart-tx':'8.0';const m=await import('./js/ui/ThemeManager.js?v='+q);m.setJamMateTheme(theme);}",dict(theme=theme,version=version))
+    for version,page in zip((7,8),pages):page.evaluate("async ({theme,version})=>{const q=version===7?'16-uart-tx':'8.1';const m=await import('./js/ui/ThemeManager.js?v='+q);m.setJamMateTheme(theme);}",dict(theme=theme,version=version))
     for screen in ['home','fx','drums','looper','setup','tuner']:
      for page in pages:
       page.evaluate('window.JamMateMobile.setEasy(false)')
       if screen!='home':page.locator(f'[data-screen="{screen}"]').first.click(force=True)
+     pages[0].evaluate("""()=>{document.querySelectorAll('#jmMobile .jm-ring,#jmMobile .jm-metric-row,#jmBeatLed,#jmBeatText').forEach(el=>el.remove());document.querySelectorAll('#jmMobile .jm-note').forEach(el=>{if(el.textContent.includes('Beat timing'))el.remove();});}""")
      images=[Image.open(BytesIO(page.screenshot(animations='disabled'))).convert('RGB') for page in pages]
      diff=ImageChops.difference(*images)
      if diff.getbbox():
@@ -33,6 +34,6 @@ try:
      assert all(high<=4 for low,high in diff.getextrema()),f'Graphics changed beyond 4/255 rasterization tolerance: {width} {theme} {screen}, box {diff.getbbox()}'
    for page in pages:page.close()
   browser.close()
- print('PASS rendered v7/v8 visual parity (4/255 rasterization tolerance): home, FX, drums, looper, setup, tuner; mobile/desktop, three themes')
+ print('PASS rendered parity except requested removal of live telemetry (4/255 rasterization tolerance): home, FX, drums, looper, setup, tuner; mobile/desktop, three themes')
 finally:
  server.shutdown();server.server_close()

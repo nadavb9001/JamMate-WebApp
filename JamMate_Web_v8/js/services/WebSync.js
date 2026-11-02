@@ -1,8 +1,8 @@
 // JamMate v8 device-authoritative state replication.
-// DSP -> ESP -> Web supplies time and status. Never write cached presets TO
+// ESP -> Web supplies parameter state. Never write cached presets TO
 // the device automatically. The cache is a read-only offline mirror.
 export const SYNC_CMD = Object.freeze({CATALOG_REQUEST:0x37,CATALOG_DATA:0x38,
-  SLOT_REQUEST:0x39,SLOT_DATA:0x3a,PARAM:0x36,BEAT:0x3c,LOOP:0x3d,
+  SLOT_REQUEST:0x39,SLOT_DATA:0x3a,PARAM:0x36,
   CONTROL:0x3e,SELECTION:0x3f});
 export function crc16(bytes) {
   let crc=0xffff;
@@ -11,16 +11,15 @@ export function crc16(bytes) {
 }
 const key=(bank,slot)=>`jammate.device.preset.v1.${bank}.${slot}`;
 export class WebSync {
-  constructor({send,onPreset,onSelection,onParam,onBeat,onLoop,onControl,onStatus}={}) {
-    Object.assign(this,{send,onPreset,onSelection,onParam,onBeat,onLoop,onControl,onStatus});
+  constructor({send,onPreset,onSelection,onParam,onControl,onStatus}={}) {
+    Object.assign(this,{send,onPreset,onSelection,onParam,onControl,onStatus});
     this.cache=new Map();this.queue=[];this.requesting=null;this.started=false;
-    this.lastBeat=null;this.lastBeatAt=0;this.lastBeatMs=500;this.lastLoopAt=0;
-    this.lastLoop=null;this.lastSelection=null;this.syncReceived=0;this.expected=0;
+    this.lastSelection=null;this.syncReceived=0;this.expected=0;
     this.syncFailed=0;this.slotStartedAt=0;this.catalogPending=false;this.catalogTries=0;
   }
-  reset() {this.started=false;this.queue=[];this.requesting=null;this.lastBeat=null;
-    this.lastLoop=null;this.cache.clear();this.slotStartedAt=0;this.lastSelection=null;
-    this.lastBeatAt=0;this.lastLoopAt=0;this.syncReceived=this.syncFailed=this.expected=0;
+  reset() {this.started=false;this.queue=[];this.requesting=null;
+    this.cache.clear();this.slotStartedAt=0;this.lastSelection=null;
+    this.syncReceived=this.syncFailed=this.expected=0;
     this.catalogPending=false;this.catalogTries=0;}
   start() {
     if(this.started)return;
@@ -126,30 +125,6 @@ export class WebSync {
       this.lastSelection=[bytes[0],bytes[1]];this.onSelection?.(...Array.from(bytes));
     }return true;}
     if(cmd===SYNC_CMD.CONTROL){if(bytes.length>=12)this.onControl?.(Array.from(bytes));return true;}
-    if(cmd===SYNC_CMD.BEAT){
-      if(bytes.length!==16||bytes[0]!==1||!(bytes[1]&1)||!bytes[3]||bytes[2]>=bytes[3])return true;
-      const view=new DataView(bytes.buffer,bytes.byteOffset,16);
-      const beat={beat:bytes[2],beatsPerBar:bytes[3],bar:view.getUint32(4,true),
-        sample:view.getUint32(8,true),bpm10:view.getUint16(12,true),seq:view.getUint16(14,true),
-        downbeat:!!(bytes[1]&2),autoStart:!!(bytes[1]&4)};
-      // Reject out-of-order/duplicate 16-bit sequence IDs.
-      if(this.lastBeat){const d=(beat.seq-this.lastBeat.seq+65536)%65536;if(d===0||d>=0x8000)return true;
-        const elapsed=(beat.sample-this.lastBeat.sample)>>>0;
-        if(elapsed>0&&elapsed<48000*5*d) this.lastBeatMs=Math.max(100,Math.min(2500,elapsed/(48*d)));
-      }else this.lastBeatMs=600000/Math.max(1,beat.bpm10);
-      this.lastBeat=beat;this.lastBeatAt=Date.now();this.onBeat?.(beat);return true;
-    }
-    if(cmd===SYNC_CMD.LOOP){if(bytes.length>=5){
-      const states=['IDLE','ARMED','WAIT','REC','PLAY'];
-      this.lastLoop={looperState:states[bytes[0]]||'IDLE',layers:bytes[1],
-        loopPhase:bytes[2]===255?null:bytes[2]/100,loopMs:bytes[3]|(bytes[4]<<8)};
-      this.lastLoopAt=Date.now();this.onLoop?.(this.lastLoop);
-    }return true;}
     return false;
-  }
-  // Used by animation code; no synthetic free-running beat after lost transport.
-  timing(){
-    if(!this.lastBeat || Date.now()-this.lastBeatAt>2.5*this.lastBeatMs+150)return null;
-    return {...this.lastBeat,beatFraction:Math.min(1,(Date.now()-this.lastBeatAt)/this.lastBeatMs)};
   }
 }

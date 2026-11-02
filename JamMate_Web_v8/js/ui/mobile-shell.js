@@ -1,7 +1,7 @@
 /** JamMate mobile-first shell. Legacy application remains mounted (and owns BLE/protocol/state).
  * No synthetic timing: graphical ring/beacon are placeholders until transport telemetry is wired. */
-import { upgradeSelects, disposeSelects } from './CustomSelect.js?v=8.0';
-import { currentJamMateTheme } from './ThemeManager.js?v=8.0';
+import { upgradeSelects, disposeSelects } from './CustomSelect.js?v=8.1';
+import { currentJamMateTheme } from './ThemeManager.js?v=8.1';
 export const FX_ORDER = [0,1,2,3,4,15,5,6,7,8,9,10,11,12,13,14,16,17];
 const FX_NAMES = ['Gate','Comp','Wah','OvrDrv','Dist','NAM','EQ','Harm','Vibr','Chor','Octv','Flng','Phsr','Trem','Amp','Dely','Rvrb','Gnrc'];
 // Crisp inline SVGs: no icon font, emoji fallback, network dependency or bitmap scaling.
@@ -51,10 +51,10 @@ const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'
 const clamp=(v,min,max)=>Math.min(max,Math.max(min,v));
 export function installMobileShell(app){
  const root=document.createElement('div'); root.id='jmMobile';
- root.innerHTML=`<header class="jm-head"><button id="jmBack" aria-label="Back" class="jm-icon">${svgIcon('menu')}</button><strong>JAMMATE</strong><button id="jmConnect" class="jm-connect" aria-label="Connect to JamMate">${svgIcon('connect')}</button></header><div id="jmPage" class="jm-scroll"></div><footer class="jm-foot"><span id="jmCpu">CPU --</span><span class="jm-foot-meter"><i></i></span><span id="jmBeatText">BEAT</span><span id="jmBeatLed" class="jm-beat" aria-label="Awaiting DSP beat"></span></footer><div id="jmOverlay" class="jm-overlay" hidden><div class="jm-sheet" role="dialog" aria-modal="true"><div class="jm-sheet-head"><strong id="jmModalTitle">SETTINGS</strong><button id="jmClose" aria-label="Close">${svgIcon('close')}</button></div><div id="jmModalBody" class="jm-sheet-body"></div></div></div><div id="jmHud" class="jm-hud" role="status" aria-live="polite"></div>`;
+ root.innerHTML=`<header class="jm-head"><button id="jmBack" aria-label="Back" class="jm-icon">${svgIcon('menu')}</button><strong>JAMMATE</strong><button id="jmConnect" class="jm-connect" aria-label="Connect to JamMate">${svgIcon('connect')}</button></header><div id="jmPage" class="jm-scroll"></div><footer class="jm-foot"><span id="jmCpu">CPU --</span><span class="jm-foot-meter"><i></i></span></footer><div id="jmOverlay" class="jm-overlay" hidden><div class="jm-sheet" role="dialog" aria-modal="true"><div class="jm-sheet-head"><strong id="jmModalTitle">SETTINGS</strong><button id="jmClose" aria-label="Close">${svgIcon('close')}</button></div><div id="jmModalBody" class="jm-sheet-body"></div></div></div><div id="jmHud" class="jm-hud" role="status" aria-live="polite"></div>`;
  document.body.appendChild(root); document.body.classList.add('jm-mobile-active');
  const page=$('jmPage'), modal=$('jmOverlay'), mb=$('jmModalBody');
- let active='home', easy=false, currentFX=0, hudTimeout=null, beatOffTimeout=null, mountedTab=null, previousParent=null, previousNext=null;
+ let active='home', easy=false, currentFX=0, hudTimeout=null, mountedTab=null, previousParent=null, previousNext=null;
  let volumeSendTimer=null;
  let eqMounted=false, eqParent=null, eqNext=null;
  const legacy={master:$('masterKnob'),bpm:$('bpmKnob')};
@@ -151,12 +151,9 @@ export function installMobileShell(app){
  function editFX(idx){currentFX=idx; app.currentEffect=idx; if(easy){popup(app.config.tabs[idx]?.title||'EFFECT', t=>renderParam(t,idx));mb.scrollTop=0;}else{showScreen('params');page.scrollTop=0;}}
  function bridgeClick(id){const el=$(id);if(el)el.click();else hud('Unavailable');}
  function bridgeSelect(id,val){const el=$(id);if(!el)return;el.value=String(val);el.dispatchEvent(new Event('change',{bubbles:true}));}
- let latestTelemetry={};
- function ring(klass){return `<div class="jm-ring ${klass}" aria-label="DSP synchronized transport"><div class="jm-ring-inner"><small id="jmRingState">${klass==='drum'?'BEAT':'LOOPER'}</small><strong class="jm-ring-beat">${Number.isInteger(latestTelemetry.beat)?(latestTelemetry.beat+1)+'/'+latestTelemetry.beatsPerBar:'—/4'}</strong><span class="jm-ring-caption">${Number.isInteger(latestTelemetry.bar)?'BAR '+(latestTelemetry.bar+1):'WAITING FOR DSP'}</span></div></div>`;}
  function renderLooper(target){
    disposeSelects(target);
-   target.innerHTML=`<div class="jm-title">LOOPER</div>${ring('looper')}
-     <div class="jm-metric-row"><div>BARS <b data-live-bars>—</b></div><div>BEAT <b data-live-beat>—/4</b></div><div>LAYER <b data-live-layers>—</b></div></div>
+   target.innerHTML=`<div class="jm-title">LOOPER</div>
      <div class="jm-three-actions"><button class="red" data-proxy="loopBtn_rec">${svgIcon('rec')} REC</button><button class="green" data-proxy="loopBtn_stop">${svgIcon('stop')} STOP</button><button class="blue" data-proxy="loopBtn_undo">${svgIcon('undo')} UNDO</button></div>
      <div class="jm-loop-audio"><label class="jm-loop-enable">LOOPER <input data-check="looperEnable" type="checkbox"></label>
        <label class="jm-loop-level"><span>LOOP LEVEL <strong data-loop-level-value>${Math.round(app.loopLevel ?? 50)}%</strong></span><div class="jm-loop-level-controls"><div class="jm-loop-dial" data-loop-dial tabindex="0" role="slider" aria-label="Looper playback level knob" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(app.loopLevel ?? 50)}"><i></i></div><input data-loop-level type="range" min="0" max="100" value="${Math.round(app.loopLevel ?? 50)}" aria-label="Looper playback level"></div></label></div>
@@ -199,7 +196,7 @@ export function installMobileShell(app){
       updateLevel(ev.key==='Home'?0:ev.key==='End'?100:+lvl.value+dir,true);
    });
  }
- function renderDrums(target){disposeSelects(target);target.innerHTML=`<div class="jm-title">DRUMS</div>${ring('drum')}<div class="jm-drum-settings"><label>STYLE<select data-bind="drumStyle">${Array.from($('drumStyle')?.options||[]).map(o=>`<option value="${esc(o.value)}">${esc(o.textContent)}</option>`).join('')}</select></label><label>LEVEL<input type="range" data-drum-level min="0" max="100" value="${app.drumLevel}"></label><label>BPM <strong data-jm-bpm>${knobVal('bpm',120)}</strong><input data-jm-global-slider="bpm" type="range" min="20" max="250" step="1" value="${knobVal('bpm',120)}" aria-label="Drum tempo"></label></div><div class="jm-three-actions"><button class="green" data-drum-toggle="1">${svgIcon('play')} START</button><button class="red" data-drum-toggle="0">${svgIcon('stop')} STOP</button></div><small class="jm-note">Beat timing from Daisy via ESP · live synchronization.</small>`;syncBindings(target);syncGlobal();upgradeSelects(target);}
+ function renderDrums(target){disposeSelects(target);target.innerHTML=`<div class="jm-title">DRUMS</div><div class="jm-drum-settings"><label>STYLE<select data-bind="drumStyle">${Array.from($('drumStyle')?.options||[]).map(o=>`<option value="${esc(o.value)}">${esc(o.textContent)}</option>`).join('')}</select></label><label>LEVEL<input type="range" data-drum-level min="0" max="100" value="${app.drumLevel}"></label><label>BPM <strong data-jm-bpm>${knobVal('bpm',120)}</strong><input data-jm-global-slider="bpm" type="range" min="20" max="250" step="1" value="${knobVal('bpm',120)}" aria-label="Drum tempo"></label></div><div class="jm-three-actions"><button class="green" data-drum-toggle="1">${svgIcon('play')} START</button><button class="red" data-drum-toggle="0">${svgIcon('stop')} STOP</button></div>`;syncBindings(target);syncGlobal();upgradeSelects(target);}
  function syncBindings(target){target.querySelectorAll('[data-bind]').forEach(sel=>{const src=$(sel.dataset.bind);if(src){sel.value=src.value;sel.addEventListener('change',()=>{
         if(sel.dataset.bind==='loopSync'&&sel.value==='0'){
           // Manual means immediate REC unless the user explicitly arms again.
@@ -328,7 +325,7 @@ export function installMobileShell(app){
        id==='whiteNoiseBtn'?(app.utilState?.noise?.enabled?'ON':'OFF'):(app.utilState?.tone?.enabled?'ON':'OFF')));
    }
  },true);
- $('jmBack').addEventListener('click',()=>{if(active==='params')showScreen('fx');else if(active==='home')popup('CONNECTION',t=>t.innerHTML=`<small>JamMate v8.0 · BLE</small><div class="jm-mode-list"><button data-action="connect">Connect JamMate</button><button data-screen="setup">Setup and Display</button></div>`);else showScreen('home');});
+ $('jmBack').addEventListener('click',()=>{if(active==='params')showScreen('fx');else if(active==='home')popup('CONNECTION',t=>t.innerHTML=`<small>JamMate v8.1 · BLE</small><div class="jm-mode-list"><button data-action="connect">Connect JamMate</button><button data-screen="setup">Setup and Display</button></div>`);else showScreen('home');});
  $('jmConnect').addEventListener('click',()=>bridgeClick('btnConnect'));
  $('jmClose').addEventListener('click',closeModal);modal.addEventListener('click',e=>{if(e.target===modal)closeModal();}); document.addEventListener('keydown',e=>{if(e.key==='Escape'){if(!modal.hidden)closeModal();else if(active!=='home')showScreen('home');}});
  // Explicit main menu action handlers inside modal are routed through delegation.
@@ -357,12 +354,6 @@ export function installMobileShell(app){
  // Easy Mode is configured exclusively in Setup; ordinary Home has no mode button.
  showScreen('home');
  return {showScreen,renderHome,refreshFX,closeModal,
- invalidateBeat(){
-    $('jmBeatText').textContent='—';
-    root.querySelectorAll('.jm-ring-beat,[data-live-beat]').forEach(el=>el.textContent='—');
-    $('jmBeatLed').classList.remove('is-on','is-downbeat');
-    delete latestTelemetry.beat;delete latestTelemetry.bar;
- },
  syncParam(fx,flat,value){
    if(fx!==currentFX){if(flat===0)refreshFX();return;}
    if(flat===0){refreshFX();return;}
@@ -394,5 +385,10 @@ export function installMobileShell(app){
    for(const id of ['loopSync','loopLength','trackSelect','playbackMode','drumStyle'])
      root.querySelectorAll(`[data-bind="${id}"]`).forEach(el=>{if(document.activeElement!==el)el.value=String(state[id]);});
  },
- setTelemetry({cpu,beat,beatsPerBar,downbeat,bar,loopPhase,looperState,layers,tunerHz}={}){Object.assign(latestTelemetry, Object.fromEntries(Object.entries({cpu,beat,beatsPerBar,downbeat,bar,loopPhase,looperState,layers,tunerHz}).filter(([,v])=>v!==undefined))); if(Number.isFinite(cpu)){ $('jmCpu').textContent='CPU '+Math.round(cpu)+'%';$('jmMobile').querySelector('.jm-foot-meter i').style.width=clamp(cpu,0,100)+'%';} if(Number.isInteger(beat)&&Number.isInteger(beatsPerBar)&&beatsPerBar>0){const fraction=(beat+1)+'/'+beatsPerBar;$('jmBeatText').textContent=fraction;root.querySelectorAll('.jm-ring-beat,[data-live-beat]').forEach(el=>el.textContent=fraction);root.querySelectorAll('.jm-ring-caption').forEach(el=>el.textContent=Number.isInteger(bar)?'BAR '+(bar+1):'BEAT');if(Number.isInteger(bar))root.querySelectorAll('[data-live-bars]').forEach(el=>el.textContent=String(bar+1));$('jmBeatLed').classList.add('is-on');$('jmBeatLed').classList.toggle('is-downbeat',!!downbeat);clearTimeout(beatOffTimeout);beatOffTimeout=setTimeout(()=>$('jmBeatLed').classList.remove('is-on','is-downbeat'),125);}if(Number.isFinite(loopPhase))root.querySelectorAll('.jm-ring.looper').forEach(el=>el.style.setProperty('--ring-progress',Math.round(clamp(loopPhase,0,1)*100)+'%'));if(looperState)root.querySelectorAll('.jm-ring.looper #jmRingState').forEach(el=>el.textContent=String(looperState).toUpperCase());if(Number.isInteger(layers)){root.querySelectorAll('.jm-ring.looper .jm-ring-caption').forEach(el=>el.textContent='LAYER '+layers);root.querySelectorAll('[data-live-layers]').forEach(el=>el.textContent=String(layers));}},setEasy(value){easy=!!value;showScreen('home');},hud};
+ setTelemetry({cpu}={}){
+   if(cpu===undefined)return;
+   const known=Number.isFinite(cpu),meter=root.querySelector('.jm-foot-meter i');
+   $('jmCpu').textContent=known?'CPU '+Number(cpu.toFixed(1))+'%':'CPU --';
+   if(meter)meter.style.width=(known?clamp(cpu,0,100):0)+'%';
+ },setEasy(value){easy=!!value;showScreen('home');},hud};
 }

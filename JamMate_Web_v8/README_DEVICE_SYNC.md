@@ -1,4 +1,4 @@
-# JamMate v8
+# JamMate v8.1
 
 Use `JamMate_Web_v8/` with the v8 firmware `src/` and `include/` folders. The two projects are on `codex/jammate-v8`; v7 remains available separately. Build using the existing PlatformIO project, flash firmware, and deploy the complete web v8 folder. Do not erase or replace LittleFS. No PlatformIO configuration change is required.
 
@@ -33,15 +33,23 @@ A four-fragment window and cumulative ACKs replace per-fragment round trips. Pac
 
 The browser serializes GATT operations, services ACKs independently of queued messages, and gives controls priority over bulk blocks. The ESP uses bounded queues and a fixed inbound command pool, avoiding heap allocation for incoming resource blocks. Queue/allocation failures trigger state reconciliation; an inbound command that cannot be queued is not acknowledged as accepted. Bulk data is binary, including little-endian float32 NAM weights. Whole-effect updates use operation `27` with `[effect, flat-count, enable, knobs..., dropdowns...]`; individual parameters still fit one minimum-MTU packet. The unused master byte and redundant DRUM text tag are removed from BLE control payloads. Compression is deliberately absent: it adds RAM/CPU cost and has uncertain benefit for dense model/IR bytes.
 
+## Idle activity in v8.1
+
+There is no 10-second browser keepalive and no periodic full state/catalog BLE resend. Beat (3C) and loop progress/status (3D) are neither sent by the ESP nor rendered in the web app. Drum/looper parameters and buttons remain available. The footer keeps the CPU meter and removes its beat indicator.
+
+CPU load comes from real DSP LOAD samples, sent as operation 48 with a u16 in tenths of a percent. The ESP sends the first known sample on synchronization, then only changed values, at most once every two seconds. No CPU polling request is sent. A stable known CPU value produces no idle telemetry.
+
+The ESP still compares local parameter state every 200 ms; unchanged state sends no BLE packets. A browser timer retries outstanding catalog/slot requests only. Transfer ACK/retry timers operate only while data is in flight. Existing DSP/LCD work and firmware state persistence remain independent of BLE.
+
 ## Connection and state
 
 Connect → subscribe → HELLO → verify configuration → fetch current ESP state → ready. A drop cancels requests and queued writes. Reconnect uses bounded exponential backoff and repeats configuration/state synchronization; old session packets cannot apply to the new connection. Interrupted uploads are discarded; they are not replayed blindly.
 
-The ESP owns current state and saved presets. Device and web edits share the existing application/DSP handlers. Selection, master, BPM, all effect enables/knobs/dropdowns, EQ, drum controls/grid, looper controls/status, tuner, bypass, utilities, A2DP volume/enable, USB mode and UART status replicate to the web app. Saved slots are compared by checksum and only changed slots are fetched. There is periodic full reconciliation, plus recovery after queue pressure. Remote UI updates do not send edits back.
+The ESP owns current state and saved presets. Device and web edits share the existing application/DSP handlers. Selection, master, BPM, all effect enables/knobs/dropdowns, EQ, drum controls/grid, looper parameters, tuner, bypass, utilities, A2DP volume/enable, USB mode and UART status replicate to the web app. Saved slots are compared by checksum and only changed slots are fetched. Full snapshots occur on connection/reconnection or recovery after queue pressure; the 30-second full-state/catalog resend is removed. Catalogs refresh on connection, web preset saves and serial preset imports. Remote UI updates do not send edits back.
 
 Domain records inside JS/C++ retain operation names and preset storage layout. Their local `[operation,length,payload]` representation is never sent directly over BLE; `Wire.js` and `JmV8.hpp` define the sole on-air format. Existing flash preset readers remain to preserve user files; these are storage readers, not alternate communication protocols.
 
-The ESP↔DSP protocol definitions, packet layouts, UART rate, and existing control/NAM/MIDI messages remain intact. IR uses the already-defined JMP2 IR object type; it requires an actual DSP that implements that object. MIDI is forwarded in bounded batches between UI loop iterations, with padding only at the end of the file. Its preserved DSP protocol has no commit ACK, so its final success confirms verified receipt and forwarding by the ESP, not DSP persistence. USB status is the last ESP-issued mode, not independent DSP readback. Looper telemetry still reflects the selected track; independent per-track DSP state and a DSP-edited complete drum grid cannot be recovered through the existing DSP interface.
+The ESP↔DSP protocol definitions, packet layouts, UART rate, and existing control/NAM/MIDI messages remain intact. IR uses the already-defined JMP2 IR object type; it requires an actual DSP that implements that object. MIDI is forwarded in bounded batches between UI loop iterations, with padding only at the end of the file. Its preserved DSP protocol has no commit ACK, so its final success confirms verified receipt and forwarding by the ESP, not DSP persistence. USB status is the last ESP-issued mode, not independent DSP readback. Web beat/loop progress telemetry and indicators have been removed; LCD/DSP timing stays intact. A DSP-edited complete drum grid cannot be recovered through the existing DSP interface.
 
 ## One resource transfer engine
 

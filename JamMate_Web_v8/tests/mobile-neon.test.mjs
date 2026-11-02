@@ -13,8 +13,8 @@ assert.ok(html.includes('css/mobile-neon.css'));
 for(const id of ['presetBank','presetNum','btnSavePreset','masterKnob','bpmKnob','drumEnable','drumStyle','loopBtn_rec','loopSync','tuner-tab','nam-tab','loader-tab','setup-tab']) assert.ok(html.includes(`id="${id}"`),id);
 assert.ok(html.includes('<option value="3">Drum Start</option>'));
 const js=fs.readFileSync(new URL('../js/ui/mobile-shell.js',import.meta.url),'utf8');
-for(const token of ['renderHome','renderParam','renderLooper','renderDrums','mountLegacy','onEffectParamChanged','createSavePreset','data-jm-preset','jmBeatLed']) { if(token==='createSavePreset')continue;assert.ok(js.includes(token), token); }
-assert.ok(js.includes('WAITING FOR DSP'));assert.ok(!js.includes('setInterval('));
+for(const token of ['renderHome','renderParam','renderLooper','renderDrums','mountLegacy','onEffectParamChanged','createSavePreset','data-jm-preset']) { if(token==='createSavePreset')continue;assert.ok(js.includes(token), token); }
+assert.ok(!js.includes('WAITING FOR DSP'));assert.ok(!js.includes('setInterval('));
 assert.ok(js.includes('data-jm-bank-select'));assert.ok(js.includes('data-jm-slot-select'));
 assert.ok(js.includes('data-jm-global-slider="bpm"'));assert.ok(js.includes('data-jm-global-slider="master"'));
 assert.ok(js.includes('jm-menu-easy')); // Easy Mode is a single-row navigation strip.
@@ -40,3 +40,5 @@ assert.ok(!js.includes('<span class="jm-eyebrow">PRESET</span>'));
 assert.ok(!js.includes('class="jm-preset-name"'));
 assert.ok(css.includes('height:100dvh'));
 console.log('PASS mobile-v03: PWA metadata, no preset title, Setup-only Easy Mode and fullscreen');
+
+assert.ok(!js.includes('jmBeatLed')&&!js.includes('function ring('));

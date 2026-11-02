@@ -1,5 +1,5 @@
-import { Knob } from './Knob.js?v=15-config-pages';
-import { IIRDesigner } from './IIRDesigner.js?v=15-config-pages';
+import { Knob } from './Knob.js?v=16-uart-tx';
+import { IIRDesigner } from './IIRDesigner.js?v=16-uart-tx';
 
 export const View = {
     init(app) {

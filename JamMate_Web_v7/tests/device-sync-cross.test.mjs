@@ -27,7 +27,10 @@ try{
  assert.ok(configReply.includes('queueBorrowed'));
  assert.ok(!configReply.includes('std::vector')&&!configReply.includes('String text='));
  const bluetooth=fs.readFileSync(path.join(esp,'include/BluetoothManager_binary.hpp'),'utf8');
- assert.ok(bluetooth.includes('esp_ble_gatts_send_indicate(webGattsIf'));
+ assert.ok(!bluetooth.includes('esp_ble_gatts_send_indicate('));
+ assert.ok(bluetooth.includes('pNotifyChar->notify()'));
+ assert.ok(bluetooth.includes('6e400003-b5a3-f393-e0a9-e50e24dcca9f'));
+ assert.ok(!main.includes('pedal.update()')&&!main.includes('Expression: %.3f'));
  assert.ok(!bluetooth.includes('pControlChar->setValue(fragment'));
  assert.ok(!bluetooth.includes('pServer->getPeerMTU('));
  assert.ok(!bluetooth.includes('std::vector<uint8_t> frame'));

@@ -4,8 +4,8 @@
 //  * window.dispatchEvent(new CustomEvent('nam-transfer-success', { detail: details }))
 //  */
 
-// import { BLEService } from './services/BLEService.js?v=15-config-pages';
-// import { Protocol } from './services/Protocol.js?v=15-config-pages';
+// import { BLEService } from './services/BLEService.js?v=16-uart-tx';
+// import { Protocol } from './services/Protocol.js?v=16-uart-tx';
 
 // const T3K_CLIENT_ID = 't3k_pub_UdyZ5sYtaceVAFXOLFwGtuLs4QvwQeLe';
 // const T3K_BASE = 'https://www.tone3000.com/api/v1';
@@ -1032,8 +1032,8 @@
  * window.dispatchEvent(new CustomEvent('nam-transfer-success', { detail: details }))
  */
 
-import { BLEService } from './services/BLEService.js?v=15-config-pages';
-import { Protocol } from './services/Protocol.js?v=15-config-pages';
+import { BLEService } from './services/BLEService.js?v=16-uart-tx';
+import { Protocol } from './services/Protocol.js?v=16-uart-tx';
 
 const T3K_CLIENT_ID = 't3k_pub_UdyZ5sYtaceVAFXOLFwGtuLs4QvwQeLe';
 const T3K_BASE = 'https://www.tone3000.com/api/v1';

@@ -6,11 +6,11 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright
 
 ROOT = Path(__file__).resolve().parent.parent
-HTML = (ROOT / 'tests/nam-inline-harness.html').read_text().replace('?v=15-config-pages','')
+HTML = (ROOT / 'tests/nam-inline-harness.html').read_text().replace('?v=16-uart-tx','')
 HTML = re.sub(r'<script type="module">.*?</script>', '', HTML, flags=re.DOTALL)
 HTML = re.sub(r'<link rel="stylesheet"[^>]*>', '', HTML)
-CSS = (ROOT / 'css/nam-v2b.css').read_text().replace('?v=15-config-pages','')
-JS = (ROOT / 'js/ui/NamBrowserV2b.js').read_text().replace('?v=15-config-pages','')
+CSS = (ROOT / 'css/nam-v2b.css').read_text().replace('?v=16-uart-tx','')
+JS = (ROOT / 'js/ui/NamBrowserV2b.js').read_text().replace('?v=16-uart-tx','')
 JS = JS.replace("import { BLEService } from '../services/BLEService.js';", "const BLEService = {isConnected:false};")
 JS = JS.replace('export const NamBrowserV2b = {', 'window.NamBrowserV2b = {')
 INIT = """() => {

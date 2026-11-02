@@ -1,11 +1,12 @@
-import {crc16} from './WebSync.js?v=15-config-pages';
-import {fragments, FrameReceiver} from './Framing.js?v=15-config-pages';
-import { Protocol } from './Protocol.js?v=15-config-pages';
+import {crc16} from './WebSync.js?v=16-uart-tx';
+import {fragments, FrameReceiver} from './Framing.js?v=16-uart-tx';
+import { Protocol } from './Protocol.js?v=16-uart-tx';
 
 export const BLEService = {
     // ESP32 Nordic UART Service
     SERVICE_UUID:        "6e400001-b5a3-f393-e0a9-e50e24dcca9f",
     CHARACTERISTIC_UUID: "6e400002-b5a3-f393-e0a9-e50e24dcca9f",
+    NOTIFY_UUID: "6e400003-b5a3-f393-e0a9-e50e24dcca9f",
 
     // JDY-67 / JDY-series custom service
     JDY_SERVICE_UUID: "0000ffe0-0000-1000-8000-00805f9b34fb",
@@ -41,6 +42,13 @@ export const BLEService = {
     rxNotifications: 0,
     rxRejected: 0,
     _pendingAcks: [],
+    _readTimer: null,
+    _readBusy: false,
+    _lastNotificationAt: 0,
+    _usingReadback: false,
+    _lastReadKey: '',
+    _lastReadAt: 0,
+    rxReadbacks: 0,
     request(packet, matches, timeout=15000) {
         return new Promise((resolve,reject)=>{
             const waiter={matches,resolve,reject};
@@ -86,6 +94,23 @@ export const BLEService = {
         task.catch(e=>console.warn('[BLE] Notification ACK failed',e.message));
         return task;
     },
+    _readTxFallback(){
+        if(!this.isConnected||this._readBusy||Date.now()-this._lastNotificationAt<800||!this.notifyCharacteristic?.readValue)return;
+        this._readBusy=true;
+        const tx=this.notifyCharacteristic,epoch=this._connectionEpoch;
+        const run=this._writeChain.catch(()=>{}).then(async()=>{
+            if(!this.isConnected||this._connectionEpoch!==epoch)return;
+            const value=await tx.readValue();
+            if(!this.isConnected||this._connectionEpoch!==epoch||value.byteLength<11||value.getUint8(0)!==0x7e)return;
+            const key=value.getUint16(2,true)+':'+value.getUint16(4,true);
+            if(key===this._lastReadKey&&Date.now()-this._lastReadAt<1000)return;
+            this._lastReadKey=key;this._lastReadAt=Date.now();
+            if(!this._usingReadback){this._usingReadback=true;console.warn('[BLE] Notifications unavailable; using verified TX readback');}
+            this._handleData({target:{value}},'read');
+        });
+        this._writeChain=run;
+        run.catch(e=>console.warn('[BLE] TX readback failed:',e.message)).finally(()=>{if(this._connectionEpoch===epoch)this._readBusy=false;});
+    },
     async connect() {
         if (!navigator.bluetooth) {
             alert("Web Bluetooth not supported.");
@@ -111,7 +136,8 @@ export const BLEService = {
         } catch (error) {
             console.error("BLE Connection Failed:", error);
             this.shouldReconnect = false; // Reset flag on initial failure
-            this._handleDisconnect(); 
+            this._handleDisconnect();
+            this.configurationError=error.message;this._setStatus("Connection failed: "+error.message);
         }
     },
 
@@ -121,30 +147,40 @@ export const BLEService = {
 
         this.server = await this.device.gatt.connect();
 
-        let writeChar, notifyChar;
-        try {
-            const svc = await this.server.getPrimaryService(this.SERVICE_UUID);
-            writeChar  = await svc.getCharacteristic(this.CHARACTERISTIC_UUID);
-            notifyChar = writeChar; // NUS: same characteristic for both directions
-        } catch {
-            const svc = await this.server.getPrimaryService(this.JDY_SERVICE_UUID);
-            writeChar  = await svc.getCharacteristic(this.JDY_WRITE_UUID);
-            notifyChar = await svc.getCharacteristic(this.JDY_NOTIFY_UUID);
+        let writeChar,notifyChar,nus;
+        try{nus=await this.server.getPrimaryService(this.SERVICE_UUID);}catch{}
+        if(nus){
+            writeChar=await nus.getCharacteristic(this.CHARACTERISTIC_UUID);
+            try{notifyChar=await nus.getCharacteristic(this.NOTIFY_UUID);}
+            catch{throw Error('ESP TX characteristic missing. Install firmware v7.16; if installed, forget/re-pair the device to refresh its Bluetooth service cache.');}
+        }else{
+            const svc=await this.server.getPrimaryService(this.JDY_SERVICE_UUID);
+            writeChar=await svc.getCharacteristic(this.JDY_WRITE_UUID);
+            notifyChar=await svc.getCharacteristic(this.JDY_NOTIFY_UUID);
         }
         this.characteristic       = writeChar;
         this.notifyCharacteristic = notifyChar;
 
-        await this.notifyCharacteristic.startNotifications();
         if (!this._boundDataHandler) this._boundDataHandler = this._handleData.bind(this);
         this.notifyCharacteristic.addEventListener('characteristicvaluechanged', this._boundDataHandler);
+        let subscribed=true;
+        try{await this.notifyCharacteristic.startNotifications();}
+        catch(e){
+            if(!this.notifyCharacteristic.readValue)throw e;
+            subscribed=false;console.warn('[BLE] Notification subscription failed; using TX readback:',e.message);
+        }
 
         this._connectionEpoch++;
         this._frames.reset();
         this.configReady = false;
         this.rxNotifications=this.rxRejected=0;
         this.configurationError=null;
+        this.rxReadbacks=0;this._lastNotificationAt=subscribed?Date.now():0;this._usingReadback=false;this._readBusy=false;
+        this._lastReadKey='';this._lastReadAt=0;
         this.isConnected = true;
         this._setStatus('connected');
+        if(this._readTimer)clearInterval(this._readTimer);
+        this._readTimer=setInterval(()=>this._readTxFallback(),400);
 
         // Handshake — skip if NAM transfer in progress to avoid triggering rxBuffer assembly
         if (!this._pingBlocked) {
@@ -177,7 +213,7 @@ export const BLEService = {
                     break;
                 }catch(e){
                     if(!this.isConnected)throw e;
-                    if(attempt===2)throw Error(`Config read stopped at ${offset} bytes; received ${this.rxNotifications} notifications, rejected ${this.rxRejected} frames: ${e.message}`);
+                    if(attempt===2)throw Error(`Config read stopped at ${offset} bytes; received ${this.rxNotifications} notifications / ${this.rxReadbacks} readbacks, rejected ${this.rxRejected} frames: ${e.message}`);
                 }
             }
             // Backward-compatible with v7.14 firmware's full reply. The normal
@@ -244,6 +280,7 @@ export const BLEService = {
         this._connectionEpoch++;
         this._writeChain=Promise.resolve();
         this._pendingAcks=[];
+        if(this._readTimer){clearInterval(this._readTimer);this._readTimer=null;}
         // Stop keep-alive
         if (this._keepAliveTimer) {
             clearInterval(this._keepAliveTimer);
@@ -308,8 +345,9 @@ export const BLEService = {
         alert("Connection lost. Please reconnect manually.");
     },
 
-    _handleData(event) {
-        this.rxNotifications++;
+    _handleData(event,source='notify') {
+        if(source==='read')this.rxReadbacks++;
+        else{this.rxNotifications++;this._lastNotificationAt=Date.now();}
         const view = event.target.value;
         const incoming = new Uint8Array(view.buffer, view.byteOffset, view.byteLength);
 

@@ -13,17 +13,17 @@
  *     flatIdx 1..K   → knob k-1   value: 0–255
  *     flatIdx K+1..  → dropdown d value: selectedIndex
  */
-import { NamLoader } from './NamLoader.js?v=15-config-pages';
-import { NamBrowserV2b } from './ui/NamBrowserV2b.js?v=15-config-pages';
-import { APP_CONFIG } from './config.js?v=15-config-pages';
-import { View } from './ui/View.js?v=15-config-pages';
-import { Knob } from './ui/Knob.js?v=15-config-pages';
-import { BLEService } from './services/BLEService.js?v=15-config-pages';
-import { WebSync, crc16 } from './services/WebSync.js?v=15-config-pages';
-import { readDeviceConfig } from './services/ConfigSync.js?v=15-config-pages';
-import { Protocol } from './services/Protocol.js?v=15-config-pages';
-import { upgradeSelects } from './ui/CustomSelect.js?v=15-config-pages';
-import { installThemeManager } from './ui/ThemeManager.js?v=15-config-pages';
+import { NamLoader } from './NamLoader.js?v=16-uart-tx';
+import { NamBrowserV2b } from './ui/NamBrowserV2b.js?v=16-uart-tx';
+import { APP_CONFIG } from './config.js?v=16-uart-tx';
+import { View } from './ui/View.js?v=16-uart-tx';
+import { Knob } from './ui/Knob.js?v=16-uart-tx';
+import { BLEService } from './services/BLEService.js?v=16-uart-tx';
+import { WebSync, crc16 } from './services/WebSync.js?v=16-uart-tx';
+import { readDeviceConfig } from './services/ConfigSync.js?v=16-uart-tx';
+import { Protocol } from './services/Protocol.js?v=16-uart-tx';
+import { upgradeSelects } from './ui/CustomSelect.js?v=16-uart-tx';
+import { installThemeManager } from './ui/ThemeManager.js?v=16-uart-tx';
 
 const PRESETS_LOCKED = false;
 
@@ -97,7 +97,7 @@ export const app = {
     this.loopLength   = 0;
     this.loopTracks   = 1;
 
-    console.info("[JamMate] Web build v7.15-config-pages");
+    console.info("[JamMate] Web build v7.16-uart-tx");
     View.init(this);
     this.webSync = new WebSync({
       send: packet => BLEService.send(packet).catch(e => console.warn('[SYNC] send',e)),

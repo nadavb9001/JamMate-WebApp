@@ -1,4 +1,4 @@
-import {crc16} from './WebSync.js?v=15-config-pages';
+import {crc16} from './WebSync.js?v=16-uart-tx';
 
 export function fragments(input, id, size=20) {
   const bytes=input instanceof Uint8Array?input:new Uint8Array(input);

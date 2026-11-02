@@ -1,5 +1,19 @@
 # Device synchronization repair
 
+## 7.16 separate BLE TX and verified readback
+
+The supplied hardware trace reaches config page 0, then times out waiting for its ACK; the browser reports zero notifications. This release replaces the raw SDK send with the BLE library's notification method on a dedicated UART TX characteristic (`6e400003-b5a3-f393-e0a9-e50e24dcca9f`). Commands use the existing RX characteristic ending in 0002. Incoming writes cannot replace the outgoing characteristic value.
+
+If notifications do not arrive, the browser reads the TX attribute every 400 ms. Readback uses the same fragment, CRC, configuration validation and ACK path as notifications; the ESP keeps each fragment available until acknowledged. The browser logs `Notifications unavailable; using verified TX readback` when this fallback is used. This path is slower than working notifications.
+
+Update both firmware `src/` and `include/` and the entire `JamMate_Web_v7/` folder. Build/flash firmware without erasing LittleFS or uploading a replacement filesystem. Firmware and web console must show 7.16. If connection reports a missing TX characteristic after flashing, forget/re-pair JamMate to refresh the cached Bluetooth service. Clear the site's old service worker/cache if the console still reports 7.15.
+
+Expression pedal initialization, ADC polling and Expression serial prints have been removed. The unused pedal header remains available. The serial RX ring is reduced from 16 KiB to 8 KiB to leave more heap for the hybrid BLE/A2DP stack; serial import checksum validation remains active.
+
+Validation includes the ESP build, protocol/native checks, and the real browser UI against a test peer both with notifications and with all notifications suppressed. Both browser modes must verify config, read all 35 presets, apply remote state silently and send control writes. These checks do not establish physical BLE/Daisy behavior; retest the actual connection, preset switches, BPM and volume after installing both folders.
+
+The downloadable ZIP contains only `JamMate_Web_v7/`, `JamMate_Ctrl/src/` and `JamMate_Ctrl/include/`. It assumes the existing firmware project and dependencies; no project configuration changed in 7.16.
+
 ## 7.15 verified configuration delivery
 
 Update both firmware and the complete v7 web folder for this release. The Connection popup and console identify v7.15. The browser negotiates acknowledged notifications before reading configuration. Each notification fragment must be confirmed with `[0x7F, transaction16LE, nextOffset16LE]`; the all-zero transaction/offset enables this mode. ESP retries a missing acknowledgement up to three times. The browser tolerates duplicate fragments, including a retried final fragment, without applying a logical message twice. ACK writes are serialized with commands and serviced between command fragments.

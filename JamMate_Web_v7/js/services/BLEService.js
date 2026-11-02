@@ -1,3 +1,4 @@
+import {fragments, FrameReceiver} from './Framing.js';
 import { Protocol } from './Protocol.js?v=10-master';
 
 export const BLEService = {
@@ -29,6 +30,35 @@ export const BLEService = {
     _keepAliveTimer: null,
     _pingBlocked: false,
     _writeChain: Promise.resolve(),
+    _frames: new FrameReceiver(),
+    _txId: 0,
+    _connectionEpoch: 0,
+    _waiters: new Set(),
+    configReady: false,
+    request(packet, matches, timeout=15000) {
+        return new Promise((resolve,reject)=>{
+            const waiter={matches,resolve,reject};
+            waiter.timer=setTimeout(()=>{this._waiters.delete(waiter);reject(Error('Device response timed out'));},timeout);
+            this._waiters.add(waiter);
+            this.send(packet,()=>this._waiters.has(waiter)).catch(e=>{clearTimeout(waiter.timer);this._waiters.delete(waiter);reject(e);});
+        });
+    },
+    _deliver(packet) {
+        const bytes=packet instanceof DataView?new Uint8Array(packet.buffer,packet.byteOffset,packet.byteLength):null;
+        for(const w of this._waiters){
+            if(bytes&&w.matches(bytes)){clearTimeout(w.timer);this._waiters.delete(w);w.resolve(bytes);}
+        }
+        this.onDataReceived?.(packet);
+    },
+    _completeFrame(bytes) {
+        const cmd=bytes[0];
+        if([0x31,0x34,0x38,0x3a,0x55,0x57].includes(cmd) && (bytes.length<3 || (bytes[1]|bytes[2]<<8)!==bytes.length-3))return;
+        for(const w of this._waiters){if(w.matches(bytes)){clearTimeout(w.timer);this._waiters.delete(w);w.resolve(bytes);}}
+        if([0x31,0x34,0x38,0x3a,0x55,0x57].includes(cmd)) {
+            if(bytes.length<3 || (bytes[1]|bytes[2]<<8)!==bytes.length-3)return;
+            this.onDataReceived?.({cmd,dataView:new DataView(bytes.buffer,bytes.byteOffset+3,bytes.length-3)});
+        }else this._deliver(new DataView(bytes.buffer,bytes.byteOffset,bytes.byteLength));
+    },
 
     async connect() {
         if (!navigator.bluetooth) {
@@ -82,13 +112,17 @@ export const BLEService = {
         if (!this._boundDataHandler) this._boundDataHandler = this._handleData.bind(this);
         this.notifyCharacteristic.addEventListener('characteristicvaluechanged', this._boundDataHandler);
 
+        this._connectionEpoch++;
+        this._frames.reset();
+        this.configReady = false;
         this.isConnected = true;
         this._setStatus('connected');
 
         // Handshake — skip if NAM transfer in progress to avoid triggering rxBuffer assembly
         if (!this._pingBlocked) {
             console.log("[BLE] Requesting state...");
-            this.send(Protocol.createGetState());
+            this.request(Uint8Array.of(0x54,0,0),b=>b[0]===0x55)
+                .catch(e=>this._setStatus("Configuration read failed: "+e.message));
         }
 
         // Keep-alive: prevents Windows BLE adapter from suspending idle connections
@@ -108,22 +142,25 @@ export const BLEService = {
         }
     },
 
-    async send(data) {
+    async send(data, active=()=>true) {
         if (!this.characteristic || !this.isConnected) {
             throw new Error('BLE is not connected');
         }
+        if (!this.configReady && ![0x01,0x52,0x54].includes(new Uint8Array(data.buffer || data, data.byteOffset || 0, data.byteLength)[0])) throw Error('Device configuration has not been verified');
         if (this.isSyncing) {
             throw new Error('BLE is busy syncing');
         }
 
         // Web Bluetooth permits only one GATT write at a time. Catalog sync,
         // keep-alive and knob events can otherwise collide during connect.
-        const char = this.characteristic;
+        const char = this.characteristic,epoch=this._connectionEpoch;
         const write = async () => {
-            if (!this.isConnected || this.characteristic !== char) throw new Error('BLE disconnected');
-            if (typeof char.writeValueWithResponse === 'function')
-                await char.writeValueWithResponse(data);
-            else await char.writeValue(data);
+            for(const frame of fragments(data,++this._txId)){
+                if(!active())throw Error('Device request expired');
+                if (!this.isConnected || this.characteristic !== char || this._connectionEpoch!==epoch) throw new Error('BLE disconnected');
+                if(typeof char.writeValueWithResponse==='function')await char.writeValueWithResponse(frame);
+                else await char.writeValue(frame);
+            }
         };
         const task = this._writeChain.catch(() => {}).then(write);
         this._writeChain = task;
@@ -131,6 +168,8 @@ export const BLEService = {
     },
 
     _handleDisconnect() {
+        this._connectionEpoch++;
+        this._writeChain=Promise.resolve();
         // Stop keep-alive
         if (this._keepAliveTimer) {
             clearInterval(this._keepAliveTimer);
@@ -149,6 +188,10 @@ export const BLEService = {
         // Reset Buffer
         this.rxBuffer = null;
         this.rxExpectedLen = 0;
+        this.configReady = false;
+        this._frames.reset();
+        for(const w of this._waiters){clearTimeout(w.timer);w.reject(Error('BLE disconnected'));}
+        this._waiters.clear();
         
         // [NEW] Auto-Reconnect Logic
         if (this.shouldReconnect && this.device) {
@@ -195,6 +238,12 @@ export const BLEService = {
         const view = event.target.value;
         const incoming = new Uint8Array(view.buffer, view.byteOffset, view.byteLength);
 
+        if(incoming[0]===0x7e){
+            const complete=this._frames.accept(incoming);
+            if(complete)this._completeFrame(complete);
+            return;
+        }
+        // Legacy unframed peers remain readable; config verification prevents edits.
         // Ignore ESP-side heartbeat
         if (incoming.length === 1 && incoming[0] === 0xFF) return;
 

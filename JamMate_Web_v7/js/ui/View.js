@@ -191,11 +191,12 @@ export const View = {
                 (v) => this.updateStatus(`Q Factor: ${v.toFixed(2)}`)
             );
 
+            let initializingEQ=true;
             this.app.iirDesigner = new IIRDesigner(
                 document.getElementById('iirCanvas'),
                 qKnob,
                 (txt) => this.updateStatus(txt),
-                (bandIdx, en, f, g, q) => { if (onEQChange) onEQChange(bandIdx, en, f, g, q); }
+                (bandIdx, en, f, g, q) => { if (!initializingEQ && onEQChange) onEQChange(bandIdx, en, f, g, q); }
             );
 
             if (this.app.currentEQPoints && this.app.currentEQPoints.length === 12) {
@@ -204,6 +205,7 @@ export const View = {
                 this.app.iirDesigner.reset();
             }
 
+            initializingEQ=false;
             document.getElementById('btnEqReset').addEventListener('click', () => {
                 this.app.iirDesigner.reset();
                 this.updateStatus('EQ Reset to Default');

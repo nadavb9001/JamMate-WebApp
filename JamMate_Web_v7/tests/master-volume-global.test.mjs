@@ -18,7 +18,7 @@ const ctx={
   document:{getElementById(id){return nodes[id]||null;}},
   window:{dispatchEvent(ev){changes.push(ev.type);}},
   View:{updateStatus(){},updateEffectButtons(){}},
-  BLEService:{send(buffer){packets.push(new Uint8Array(buffer));}},
+  BLEService:{async send(buffer){packets.push(new Uint8Array(buffer));}},
   APP_CONFIG:{tabs:[]},
   buildFlatParams(){return []},
 };

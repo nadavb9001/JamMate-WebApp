@@ -34,7 +34,7 @@ with sync_playwright() as pw:
     window.__app=app;View.init(app);window.JamMateMobile=window.__make(app);
   }''')
   page.locator('[data-screen="fx"]').click()
-  page.locator('[data-open-fx="5"]').click()
+  page.locator('[data-open-fx="5"]:visible').click()
   assert page.locator('#jmPage #iirCanvas').count()==1
   page.wait_for_timeout(100)
   dims=page.locator('#iirCanvas').evaluate('el=>({width:el.width,height:el.height,visible:el.offsetWidth})')
@@ -43,7 +43,7 @@ with sync_playwright() as pw:
   page.locator('#jmBack').click()
   assert page.locator('#effects-tab #effectControls').count()==1
   page.evaluate('window.JamMateMobile.setEasy(true)')
-  page.locator('[data-open-fx="5"]').click()
+  page.locator('[data-open-fx="5"]:visible').click()
   assert page.locator('#jmModalBody #iirCanvas').count()==1
   page.locator('#jmClose').click()
   assert page.locator('#effects-tab #effectControls').count()==1

@@ -51,6 +51,9 @@ export const Protocol = {
     IR_LIST_DATA:        0x46,
     UPDATE_CONFIG:       0x50,   // legacy: [[k,d],...] counts-only upload
     UPDATE_CONFIG_CHUNK: 0x52,  // chunked full-name config upload
+    CONFIG_READ:        0x54,
+    CONFIG_DATA:        0x55,
+    PRESET_ACK:         0x59,
     CONFIG_CHUNK_ACK:   0x53,  // ESP→webapp ACK for each chunk
     FLASH_DSP:           0x60,
     RESET_DSP:           0x61,
@@ -131,7 +134,9 @@ export const Protocol = {
   serializeState(state) {
     const parts = [];
     const name      = (state.name || "User Preset").substring(0, 32);
-    const nameBytes = new TextEncoder().encode(name);
+    let safeName=name;
+    while(new TextEncoder().encode(safeName).length>31)safeName=Array.from(safeName).slice(0,-1).join('');
+    const nameBytes = new TextEncoder().encode(safeName);
 
     // Keep legacy blob layout, but do not bake 100% into presets.
     parts.push(new Uint8Array([0x03, state.bpm || 120, Math.min(100, Math.max(0, Math.round(state.master ?? 20))), nameBytes.length]));

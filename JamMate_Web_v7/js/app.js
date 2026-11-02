@@ -19,7 +19,8 @@ import { APP_CONFIG } from './config.js';
 import { View } from './ui/View.js';
 import { Knob } from './ui/Knob.js';
 import { BLEService } from './services/BLEService.js';
-import { WebSync } from './services/WebSync.js';
+import { WebSync, crc16 } from './services/WebSync.js';
+import { readDeviceConfig } from './services/ConfigSync.js';
 import { Protocol } from './services/Protocol.js?v=10-master';
 import { upgradeSelects } from './ui/CustomSelect.js';
 import { installThemeManager } from './ui/ThemeManager.js';
@@ -28,6 +29,9 @@ const PRESETS_LOCKED = false;
 
 export const app = {
   config: APP_CONFIG,
+  sendDevice(packet){
+    return BLEService.send(packet).catch(e=>{View.updateStatus(e.message);return false;});
+  },
   currentEffect: null,
   drumPattern: Array(9).fill(null).map(() => Array(16).fill(0)),
   effectStates: {},
@@ -110,7 +114,7 @@ export const app = {
           window.dispatchEvent(new Event('jammate:remote-state'));
           // ESP selected a different preset using its encoders/footswitches.
           // Request its live state, not the potentially stale browser cache.
-          if(changed) BLEService.send(Protocol.createGetState()).catch(console.warn);
+          // ESP sends the corresponding live preset alongside selection. Avoid echo reads.
         }
       },
       onParam:(fx,flat,value)=>this.syncRemoteEffectParam(fx,flat,value),
@@ -133,6 +137,7 @@ export const app = {
       if(status==='disconnected'||status==='reconnecting') {
         this.webSync.reset();this._remoteBank=null;this._remoteSlot=null;
         window.JamMateMobile?.invalidateBeat?.();
+        View.updateTuner(0);
       }
     };
     // Expire graphics after real DSP beat notifications stop. Never continue
@@ -192,9 +197,24 @@ export const app = {
       if (packet && typeof packet === 'object' && packet.cmd !== undefined) {
         const { cmd, dataView } = packet;
 
+        if(cmd===0x55){
+          try {
+            const bytes=new Uint8Array(dataView.buffer,dataView.byteOffset,dataView.byteLength);
+            this.deviceConfigText=readDeviceConfig(bytes,this.config);
+            BLEService.configReady=true;
+            this.sendDevice(Protocol.createGetState()).catch(e=>View.updateStatus(e.message));
+            View.updateStatus('Device configuration verified');
+          }catch(e){BLEService.configReady=false;View.updateStatus(e.message);}
+          return;
+        }
+        if(!BLEService.configReady)return;
+        if(cmd===0x57){
+          if(dataView.byteLength===144){const b=new Uint8Array(dataView.buffer,dataView.byteOffset,144);this.drumPattern=Array.from({length:9},(_,i)=>Array.from(b.slice(i*16,i*16+16)));}
+          return;
+        }
         if (cmd === 0x31 || cmd === 0x34) {
           console.log(`[BLE] Preset data cmd=0x${cmd.toString(16)}`);
-          this.loadStateFromBlob(dataView.buffer, cmd === 0x31);
+          this.loadStateFromBlob(dataView.buffer.slice(dataView.byteOffset,dataView.byteOffset+dataView.byteLength), cmd === 0x31);
           if(cmd===0x31) this.webSync.start();
           window.dispatchEvent(new Event('jammate:remote-state'));
           return;
@@ -241,6 +261,14 @@ export const app = {
           window.JamMateMobile?.setTelemetry({cpu:packet.getUint8(1)});
           return;
         }
+        if(!BLEService.configReady)return;
+        if(cmd===0x22 && packet.byteLength===7){
+          const b=packet.getUint8(1);if(b>=12)return;
+          if(!this.currentEQPoints)this.currentEQPoints=[];
+          this.currentEQPoints[b]={enabled:!!packet.getUint8(2),freq:packet.getUint16(3,true),gain:packet.getInt8(5),q:packet.getUint8(6)/10};
+          if(this.iirDesigner){this.isUpdatingUI=true;try{this.iirDesigner.loadPoints(this.currentEQPoints);}finally{this.isUpdatingUI=false;}}
+          return;
+        }
         if(this.webSync.handle(cmd,new Uint8Array(packet.buffer,packet.byteOffset+1,packet.byteLength-1))) return;
 
         if (cmd === 0x31 || cmd === 0x34) {
@@ -285,7 +313,7 @@ export const app = {
     View.setupDrumGrid(this.drumPattern, (cell, row, col, newVelocity) => {
       this.drumPattern[row][col] = newVelocity;
       View.updateDrumCell(cell, newVelocity);
-      BLEService.send(Protocol.createDrumPatternPacket(this.drumPattern));
+      this.sendDevice(Protocol.createDrumPatternPacket(this.drumPattern));
     });
 
     this.setupStaticKnobs();
@@ -378,7 +406,7 @@ export const app = {
     const btnSaveToSD = document.getElementById('btnSaveToSD');
     if (btnSaveToSD) {
       btnSaveToSD.addEventListener('click', () => {
-        BLEService.send(Protocol.createSaveToSD());
+        this.sendDevice(Protocol.createSaveToSD());
         View.updateStatus('Saving to SD...');
       });
     }
@@ -505,7 +533,7 @@ export const app = {
     this.usbMode = mode;
     const names = ['USB Off', 'USB Serial', 'USB Audio', 'USB MIDI Host'];
     View.updateStatus(names[mode] || `USB mode ${mode}`);
-    BLEService.send(Protocol.createUSBMode(mode));
+    this.sendDevice(Protocol.createUSBMode(mode));
   },
 
   // ============================================================
@@ -514,7 +542,7 @@ export const app = {
   sendUARTControl(enable) {
     this.uartEnabled = enable;
     View.updateStatus(enable ? 'UART Link ON' : 'UART Link OFF');
-    BLEService.send(Protocol.createUARTControl(enable));
+    this.sendDevice(Protocol.createUARTControl(enable));
   },
 
   // ============================================================
@@ -548,23 +576,32 @@ export const app = {
     if(this.currentEffect===fx && flat!==0){
       const legacy=document.querySelector('#effectControls');
       // Control widgets are rebuilt only after dragging ends; don't steal focus.
-      if(legacy && !legacy.contains(document.activeElement))this.selectEffect(fx);
+      if(legacy && !legacy.contains(document.activeElement)){
+        const previous=this.isUpdatingUI;this.isUpdatingUI=true;
+        try{this.selectEffect(fx);}finally{this.isUpdatingUI=previous;}
+      }
     }
   },
   syncRemoteControl(raw){
     // raw: drumEnable, drumLevel, style, pattern, drumBpm,
     //      loopEnable, rawLevel(0..127), sync, arm, bars, track, playMode
     const [drumEnabled,drumLevel,drumStyle,drumNumber,drumBpm,
-       looperEnabled,loopRaw,loopSync,loopArm,loopLength,trackSelect,playbackMode]=raw;
+       looperEnabled,loopRaw,loopSync,loopArm,loopLength,trackSelect,playbackMode,
+      bounceMode=0,muteMask=0,soloMask=0,drumFill=0,tunerEnabled=0,bypassEnabled=0]=raw;
     Object.assign(this,{drumEnabled:!!drumEnabled,drumLevel,drumStyle,drumNumber,
       looperEnabled:!!looperEnabled,loopLevel:Math.round(loopRaw*100/127),
-      loopSync,loopArm,loopLength,trackSelect,playbackMode});
+      loopSync,loopArm,autoArm:!!loopArm,loopLength,trackSelect,playbackMode,
+      bounceMode:!!bounceMode,muteMask,soloMask,drumFill,tunerEnabled:!!tunerEnabled,bypassEnabled:!!bypassEnabled});
     if(!this.webSync?.timing()) this.syncRemoteBpm(drumBpm);
     // Update original fields silently: dispatching change would resend to DSP.
-    const fields={drumStyle,drumLevel,loopSync,loopLength,trackSelect,playbackMode};
+    const fields={drumStyle,drumLevel,drumNumber,drumFill,loopSync,loopLength,trackSelect,playbackMode,muteMask,soloMask};
     for(const [id,value] of Object.entries(fields)){
       const el=document.getElementById(id);if(el&&document.activeElement!==el)el.value=String(value);
     }
+    for(const [id,value]of Object.entries({drumEnable:drumEnabled,looperEnable:looperEnabled,autoArm:loopArm,bounceMode,tunerEnable:tunerEnabled})){
+      const el=document.getElementById(id);if(el)el.checked=!!value;
+    }
+    for(const [id,value]of [['drumLevelKnob',drumLevel],['loopLevelKnob',this.loopLevel]]){const knob=document.getElementById(id)?.knob;if(knob){knob.value=value;knob.draw();}}
     window.JamMateMobile?.syncControls?.(this);
   },
   syncMasterVolume(value) {
@@ -622,18 +659,15 @@ export const app = {
       View.updateEffectButtons(this.effectStates);
       if (this.currentEffect !== null) this.selectEffect(this.currentEffect);
 
-      const bpmKnob = document.getElementById('bpmKnob');
-      if (bpmKnob && bpmKnob.knob) {
-        bpmKnob.knob.value = state.bpm;
-        this.bpm = state.bpm;
-      }
+      this.syncRemoteBpm(state.bpm);
 
+      this.presetName=state.name;
       View.updateStatus(`Loaded: ${state.name}`);
     } catch (e) {
       console.error('Load Failed:', e);
       View.updateStatus('Load failed — see console');
     }
-    setTimeout(() => { this.isUpdatingUI = false; }, 100);
+    this.isUpdatingUI = false;
   },
 
   // ============================================================
@@ -688,7 +722,7 @@ export const app = {
   getCurrentState() {
     let eqData = [];
     if (this.iirDesigner) {
-      eqData = this.iirDesigner.points.map(pt => ({
+      eqData = this.iirDesigner.masterPoints.map(pt => ({
         freq: pt.freq, gain: pt.gain, q: pt.q, enabled: pt.enabled !== false
       }));
     } else if (this.currentEQPoints) {
@@ -699,7 +733,7 @@ export const app = {
     return {
       bpm:          bpmEl    && bpmEl.knob    ? bpmEl.knob.value    : 120,
       master:       masterEl && masterEl.knob ? masterEl.knob.value : 20,
-      name:         'User Preset',
+      name:         this.presetName || 'User Preset',
       effectStates: this.effectStates,
       effectParams: this.effectParams,
       eqPoints:     eqData
@@ -714,7 +748,9 @@ export const app = {
       const bankIndex = document.getElementById('presetBank').selectedIndex;
       const slotIndex = document.getElementById('presetNum').selectedIndex;
       View.updateStatus(`Loading B${bankIndex}:P${slotIndex}...`);
-      BLEService.send(Protocol.createLoadReq(bankIndex, slotIndex));
+      BLEService.request(Protocol.createLoadReq(bankIndex, slotIndex),b=>b[0]===0x59&&b[1]===0x33&&b[3]===bankIndex&&b[4]===slotIndex)
+        .then(b=>{if(b[2])View.updateStatus('Preset load failed: '+b[2]);})
+        .catch(e=>View.updateStatus('Preset load failed: '+e.message));
     };
     document.getElementById('presetBank').addEventListener('change', onPresetSelect);
     document.getElementById('presetNum').addEventListener('change', onPresetSelect);
@@ -742,15 +778,15 @@ export const app = {
 
     document.getElementById('flash-btn').addEventListener('click', () => {
       if (confirm('Enter Bootloader Mode? The DSP will stop audio.')) {
-        BLEService.send(Protocol.createSystemPacket(Protocol.CMD.FLASH_DSP));
+        this.sendDevice(Protocol.createSystemPacket(Protocol.CMD.FLASH_DSP));
       }
     });
 
     document.getElementById('reset-btn').addEventListener('click', () => {
-      BLEService.send(Protocol.createSystemPacket(Protocol.CMD.RESET_DSP));
+      this.sendDevice(Protocol.createSystemPacket(Protocol.CMD.RESET_DSP));
     });
 
-    document.getElementById('btnConfirmSave').onclick = () => {
+    document.getElementById('btnConfirmSave').onclick = async () => {
       const bankIndex = document.getElementById('saveBankSelect').selectedIndex;
       const slotIndex = document.getElementById('saveNumSelect').selectedIndex;
       const state = this.getCurrentState();
@@ -758,7 +794,10 @@ export const app = {
       Object.keys(state.effectStates).forEach(i => {
         if (state.effectStates[i].enabled) console.log(`  FX[${i}] ENABLED`);
       });
-      BLEService.send(Protocol.createSavePreset(bankIndex, slotIndex, state));
+      try{
+        const ack=await BLEService.request(Protocol.createSavePreset(bankIndex, slotIndex, state),b=>b[0]===0x59&&b[1]===0x32&&b[3]===bankIndex&&b[4]===slotIndex);
+        if(ack[2])throw Error('ESP rejected save: '+ack[2]);
+      }catch(e){View.updateStatus('Preset save failed: '+e.message);return;}
       modal.classList.remove('active');
       modal.style.display = '';
     };
@@ -793,7 +832,7 @@ export const app = {
           this.currentEQPoints.push({ freq: 100, gain: 0, q: 1.4, enabled: true });
         }
         this.currentEQPoints[b] = { freq: f, gain: g, q: q, enabled: (en === 1 || en === true) };
-        BLEService.send(Protocol.createEQUpdate(b, en, f, g, q));
+        if(BLEService.isConnected && BLEService.configReady) BLEService.send(Protocol.createEQUpdate(b, en, f, g, q)).catch(e=>View.updateStatus(e.message));
       }
     );
   },
@@ -807,7 +846,7 @@ export const app = {
     this.effectStates[idx].enabled = newState;
     if (!this.effectParams[idx]) this.effectParams[idx] = {};
     View.updateEffectButtons(this.effectStates);
-    BLEService.send(Protocol.createParamUpdate(idx, 0, newState ? 1 : 0));
+    this.sendDevice(Protocol.createParamUpdate(idx, 0, newState ? 1 : 0));
   },
 
   // ============================================================
@@ -822,7 +861,7 @@ export const app = {
     if (flatIdx === 0) {
       this.effectStates[fxId].enabled = value !== 0;
       View.updateEffectButtons(this.effectStates);
-      BLEService.send(Protocol.createParamUpdate(fxId, flatIdx, value));
+      this.sendDevice(Protocol.createParamUpdate(fxId, flatIdx, value));
       return;
     }
 
@@ -830,14 +869,14 @@ export const app = {
     if (flatIdx <= K) {
       const kIndex = flatIdx - 1;
       this.effectParams[fxId][`knob${kIndex}`] = value;
-      BLEService.send(Protocol.createParamUpdate(fxId, flatIdx, value));
+      this.sendDevice(Protocol.createParamUpdate(fxId, flatIdx, value));
       return;
     }
 
     // Dropdown
     const dIndex = flatIdx - 1 - K;
     this.effectParams[fxId][`dropdown${dIndex}`] = value;
-    BLEService.send(Protocol.createParamUpdate(fxId, flatIdx, value));
+    this.sendDevice(Protocol.createParamUpdate(fxId, flatIdx, value));
   },
 
   sendEffectParams(fxId) {
@@ -854,7 +893,7 @@ export const app = {
       flatValues.push(params[`dropdown${d}`] !== undefined ? params[`dropdown${d}`] : 0);
 
     flatValues.forEach((value, flatIdx) => {
-      BLEService.send(Protocol.createParamUpdate(fxId, flatIdx, value));
+      this.sendDevice(Protocol.createParamUpdate(fxId, flatIdx, value));
     });
   },
 
@@ -895,12 +934,13 @@ export const app = {
     createKnob('masterKnob', 'Master Vol', 100, 20, () => {
       this.sendMasterVolumeUpdate();
     });
-    createKnob('bpmKnob', 'BPM', 255, 120, () => {
+    createKnob('bpmKnob', 'BPM', 250, 120, () => {
       const el = document.getElementById('bpmKnob');
       if (el && el.knob) this.bpm = el.knob.value;
       // ESP SET_GLOBAL 0x25 forwards tempo to DSP TCTL independently of drums.
       this.sendGlobalUpdate();
     });
+    const tempo=document.getElementById('bpmKnob')?.knob;if(tempo)tempo.min=20;
     createKnob('blVolKnob', 'BT Vol', 100, 50, () => {
       this.sendGlobalUpdate();
     });
@@ -915,7 +955,7 @@ export const app = {
   sendUtilUpdate(type) {
     if (this.isUpdatingUI) return;
     const s = type === 0 ? this.utilState.noise : this.utilState.tone;
-    BLEService.send(type === 0
+    this.sendDevice(type === 0
       ? Protocol.createUtilUpdate(0, s.enabled, s.level, 0)
       : Protocol.createUtilUpdate(1, s.enabled, s.level, s.freq));
   },
@@ -925,7 +965,7 @@ export const app = {
   // ============================================================
   sendTunerUpdate(isEnabled) {
     this.tunerEnabled = isEnabled;
-    BLEService.send(Protocol.createUtilUpdate(2, isEnabled ? 1 : 0, 0, 0));
+    this.sendDevice(Protocol.createUtilUpdate(2, isEnabled ? 1 : 0, 0, 0));
     if (!isEnabled) View.updateTuner(0);
   },
 
@@ -995,7 +1035,7 @@ export const app = {
     const bpm       = bpmEl    && bpmEl.knob    ? bpmEl.knob.value    : 120;
     const btEnable  = document.getElementById('btEnableCheck')  ? document.getElementById('btEnableCheck').checked  : true;
     const bleEnable = document.getElementById('bleEnableCheck') ? document.getElementById('bleEnableCheck').checked : true;
-    BLEService.send(Protocol.createGlobalUpdate(master, btVol, bpm, btEnable, bleEnable, flash, reset));
+    this.sendDevice(Protocol.createGlobalUpdate(master, btVol, bpm, btEnable, bleEnable, flash, reset));
     if (flash) View.updateStatus('Sending Flash Command...');
     if (reset) View.updateStatus('Sending Reset Command...');
   },
@@ -1004,21 +1044,29 @@ export const app = {
   // sendConfigUpdate — chunked full-name config upload (0x52 packets)
   // ============================================================
   async sendConfigUpdate() {
+    if(!BLEService.isConnected)throw Error('Connect first');
     View.updateStatus('Uploading config...');
-    const text      = Protocol.buildConfigText(this.config);
-    const textBytes = new TextEncoder().encode(text);
-    const CHUNK     = 480;
-    const total     = Math.ceil(textBytes.length / CHUNK);
-    let offset = 0, idx = 0;
-    while (offset < textBytes.length) {
-      const { packet, isLast, nextOffset } = Protocol.createConfigChunk(textBytes, idx, offset, CHUNK);
-      await BLEService.send(packet);
-      View.updateStatus(`Config chunk ${idx + 1}/${total}`);
-      offset = nextOffset;
-      idx++;
-      if (!isLast) await new Promise(r => setTimeout(r, 40));
-    }
-    View.updateStatus('Config uploaded — ' + textBytes.length + ' bytes in ' + total + ' chunks');
+    const text=Protocol.buildConfigText(this.config),bytes=new TextEncoder().encode(text);
+    BLEService.configReady=false;
+    try {
+      let offset=0,index=0;
+      while(offset<bytes.length){
+        const {packet,isLast,nextOffset}=Protocol.createConfigChunk(bytes,index,offset,160);
+        let ack;
+        for(let attempt=0;attempt<3;attempt++){
+          try{ack=await BLEService.request(packet,b=>b[0]===0x53&&b.length===6&&(b[2]|b[3]<<8)===index);break;}
+          catch(e){if(attempt===2)throw e;}
+        }
+        if(ack[1]!==0)throw Error('ESP rejected config chunk: '+ack[1]);
+        if(isLast&&(ack[4]|ack[5]<<8)!==crc16(bytes))throw Error('Applied configuration checksum differs');
+        offset=nextOffset;index++;
+      }
+      const reply=await BLEService.request(Uint8Array.of(0x54,0,0),b=>b[0]===0x55);
+      if(reply[3]!==1||new TextDecoder().decode(reply.subarray(4))!==text)throw Error('Configuration readback differs');
+      readDeviceConfig(reply.subarray(3),this.config);
+      BLEService.configReady=true;
+      View.updateStatus('Configuration applied and read back successfully');
+    }catch(e){BLEService.configReady=false;View.updateStatus('Configuration update failed: '+e.message);throw e;}
   },
 
   // ============================================================
@@ -1034,7 +1082,7 @@ export const app = {
     const btnReadSDCard = document.getElementById('btnReadSDCard');
     if (btnReadSDCard) {
       btnReadSDCard.onclick = () => {
-        BLEService.send(Protocol.createSDCardReadCommand());
+        this.sendDevice(Protocol.createSDCardReadCommand());
         View.updateStatus('SD Card Read command sent');
       };
     }
@@ -1043,7 +1091,7 @@ export const app = {
     if (btnUpdateConfig) {
       btnUpdateConfig.onclick = async () => {
         if (!BLEService.isConnected) { View.updateStatus('Not connected — connect first'); return; }
-        if (confirm('Upload current config.js to ESP?')) await this.sendConfigUpdate();
+        if (confirm('Upload current config.js to ESP?')) {try{await this.sendConfigUpdate();}catch(e){console.warn(e);}}
       };
     }
 
@@ -1054,7 +1102,7 @@ export const app = {
         this.bypassEnabled = !this.bypassEnabled;
         btnBypass.classList.toggle('bypass-active',  !this.bypassEnabled);
         btnBypass.classList.toggle('bypass-blinking', this.bypassEnabled);
-        BLEService.send(Protocol.createBypassPacket(this.bypassEnabled));
+        this.sendDevice(Protocol.createBypassPacket(this.bypassEnabled));
         View.updateStatus(this.bypassEnabled ? 'Bypass ON' : 'Bypass OFF');
       };
     }

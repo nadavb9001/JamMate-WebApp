@@ -12,7 +12,7 @@ const manifest=()=>{
  }return Uint8Array.from(m);
 };
 assert.equal(crc16(Uint8Array.from([1,2,3,4,5])),0xbb2a);
-const s=create();s.start();s.start();assert.deepEqual(send.shift(),[SYNC_CMD.CATALOG_REQUEST]);
+const s=create();s.start();s.start();assert.deepEqual(send.shift(),[SYNC_CMD.CATALOG_REQUEST,0,0]);
 assert.equal(s.handle(SYNC_CMD.CATALOG_DATA,manifest()),true);
 assert.equal(s.expected,35);assert.equal(s.queue.length,34);assert.deepEqual(send.shift(),[0x39,2,0,0,0]);
 for(let i=0;i<35;i++) {
@@ -44,8 +44,15 @@ reconnect.handle(SYNC_CMD.CONTROL,Uint8Array.of(1,80,0,2,120,1,100,2,0,4,0,0));a
 const timed=create();timed.catalog(manifest());assert.equal(timed.requesting,null); // all cached
 blobs[7]=Uint8Array.of(3,120,20,4,71,19,44,55);
 timed.catalog(manifest());assert.equal(timed.requesting.tries,1);
-timed.checkTimeout(timed.slotStartedAt+3001);assert.equal(timed.requesting.tries,2);
-timed.checkTimeout(timed.slotStartedAt+3001);assert.equal(timed.requesting.tries,3);
-timed.checkTimeout(timed.slotStartedAt+3001);assert.equal(timed.syncFailed,1);
+timed.checkTimeout(timed.slotStartedAt+5001);assert.equal(timed.requesting.tries,2);
+timed.checkTimeout(timed.slotStartedAt+5001);assert.equal(timed.requesting.tries,3);
+timed.checkTimeout(timed.slotStartedAt+5001);assert.equal(timed.syncFailed,1);
 reconnect.reset();assert.equal(reconnect.started,false);assert.equal(reconnect.lastBeat,null);
+const missing=create();missing.start();
+missing.checkTimeout(missing.catalogStartedAt+5001);assert.equal(missing.catalogTries,2);
+missing.checkTimeout(missing.catalogStartedAt+5001);assert.equal(missing.catalogTries,3);
+missing.checkTimeout(missing.catalogStartedAt+5001);assert.equal(missing.started,false);
+const partial=manifest();partial[4]=0;partial[5]=0;
+const corruptSlot=create();assert.equal(corruptSlot.catalog(partial),true);assert.equal(corruptSlot.syncFailed,1);
+const duplicate=manifest();duplicate[8]=duplicate[2];duplicate[9]=duplicate[3];assert.equal(create().catalog(duplicate),false);
 console.log('PASS web-sync: CRC parity, 35 slots, reconnect diff, corrupted download, parameters, selection, DSP beat, loop, controls');

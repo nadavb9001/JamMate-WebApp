@@ -631,7 +631,7 @@ body.jm-mobile-active .csel-panel .csel-disabled{opacity:.42;pointer-events:none
  font-size:clamp(8px,1.55dvh,11px)!important;line-height:1;white-space:nowrap;
 }
 #jmMobile .jm-home-easy .jm-effects-easy .jm-effect-toggle{
- flex:0 0 auto;height:clamp(13px,2.3dvh,19px)!important;
+ flex:0 0 auto;min-height:0!important;height:clamp(13px,2.3dvh,19px)!important;
  min-width:36px;padding:0 5px;font-size:clamp(8px,1.35dvh,10px);line-height:1;
 }
 #jmMobile .jm-home-easy .jm-section-cap{display:none!important}

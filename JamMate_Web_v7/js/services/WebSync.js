@@ -16,14 +16,20 @@ export class WebSync {
     this.cache=new Map();this.queue=[];this.requesting=null;this.started=false;
     this.lastBeat=null;this.lastBeatAt=0;this.lastBeatMs=500;this.lastLoopAt=0;
     this.lastLoop=null;this.lastSelection=null;this.syncReceived=0;this.expected=0;
-    this.syncFailed=0;this.slotStartedAt=0;
+    this.syncFailed=0;this.slotStartedAt=0;this.catalogPending=false;this.catalogTries=0;
   }
   reset() {this.started=false;this.queue=[];this.requesting=null;this.lastBeat=null;
-    this.lastLoop=null;this.cache.clear();this.slotStartedAt=0;}
+    this.lastLoop=null;this.cache.clear();this.slotStartedAt=0;this.lastSelection=null;
+    this.lastBeatAt=0;this.lastLoopAt=0;this.syncReceived=this.syncFailed=this.expected=0;
+    this.catalogPending=false;this.catalogTries=0;}
   start() {
     if(this.started)return;
     this.started=true;
-    this.send(Uint8Array.of(SYNC_CMD.CATALOG_REQUEST));
+    this._requestCatalog();
+  }
+  _requestCatalog(){
+    this.catalogPending=true;this.catalogTries++;this.catalogStartedAt=Date.now();
+    this.send(Uint8Array.of(SYNC_CMD.CATALOG_REQUEST,0,0));
   }
   _readLocal(bank,slot){
     let item=this.cache.get(key(bank,slot));
@@ -57,7 +63,11 @@ export class WebSync {
     this.send(Uint8Array.of(SYNC_CMD.SLOT_REQUEST,2,0,bank,slot));
   }
   checkTimeout(now=Date.now()){
-    if(this.requesting && now-this.slotStartedAt>3000){
+    if(this.catalogPending&&now-this.catalogStartedAt>5000){
+      if(this.catalogTries<3)this._requestCatalog();
+      else{this.catalogPending=false;this.started=false;this.onStatus?.('Preset catalog unavailable; reconnect to retry');}
+    }
+    if(this.requesting && now-this.slotStartedAt>5000){
       if(this.requesting.tries<3)this._requestSlot();
       else this._finishFailedSlot();
     }
@@ -72,17 +82,22 @@ export class WebSync {
   }
   catalog(bytes){
     if(bytes.length<2||bytes[0]!==1)return false;
-    const n=bytes[1];if(n>35||bytes.length!==2+n*6)return false;
+    const n=bytes[1];if(n!==35||bytes.length!==2+n*6)return false;
+    const seen=new Set();
+    for(let i=0;i<n;i++){const o=2+i*6,k=bytes[o]*5+bytes[o+1];if(seen.has(k))return false;seen.add(k);}
+    this.catalogPending=false;
     this.queue=[];this.requesting=null;this.expected=n;this.syncReceived=0;this.syncFailed=0;
     for(let i=0;i<n;i++) {
       const o=2+i*6,bank=bytes[o],slot=bytes[o+1];
       const size=bytes[o+2]|(bytes[o+3]<<8),crc=bytes[o+4]|(bytes[o+5]<<8);
-      if(bank>6||slot>4||size<4||size>2048)return false;
+      if(bank>6||slot>4||size>2048)return false;
+      if(size===0){this.syncFailed++;this.onStatus?.(`Preset ${bank+1}:${slot+1} unreadable or incompatible`);continue;}
+      if(size<4)return false;
       const local=this._readLocal(bank,slot);
       if(!local||local.bytes.length!==size||local.crc!==crc) this.queue.push({bank,slot,size,crc});
     }
     if(this.queue.length) this.onStatus?.(`Syncing ${this.queue.length} changed/missing presets`);
-    else this.onStatus?.(`All ${n} presets up to date`);
+    else this.onStatus?.(this.syncFailed?`Preset sync: ${this.syncFailed} unreadable slots`:`All ${n} presets up to date`);
     this._nextSlot();return true;
   }
   slot(bytes){

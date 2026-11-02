@@ -375,7 +375,13 @@ export function installMobileShell(app){
  syncControls(state){
    root.querySelectorAll('[data-loop-level]').forEach(el=>{if(document.activeElement!==el)el.value=String(state.loopLevel);});
    root.querySelectorAll('[data-loop-level-value]').forEach(el=>el.textContent=state.loopLevel+'%');
-   root.querySelectorAll('[data-check="looperEnable"]').forEach(el=>el.checked=!!state.looperEnabled);
+   root.querySelectorAll('[data-loop-dial]').forEach(el=>{
+     el.setAttribute('aria-valuenow',String(state.loopLevel));
+     el.style.setProperty('--loop-turn',`${-135+270*state.loopLevel/100}deg`);
+     el.style.setProperty('--loop-fill',`${Math.round(75*state.loopLevel/100)}%`);
+   });
+   for(const key of ['looperEnable','autoArm','bounceMode'])root.querySelectorAll(`[data-check="${key}"]`).forEach(el=>el.checked=!!state[key==='looperEnable'?'looperEnabled':key]);
+   root.querySelectorAll('[data-drum-toggle]').forEach(el=>el.setAttribute('aria-pressed',String((el.dataset.drumToggle==='1')===state.drumEnabled)));
    root.querySelectorAll('[data-drum-level]').forEach(el=>{if(document.activeElement!==el)el.value=String(state.drumLevel);});
    for(const id of ['loopSync','loopLength','trackSelect','playbackMode','drumStyle'])
      root.querySelectorAll(`[data-bind="${id}"]`).forEach(el=>{if(document.activeElement!==el)el.value=String(state[id]);});

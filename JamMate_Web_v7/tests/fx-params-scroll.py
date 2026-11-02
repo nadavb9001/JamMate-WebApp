@@ -41,7 +41,7 @@ with sync_playwright() as pw:
     page.locator('[data-screen="fx"]').click()
     assert page.locator('#jmPage').get_attribute('data-view')=='fx'
     assert page.evaluate('getComputedStyle(document.getElementById("jmPage")).overflowY')=='hidden'
-    page.locator('[data-open-fx="6"]').click()
+    page.locator('[data-open-fx="6"]:visible').click()
     assert page.locator('#jmPage').get_attribute('data-view')=='params'
     metrics=page.evaluate('''() => {const el=document.getElementById('jmPage');return {total:el.scrollHeight,visible:el.clientHeight,overflow:getComputedStyle(el).overflowY}}''')
     assert metrics['overflow']=='auto',metrics
@@ -59,7 +59,7 @@ with sync_playwright() as pw:
     assert page.locator('#jmPage').get_attribute('data-view')=='fx'
     # Easy mode popup also scrolls within its sheet, not the frozen background.
     page.evaluate('window.JamMateMobile.setEasy(true)')
-    page.locator('[data-open-fx="6"]').click()
+    page.locator('[data-open-fx="6"]:visible').click()
     assert not page.locator('#jmOverlay').is_hidden()
     body=page.locator('#jmModalBody')
     m=body.evaluate('''el=>({total:el.scrollHeight,visible:el.clientHeight,overflow:getComputedStyle(el).overflowY})''')
@@ -74,7 +74,7 @@ with sync_playwright() as pw:
       page.evaluate('(theme)=>{document.documentElement.dataset.jmTheme=theme;}',theme)
       page.evaluate('window.JamMateMobile.setEasy(false)')
       page.locator('[data-screen="fx"]').click()
-      page.locator('[data-open-fx="6"]').click()
+      page.locator('[data-open-fx="6"]:visible').click()
       assert page.locator('#jmPage').get_attribute('data-view')=='params'
       assert page.locator('#jmPage').evaluate('el=>getComputedStyle(el).overflowY')=='auto'
       page.locator('#jmPage').evaluate('el=>{el.scrollTop=el.scrollHeight;}')
@@ -82,7 +82,7 @@ with sync_playwright() as pw:
       assert page.locator('#jmPage .jm-param .csel-trigger').last.is_visible()
       page.locator('#jmBack').click()
       page.evaluate('window.JamMateMobile.setEasy(true)')
-      page.locator('[data-open-fx="6"]').click()
+      page.locator('[data-open-fx="6"]:visible').click()
       body=page.locator('#jmModalBody')
       body.evaluate('el=>{el.scrollTop=el.scrollHeight;}')
       assert body.evaluate('el=>el.scrollTop')>100,(theme,width)

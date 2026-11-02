@@ -21,7 +21,7 @@ try:
     page.goto(f'http://127.0.0.1:{server.server_port}/JamMate_Web_v{version}/',wait_until='networkidle')
     page.evaluate('document.fonts.ready');pages.append(page)
    for theme in ['neon','metal','medieval']:
-    for version,page in zip((7,8),pages):page.evaluate("async ({theme,version})=>{const q=version===7?'16-uart-tx':'8.1';const m=await import('./js/ui/ThemeManager.js?v='+q);m.setJamMateTheme(theme);}",dict(theme=theme,version=version))
+    for version,page in zip((7,8),pages):page.evaluate("async ({theme,version})=>{const q=version===7?'16-uart-tx':'8.2';const m=await import('./js/ui/ThemeManager.js?v='+q);m.setJamMateTheme(theme);}",dict(theme=theme,version=version))
     for screen in ['home','fx','drums','looper','setup','tuner']:
      for page in pages:
       page.evaluate('window.JamMateMobile.setEasy(false)')

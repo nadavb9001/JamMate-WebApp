@@ -1,8 +1,18 @@
-# JamMate v8.1
+# JamMate v8.2
 
 Use `JamMate_Web_v8/` with the v8 firmware `src/` and `include/` folders. The two projects are on `codex/jammate-v8`; v7 remains available separately. Build using the existing PlatformIO project, flash firmware, and deploy the complete web v8 folder. Do not erase or replace LittleFS. No PlatformIO configuration change is required.
 
 Web and LCD layouts, artwork, styles, icons, and control arrangements are preserved. `js/config.js` is byte-identical to v7. The paged configuration read, schema checking, ordered upload, flash read verification, applied checksum, and configuration readback are retained. Expression ADC polling remains removed. Audio capture/MP3 recording is deferred at the user's request.
+
+## 8.2 looper acknowledgement and reconnect repair
+
+The supplied v8.1 log shows looper enable reaching the DSP, followed by an unacknowledged controls reply (operation 3E), disconnect, and eventually a Core 0 LoadProhibited crash on reconnect. The exact panic addresses could not be reliably attributed without the user's matching ELF. Source inspection found that the pinned Arduino BLE `notify()` implementation copies its unprotected peer map from the sender task while the Bluetooth task modifies that map on connection changes.
+
+The firmware now sends through the SDK using the GATT interface captured from CREATE for the exact v8 service UUID and the connection ID captured from CONNECT. It does not guess the last registered interface, copy the library peer map, or allocate a characteristic String for each fragment. Packets from an old session are rejected before submission. SDK failures and the last accepted ACK are included in stall diagnostics. Incoming ACKs must match the active transaction, operation and sent offset range.
+
+The browser prioritizes transport ACKs over queued DATA and sends ACK/HELLO with confirmed GATT writes. Bulk DATA retains write-without-response and the four-fragment window. GATT writes have a 2.5-second deadline; connection, discovery and notification subscription also have deadlines. A stalled write closes the connection, cancels queued work and starts bounded reconnect. Late completions cannot overwrite the new connection's handles.
+
+Tests cover the real firmware SDK route with distinct interface/connection IDs, SDK failure, stale-session rejection, browser priority/confirmed ACK writes, never-resolving writes/discovery, stale completions, and full UI looper enable/REC concurrent with a controls reply. The phone-like browser peer rejects unconfirmed transport ACKs. Physical ESP/phone validation remains required; software checks do not prove the reported hardware crash is resolved.
 
 ## One BLE protocol
 

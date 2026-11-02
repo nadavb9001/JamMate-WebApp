@@ -2,9 +2,9 @@ from playwright.sync_api import sync_playwright
 from pathlib import Path
 import json
 base=Path(__file__).resolve().parent.parent
-selectjs=(base/'js/ui/CustomSelect.js').read_text().replace('?v=8.1','').replace('export function upgradeSelects','function upgradeSelects').replace('export function disposeSelects','function disposeSelects')
-js=(base/'js/ui/mobile-shell.js').read_text().replace('?v=8.1','').replace("import { upgradeSelects, disposeSelects } from './CustomSelect.js';",'').replace("import { currentJamMateTheme } from './ThemeManager.js';",'').replace('export const FX_ORDER','const FX_ORDER').replace('export const BANKS','const BANKS').replace('export function installMobileShell','function installMobileShell') + '\nwindow.__createJamMate=installMobileShell;\n'
-css=(base/'css/mobile-neon.css').read_text().replace('?v=8.1','')
+selectjs=(base/'js/ui/CustomSelect.js').read_text().replace('?v=8.2','').replace('export function upgradeSelects','function upgradeSelects').replace('export function disposeSelects','function disposeSelects')
+js=(base/'js/ui/mobile-shell.js').read_text().replace('?v=8.2','').replace("import { upgradeSelects, disposeSelects } from './CustomSelect.js';",'').replace("import { currentJamMateTheme } from './ThemeManager.js';",'').replace('export const FX_ORDER','const FX_ORDER').replace('export const BANKS','const BANKS').replace('export function installMobileShell','function installMobileShell') + '\nwindow.__createJamMate=installMobileShell;\n'
+css=(base/'css/mobile-neon.css').read_text().replace('?v=8.2','')
 legacy='''
 <div id="statusLed"></div><div id="masterKnob"></div><div id="bpmKnob"></div>
 <select id="presetBank">'''+''.join(f'<option>{n}</option>' for n in ['Clean','Crunch','Overdrive','Distortion','Modulated','Custom1','Custom2'])+'''</select>

@@ -13,17 +13,17 @@
  *     flatIdx 1..K   → knob k-1   value: 0–255
  *     flatIdx K+1..  → dropdown d value: selectedIndex
  */
-import { NamLoader } from './NamLoader.js';
-import { NamBrowserV2b } from './ui/NamBrowserV2b.js?v=2b-inline-1';
-import { APP_CONFIG } from './config.js';
-import { View } from './ui/View.js';
-import { Knob } from './ui/Knob.js';
-import { BLEService } from './services/BLEService.js';
-import { WebSync, crc16 } from './services/WebSync.js';
-import { readDeviceConfig } from './services/ConfigSync.js';
-import { Protocol } from './services/Protocol.js?v=10-master';
-import { upgradeSelects } from './ui/CustomSelect.js';
-import { installThemeManager } from './ui/ThemeManager.js';
+import { NamLoader } from './NamLoader.js?v=14-sync-recovery';
+import { NamBrowserV2b } from './ui/NamBrowserV2b.js?v=14-sync-recovery';
+import { APP_CONFIG } from './config.js?v=14-sync-recovery';
+import { View } from './ui/View.js?v=14-sync-recovery';
+import { Knob } from './ui/Knob.js?v=14-sync-recovery';
+import { BLEService } from './services/BLEService.js?v=14-sync-recovery';
+import { WebSync, crc16 } from './services/WebSync.js?v=14-sync-recovery';
+import { readDeviceConfig } from './services/ConfigSync.js?v=14-sync-recovery';
+import { Protocol } from './services/Protocol.js?v=14-sync-recovery';
+import { upgradeSelects } from './ui/CustomSelect.js?v=14-sync-recovery';
+import { installThemeManager } from './ui/ThemeManager.js?v=14-sync-recovery';
 
 const PRESETS_LOCKED = false;
 
@@ -97,6 +97,7 @@ export const app = {
     this.loopLength   = 0;
     this.loopTracks   = 1;
 
+    console.info("[JamMate] Web build v7.14-sync-recovery");
     View.init(this);
     this.webSync = new WebSync({
       send: packet => BLEService.send(packet).catch(e => console.warn('[SYNC] send',e)),
@@ -202,7 +203,11 @@ export const app = {
             const bytes=new Uint8Array(dataView.buffer,dataView.byteOffset,dataView.byteLength);
             this.deviceConfigText=readDeviceConfig(bytes,this.config);
             BLEService.configReady=true;
-            this.sendDevice(Protocol.createGetState()).catch(e=>View.updateStatus(e.message));
+            if(!this._readingDeviceState){
+              this._readingDeviceState=BLEService.readCurrentState()
+                .catch(e=>View.updateStatus('Connected, but ESP state sync failed: '+e.message))
+                .finally(()=>{this._readingDeviceState=null;});
+            }
             View.updateStatus('Device configuration verified');
           }catch(e){BLEService.configReady=false;View.updateStatus(e.message);}
           return;

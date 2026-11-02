@@ -13,10 +13,12 @@ assert.equal(rx.accept(parts[0],0),null);assert.equal(rx.accept(parts[2],1),null
 assert.deepEqual(rx.accept(fragments(tuner,4)[0],2),tuner,'receiver recovers after failure');
 assert.throws(()=>fragments(new Uint8Array(6145),1));
 const notify=bytes=>{for(const p of fragments(bytes,90))BLEService._handleData({target:{value:new DataView(p.buffer)}});};
+let stateRequests=0;
 const received=[];BLEService.onDataReceived=p=>received.push(p);
 BLEService.isConnected=true;BLEService.configReady=false;let id=0;const device=new FrameReceiver(),writes=[];
 BLEService.characteristic={async writeValueWithResponse(p){
  writes.push(p);const data=device.accept(p);
+ if(data?.[0]===0x30 && ++stateRequests>1)notify(Uint8Array.of(0x31,4,0,3,137,38,0));
  if(data?.[0]===0x54)notify(Uint8Array.of(0x55,2,0,1,65));
  if(data?.[0]===0x52)notify(Uint8Array.of(0x53,0,data[3],data[4],0,0));
 }};
@@ -25,6 +27,7 @@ const reply=await BLEService.request(Uint8Array.of(0x54,0,0),b=>b[0]===0x55);
 assert.deepEqual(reply,Uint8Array.of(0x55,2,0,1,65));
 assert.equal(received.at(-1).cmd,0x55);assert.equal(received.at(-1).dataView.getUint8(0),1);
 BLEService.configReady=true;
+const stateReply=await BLEService.readCurrentState(10);assert.equal(stateRequests,2);assert.equal(stateReply[0],0x31);
 await Promise.all([BLEService.send(blob),BLEService.send(tuner)]);
 assert.ok(writes.every(p=>p.length<=20),'safe at minimum ATT MTU');
 const waiting=BLEService.request(Uint8Array.of(1,0,0),()=>false,10000);

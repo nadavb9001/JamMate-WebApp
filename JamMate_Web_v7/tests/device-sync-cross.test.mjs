@@ -16,6 +16,22 @@ try{
  assert.ok(start>=0);
  const funcs=main.slice(start,main.indexOf('// DSP PACKET PROCESSING',start)).replace(/\/\/ =+\s*$/,'');
  fs.writeFileSync(path.join(temp,'blob-functions.inc'),funcs);
+ const displaySource=fs.readFileSync(path.join(esp,'src/DisplayManager.cpp'),'utf8');
+ const tempoStart=displaySource.indexOf('void DisplayManager::setTempo(');
+ const tempo=displaySource.slice(tempoStart,displaySource.indexOf('void DisplayManager::setVolume(',tempoStart));
+ const globalStart=main.indexOf('  case 0x25:',main.indexOf('void processBLEData('));
+ const globalCase=main.slice(globalStart,main.indexOf('  case 0x26:',globalStart));
+ fs.writeFileSync(path.join(temp,'tempo-functions.inc'),tempo+'\nvoid applyWebGlobal(uint8_t* payload,size_t payloadLen){switch(0x25){'+globalCase+'}}');
+ const bluetooth=fs.readFileSync(path.join(esp,'include/BluetoothManager_binary.hpp'),'utf8');
+ assert.ok(bluetooth.includes('esp_ble_gatts_send_indicate(webGattsIf'));
+ assert.ok(!bluetooth.includes('pControlChar->setValue(fragment'));
+ assert.ok(bluetooth.includes('const uint8_t* bytes=event->write.value'));
+ const mainUI=fs.readFileSync(path.join(esp,'src/DisplayManager_Main.cpp'),'utf8');
+ assert.ok(mainUI.includes('setTempo(next)'));
+
+ const loadStart=main.indexOf('bool loadPreset(uint8_t bank, uint8_t number, Preset &preset)\n{');
+ assert.ok(loadStart>=0);
+ fs.writeFileSync(path.join(temp,'load-preset.inc'),main.slice(loadStart,main.indexOf('\nvoid saveSystemState()',loadStart)));
  execFileSync('g++',['-std=c++17','-I'+path.join(esp,'include'),'-I'+temp,path.join(esp,'test/native/runtime-host.cpp'),'-o',path.join(temp,'host')]);
  process.stdout.write(execFileSync(path.join(temp,'host'),[temp]));
  const canonical=fs.readFileSync(path.join(esp,'include/JmDefaultConfig.hpp'),'utf8').split('R"JMCFG(')[1].split(')JMCFG"')[0];
@@ -38,5 +54,5 @@ try{
  assert.equal(sync.syncReceived,35);assert.equal(sync.syncFailed,0);
  // Regression guard: these requests must be dispatched by the real firmware.
  for(const cmd of ['0x37','0x39','0x54','0x52'])assert.ok(main.includes('case '+cmd+':'));
- console.log('PASS cross-repository: real firmware helper catalog/slots decode in WebSync, canonical configuration parity');
+ console.log('PASS cross-repository: all 35 legacy flash files load without writes, repeated preset switches,  real firmware helper catalog/slots decode in WebSync, canonical configuration parity');
 }finally{fs.rmSync(temp,{recursive:true,force:true});}

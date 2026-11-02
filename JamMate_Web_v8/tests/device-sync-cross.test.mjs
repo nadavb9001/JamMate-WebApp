@@ -23,7 +23,8 @@ try{
  const globalCase=main.slice(globalStart,main.indexOf('  case 0x26:',globalStart));
  fs.writeFileSync(path.join(temp,'tempo-functions.inc'),tempo+'\nvoid applyWebGlobal(uint8_t* payload,size_t payloadLen){switch(0x25){'+globalCase+'}}');
  const bluetooth=fs.readFileSync(path.join(esp,'include/BluetoothManager_binary.hpp'),'utf8');
- assert.ok(!bluetooth.includes('esp_ble_gatts_send_indicate(')&&!bluetooth.includes('0x7e'));
+ assert.ok(!bluetooth.includes('txChar->notify(')&&!bluetooth.includes('getPeerDevices(')&&!bluetooth.includes('0x7e'));
+ assert.ok(bluetooth.includes('ESP_GATTS_CREATE_EVT')&&bluetooth.includes('.equals(BLEUUID(BLE_SERVICE_UUID))'));
  assert.ok(bluetooth.includes('8a8e0003-8a8e-4800-8000-4a616d4d6174'));
  assert.ok(!main.includes('pedal.update()')&&!main.includes('Expression: %.3f'));
  const mainUI=fs.readFileSync(path.join(esp,'src/DisplayManager_Main.cpp'),'utf8');

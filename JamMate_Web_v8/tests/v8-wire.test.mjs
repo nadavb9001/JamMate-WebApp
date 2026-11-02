@@ -16,7 +16,8 @@ for(const f of frames)last=bad.accept(unpack(f,session));assert.deepEqual(last.m
 assert.equal(rx.accept({type:DATA,id:2,offset:0,total:MAX+1,crc:0,op:1,data:new Uint8Array()}).message,undefined);
 const source=fs.readFileSync(path.join(ctrl,'include/BluetoothManager_binary.hpp'),'utf8');const start=source.indexOf(' void transmit(const Outgoing& p)');const end=source.indexOf(' static void senderTask',start);
 const temp=fs.mkdtempSync(path.join(os.tmpdir(),'jm-v8-'));fs.writeFileSync(path.join(temp,'v8-transmit.inc'),source.slice(start,end));
-for(const file of ['v8-sender','v8-resources']){
+fs.writeFileSync(path.join(temp,'v8-notify.inc'),source.slice(source.indexOf(' bool notify('),start));
+for(const file of ['v8-sender','v8-resources','v8-route']){
  execFileSync('g++',['-std=c++17','-I',path.join(ctrl,'include'),'-I',temp,path.join(ctrl,'test/native/'+file+'.cpp'),'-o',path.join(temp,file)]);
  process.stdout.write(execFileSync(path.join(temp,file)));
 }

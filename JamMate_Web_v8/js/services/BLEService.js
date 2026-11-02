@@ -1,7 +1,10 @@
-import {uploadResource,downloadResource} from './Resources.js?v=8.1';
-import {HEADER,MAX,DATA,ACK,HELLO,crc16,packet,unpack,Receiver} from './Wire.js?v=8.1';
-import {Protocol} from './Protocol.js?v=8.1';
+import {uploadResource,downloadResource} from './Resources.js?v=8.2';
+import {HEADER,MAX,DATA,ACK,HELLO,crc16,packet,unpack,Receiver} from './Wire.js?v=8.2';
+import {Protocol} from './Protocol.js?v=8.2';
 const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+const deadline=(action,label,ms=5000)=>{
+ let timer;return Promise.race([Promise.resolve().then(action),new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error(label+' timed out')),ms);})]).finally(()=>clearTimeout(timer));
+};
 const asBytes=b=>b instanceof Uint8Array?b:new Uint8Array(b.buffer||b,b.byteOffset||0,b.byteLength);
 export const BLEService={
  SERVICE_UUID:'8a8e0001-8a8e-4800-8000-4a616d4d6174',
@@ -10,13 +13,14 @@ export const BLEService={
  device:null,isConnected:false,configReady:false,isSyncing:false,shouldReconnect:false,
  configurationError:null,onStatusChange:null,onDataReceived:null,onConfigProgress:null,
  _session:0,_epoch:0,_id:0,_att:20,_window:4,_rx:new Receiver(),_queue:[],_waiters:new Set(),
- _io:Promise.resolve(),_sending:false,_reconnecting:false,_pingBlocked:false,
+ _gattQueue:[],_gattBusy:false,_sending:false,_reconnecting:false,_pingBlocked:false,
  rxNotifications:0,rxRejected:0,
  _setStatus(status){this.onStatusChange?.(status);},
  async connect(){
   if(!navigator.bluetooth)throw Error('Web Bluetooth is unavailable in this browser');
   this.shouldReconnect=true;this._setStatus('connecting');
   try{
+   if(this.device&&this._disconnectListener)this.device.removeEventListener('gattserverdisconnected',this._disconnectListener);
    this.device=await navigator.bluetooth.requestDevice({filters:[{namePrefix:'JamMate'}],optionalServices:[this.SERVICE_UUID]});
    this._disconnectListener=()=>this._handleDisconnect();
    this.device.addEventListener('gattserverdisconnected',this._disconnectListener);
@@ -25,14 +29,15 @@ export const BLEService={
  },
  async _connectGatt(){
   const epoch=++this._epoch;
-  this.server=await this.device.gatt.connect();
-  const service=await this.server.getPrimaryService(this.SERVICE_UUID);
-  this.characteristic=await service.getCharacteristic(this.CHARACTERISTIC_UUID);
-  this.notifyCharacteristic=await service.getCharacteristic(this.NOTIFY_UUID);
-  this._dataListener=e=>this._handleData(e);
-  this.notifyCharacteristic.addEventListener('characteristicvaluechanged',this._dataListener);
-  await this.notifyCharacteristic.startNotifications();
-  if(epoch!==this._epoch||!this.shouldReconnect)throw Error('Connection cancelled');
+  const check=()=>{if(epoch!==this._epoch||!this.shouldReconnect)throw Error('Connection cancelled');};
+  const server=await deadline(()=>this.device.gatt.connect(),'GATT connection',10000);check();this.server=server;
+  const service=await deadline(()=>server.getPrimaryService(this.SERVICE_UUID),'V8 service discovery');check();
+  const write=await deadline(()=>service.getCharacteristic(this.CHARACTERISTIC_UUID),'RX discovery');check();
+  const notify=await deadline(()=>service.getCharacteristic(this.NOTIFY_UUID),'TX discovery');check();
+  this.characteristic=write;this.notifyCharacteristic=notify;
+  this._dataListener=e=>{if(epoch===this._epoch)this._handleData(e);};
+  notify.addEventListener('characteristicvaluechanged',this._dataListener);
+  await deadline(()=>notify.startNotifications(),'Notification subscription');check();
   this._session=crypto.getRandomValues(new Uint32Array(1))[0]||1;
   this._att=20;this._rx.reset();this._id=0;this.rxNotifications=this.rxRejected=0;
   this.isConnected=true;this.configReady=false;this.configurationError=null;
@@ -64,12 +69,26 @@ export const BLEService={
   return Promise.all([this.send(data,()=>active),response]).then(([,reply])=>reply).finally(()=>{active=false;response.cancel();});
  },
  _write(bytes){
-  const char=this.characteristic,epoch=this._epoch;
-  const run=this._io.catch(()=>{}).then(async()=>{
-   if(!this.isConnected||epoch!==this._epoch||char!==this.characteristic)throw Error('BLE disconnected');
-   if(char.writeValueWithoutResponse)await char.writeValueWithoutResponse(bytes);
-   else await char.writeValueWithResponse(bytes);
-  });this._io=run;return run;
+  const priority=bytes[2]===ACK||bytes[2]===HELLO;
+  return new Promise((resolve,reject)=>{
+   this._gattQueue.push({bytes,priority,epoch:this._epoch,char:this.characteristic,resolve,reject});this._drainGatt();
+  });
+ },
+ async _drainGatt(){
+  if(this._gattBusy)return;this._gattBusy=true;
+  try{while(this._gattQueue.length){
+   const high=this._gattQueue.findIndex(q=>q.priority),q=this._gattQueue.splice(high<0?0:high,1)[0];
+   if(!this.isConnected||q.epoch!==this._epoch||q.char!==this.characteristic){q.reject(Error('BLE disconnected'));continue;}
+   try{
+    await deadline(()=>{
+     // Confirm transport ACKs/HELLO at GATT level. Bulk DATA retains fast WNR.
+     if(q.priority&&q.char.writeValueWithResponse)return q.char.writeValueWithResponse(q.bytes);
+     if(q.char.writeValueWithoutResponse)return q.char.writeValueWithoutResponse(q.bytes);
+     return q.char.writeValueWithResponse(q.bytes);
+    },q.bytes[2]===ACK?'Transport ACK write':'BLE write',2500);
+    if(q.epoch!==this._epoch)throw Error('BLE disconnected');q.resolve();
+   }catch(e){q.reject(e);if(q.epoch===this._epoch){console.error('[V8]',e.message);this.device?.gatt.disconnect();this._handleDisconnect();}}
+  }}finally{this._gattBusy=false;if(this._gattQueue.length)this._drainGatt();}
  },
  send(data,active=()=>true){
   const b=asBytes(data);
@@ -95,7 +114,7 @@ export const BLEService={
  },
  async _transfer(q){
   const id=this._id=this._id%65535+1,total=q.data.length,crc=crc16(q.data),chunk=this._att-HEADER;
-  const flight={id,next:0,max:0,complete:false};this._flight=flight;let failures=0,empty=total===0;
+  const flight={id,op:q.op,next:0,max:0,complete:false};this._flight=flight;let failures=0,empty=total===0;
   try{do{
    if(q.epoch!==this._epoch||!this.isConnected)throw Error('BLE disconnected');
    if(!q.active())throw Error('Device request expired');
@@ -114,7 +133,7 @@ export const BLEService={
  },
  _handleData(event){
   const p=unpack(asBytes(event.target.value),this._session);if(!p){this.rxRejected++;return;}this.rxNotifications++;
-  if(p.type===ACK){const f=this._flight;if(f&&p.id===f.id&&(p.offset===0||p.offset>=f.next)&&p.offset<=f.max){f.next=p.offset;f.complete=true;this._wake?.();}return;}
+  if(p.type===ACK){const f=this._flight;if(f&&p.id===f.id&&p.op===f.op&&(p.offset===0||p.offset>=f.next)&&p.offset<=f.max){f.next=p.offset;f.complete=true;this._wake?.();}return;}
   const result=this._rx.accept(p);
   if(result.next!==undefined)this._write(packet(ACK,p.op,p.id,result.next,0,0,this._session)).catch(()=>{});
   if(result.message)this._dispatch(result.message.op,result.message.data);
@@ -138,7 +157,8 @@ export const BLEService={
  _clear(){
   ++this._epoch;this.isConnected=false;this.configReady=false;this._stateReceived=false;this._session=0;this._rx.reset();this._wake?.();
   if(this.notifyCharacteristic&&this._dataListener)this.notifyCharacteristic.removeEventListener('characteristicvaluechanged',this._dataListener);
-  this.characteristic=this.notifyCharacteristic=null;this._io=Promise.resolve();
+  this.characteristic=this.notifyCharacteristic=null;
+  for(const q of this._gattQueue.splice(0))q.reject(Error('BLE disconnected'));
   for(const q of this._queue.splice(0))q.reject(Error('BLE disconnected'));
   for(const w of this._waiters){clearTimeout(w.timer);w.reject(Error('BLE disconnected'));}this._waiters.clear();
  },
@@ -147,7 +167,7 @@ export const BLEService={
   if(this._reconnecting)return;this._reconnecting=true;
   try{for(let attempt=0;attempt<8&&this.shouldReconnect;attempt++){
    await sleep(Math.min(10000,500*2**attempt));if(!this.shouldReconnect)break;
-   try{await this._connectGatt();return;}catch(e){console.warn('[V8] reconnect',e.message);this._clear();this.device?.gatt.disconnect();}
+   try{await this._connectGatt();if(!this.isConnected)throw Error('Connection dropped during sync');return;}catch(e){console.warn('[V8] reconnect',e.message);this._clear();this.device?.gatt.disconnect();}
   }if(this.shouldReconnect){this.shouldReconnect=false;this._setStatus('disconnected');}
   }finally{this._reconnecting=false;}
  },

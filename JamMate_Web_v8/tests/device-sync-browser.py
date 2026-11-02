@@ -20,15 +20,15 @@ try:
   assert page.locator('#iirCanvas').is_visible()
   assert not errors,errors
   page.evaluate('''async () => {
-    const {app}=await import('./js/app.js?v=8.1');
-    const {BLEService:ble}=await import('./js/services/BLEService.js?v=8.1');
+    const {app}=await import('./js/app.js?v=8.2');
+    const {BLEService:ble}=await import('./js/services/BLEService.js?v=8.2');
     const {Protocol}=await import('./js/services/Protocol.js');
     const {Receiver,packet,unpack,crc16,DATA,ACK,HELLO}=await import('./js/services/Wire.js');
     window.__app=app;window.__ble=ble;window.__writes=[];
     let listener,tx=0,session=0,config=Protocol.buildConfigText(app.config),pending=[];
-    let txTail=Promise.resolve(),ackWaiter=null,dropped=false,resource=null,savedResource=null;
+    let txTail=Promise.resolve(),ackWaiter=null,dropped=false,resource=null,savedResource=null,peerConnected=false;
     const emitMessage=(op,data)=>{
-      const id=++tx;
+      const id=++tx,queuedSession=session;
       txTail=txTail.then(async()=>{
         let offset=0;
         do{
@@ -41,7 +41,8 @@ try:
             if(op===0x31&&!dropped){dropped=true;return;}
             listener({target:{value:new DataView(part.buffer)}});
           });
-          if(!accepted)throw Error('Peer notification was not acknowledged');offset=end;
+          if(!peerConnected||queuedSession!==session)return;
+          if(!accepted)throw Error(`Peer notification ${op.toString(16)} was not acknowledged`);offset=end;
         }while(offset<data.length);
       });return txTail;
     };
@@ -52,9 +53,10 @@ try:
     const preset=new Uint8Array(Protocol.serializeState(state));
     const receiver=new Receiver();
     const txCharacteristic={startNotifications:async()=>{},addEventListener:(n,f)=>{listener=f;},removeEventListener:()=>{}};
-    const characteristic={writeValueWithoutResponse:async bytes=>{
+    const characteristic={writeValueWithResponse:async bytes=>characteristic.writeValueWithoutResponse(bytes,true),writeValueWithoutResponse:async (bytes,confirmed=false)=>{
+      if(bytes[2]===ACK&&!confirmed)throw Error('Phone drops unconfirmed transport ACK');
       const q=unpack(bytes,bytes[2]===HELLO?new DataView(bytes.buffer).getUint32(12,true):session);
-      if(q.type===HELLO){session=new DataView(bytes.buffer).getUint32(12,true);receiver.reset();tx=0;blob(0,Uint8Array.of(8,4,244,0));return;}
+      if(q.type===HELLO){txTail=Promise.resolve();session=new DataView(bytes.buffer).getUint32(12,true);receiver.reset();tx=0;blob(0,Uint8Array.of(8,4,244,0));return;}
       if(q.type===ACK){if(ackWaiter?.id===q.id&&ackWaiter.next===q.offset)ackWaiter.accept();return;}
       const result=receiver.accept(q);
       if(result.next!==undefined){const ack=packet(ACK,q.op,q.id,result.next,0,0,session);listener({target:{value:new DataView(ack.buffer)}});}
@@ -74,13 +76,18 @@ try:
         blob(0x55,Uint8Array.from([2,all.length&255,all.length>>8,offset&255,offset>>8,crc&255,crc>>8,...data]));
       }
       if(p[0]===0x30){blob(0x31,preset);emit(Uint8Array.of(0x3f,2,3,38,137));emit(Uint8Array.of(0x3e,1,42,2,3,137,1,127,2,1,4,3,1,1,5,2,1,1,0));}
+      if(p[0]===0x47){emit(Uint8Array.of(0x3e,0,42,2,3,137,1,100,0,0,0,0,0,0,0,0,0,0,0));}
+      if(p[0]===0x42){window.__loopRecReceived=p[4]===1;}
       if(p[0]===0x37){let manifest=[1,35],crc=crc16(preset);for(let b=0;b<7;b++)for(let s=0;s<5;s++)manifest.push(b,s,preset.length&255,preset.length>>8,crc&255,crc>>8);blob(0x38,manifest);}
       if(p[0]===0x39)blob(0x3a,Uint8Array.from([p[3],p[4],...preset]));
       if(p[0]===0x52){if(!p[3]&&!p[4])pending=[];pending.push(...p.slice(6));let crc=0;if(p[5]){config=new TextDecoder().decode(Uint8Array.from(pending));crc=crc16(pending);}emit(Uint8Array.of(0x53,0,p[3],p[4],crc&255,crc>>8));}
      }};
     window.__statuses=[];const report=ble.onStatusChange;ble.onStatusChange=s=>{window.__statuses.push(s);report(s);};
     ble.shouldReconnect=true;
-    ble.device={gatt:{disconnect:()=>ble._handleDisconnect(),connect:async()=>({getPrimaryService:async()=>({getCharacteristic:async uuid=>uuid.includes("0003-")?txCharacteristic:characteristic})})}};
+    ble.device={gatt:{
+      disconnect:()=>{peerConnected=false;ble._handleDisconnect();},
+      connect:async()=>{peerConnected=true;return {getPrimaryService:async()=>({getCharacteristic:async uuid=>uuid.includes("0003-")?txCharacteristic:characteristic})};}
+    }};
     await ble._connectGatt();
   }''')
   page.wait_for_function('window.__ble.configReady',timeout=120000)
@@ -119,18 +126,22 @@ try:
   page.evaluate('window.__app.sendConfigUpdate()')
   assert page.evaluate('window.__ble.configReady')
   assert not errors,errors
+  page.evaluate("window.__app.looperEnabled=false;window.__app.sendLoopButton('rec')")
+  page.wait_for_function('window.__loopRecReceived===true')
+  assert page.evaluate('window.__ble.isConnected')
   page.evaluate("""async()=>{
     const bytes=Uint8Array.from({length:7484},(_,i)=>i&255);
     await window.__ble.uploadResource('nam',bytes,'model.nam',{items:1871});
     const back=await window.__ble.downloadResource('nam');
     if(back.length!==bytes.length||back.some((v,i)=>v!==bytes[i]))throw Error('resource round trip failed');
-    window.__ble._handleDisconnect();
+    window.__ble.device.gatt.disconnect();
   }""")
   page.wait_for_function("window.__statuses.filter(s=>s==='connected').length===2",timeout=30000)
   assert page.evaluate("window.__statuses.includes('reconnecting')")
   assert page.evaluate('window.__ble.configReady')
+  assert not errors,errors
   page.evaluate('window.__ble.shouldReconnect=false;window.__ble._handleDisconnect()')
   browser.close()
-  print('PASS v8 browser: config read/update, dropped notification recovery, 35 presets, live controls, silent remote edits, NAM resource round trip, automatic reconnect, CPU display and idle silence')
+  print('PASS v8 browser: config read/update, dropped notification recovery, 35 presets, live controls, silent remote edits, NAM resource round trip, automatic reconnect, CPU display, idle silence and looper start during controls acknowledgement')
 finally:
  server.shutdown();server.server_close()

@@ -1,5 +1,11 @@
 # Device synchronization repair
 
+## 7.14.1 connection reset hardening
+
+The reported abort occurs during the configuration reply, before current state. The reply now streams flash bytes into a fixed 4,100-byte buffer, borrowed by the notification task until transmission completes. It no longer constructs String/vector copies or allocates a multi-kilobyte frame on the heap. Other replies use checked malloc and transfer ownership directly to the queue, removing the extra intermediate copy. Large sync buffers are kept off the Arduino loop stack. MTU and connection metadata are captured from GATT events instead of reading the server's changing peer map from the sender task. Task creation failures are checked.
+
+Firmware reports `sync-recovery 7.14.1`. Boot/config/state/catalog logs include reset reason, available heap and stack minimum. PlatformIO monitor uses `esp32_exception_decoder` at 115200 baud to decode any subsequent backtrace against the matching local ELF. This hardening builds and passes host tests, but the physical reset must be retested on the ESP. The v7.14 web app remains compatible; do not erase LittleFS.
+
 ## 7.14 hardware follow-up
 
 The first repair incorrectly used the new-write validator for old flash files. This caused preset switches to stick at an existing slot whose record widths differed. Flash reads now use a separate bounded legacy reader, preserving the stored knob/dropdown boundaries for known older layouts, leaving added fields at their defaults, and never rewriting the original file. New writes remain strictly validated. Navigation also advances past a genuinely corrupt slot on the next click. Legacy formats have no parameter-name/schema IDs, so verify the sound of older presets whose DSP parameter meanings changed before explicitly saving them.

@@ -22,9 +22,15 @@ try{
  const globalStart=main.indexOf('  case 0x25:',main.indexOf('void processBLEData('));
  const globalCase=main.slice(globalStart,main.indexOf('  case 0x26:',globalStart));
  fs.writeFileSync(path.join(temp,'tempo-functions.inc'),tempo+'\nvoid applyWebGlobal(uint8_t* payload,size_t payloadLen){switch(0x25){'+globalCase+'}}');
+ const runtime=fs.readFileSync(path.join(esp,'include/WebSyncRuntime.hpp'),'utf8');
+ const configReply=runtime.slice(runtime.indexOf('static void sendWebConfig(){'),runtime.indexOf('static void receiveWebConfig('));
+ assert.ok(configReply.includes('queueBorrowed'));
+ assert.ok(!configReply.includes('std::vector')&&!configReply.includes('String text='));
  const bluetooth=fs.readFileSync(path.join(esp,'include/BluetoothManager_binary.hpp'),'utf8');
  assert.ok(bluetooth.includes('esp_ble_gatts_send_indicate(webGattsIf'));
  assert.ok(!bluetooth.includes('pControlChar->setValue(fragment'));
+ assert.ok(!bluetooth.includes('pServer->getPeerMTU('));
+ assert.ok(!bluetooth.includes('std::vector<uint8_t> frame'));
  assert.ok(bluetooth.includes('const uint8_t* bytes=event->write.value'));
  const mainUI=fs.readFileSync(path.join(esp,'src/DisplayManager_Main.cpp'),'utf8');
  assert.ok(mainUI.includes('setTempo(next)'));

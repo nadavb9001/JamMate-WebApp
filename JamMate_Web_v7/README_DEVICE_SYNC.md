@@ -1,5 +1,36 @@
 # Device synchronization repair
 
+## 7.16 separate BLE TX and verified readback
+
+The supplied hardware trace reaches config page 0, then times out waiting for its ACK; the browser reports zero notifications. This release replaces the raw SDK send with the BLE library's notification method on a dedicated UART TX characteristic (`6e400003-b5a3-f393-e0a9-e50e24dcca9f`). Commands use the existing RX characteristic ending in 0002. Incoming writes cannot replace the outgoing characteristic value.
+
+If notifications do not arrive, the browser reads the TX attribute every 400 ms. Readback uses the same fragment, CRC, configuration validation and ACK path as notifications; the ESP keeps each fragment available until acknowledged. The browser logs `Notifications unavailable; using verified TX readback` when this fallback is used. This path is slower than working notifications.
+
+Update both firmware `src/` and `include/` and the entire `JamMate_Web_v7/` folder. Build/flash firmware without erasing LittleFS or uploading a replacement filesystem. Firmware and web console must show 7.16. If connection reports a missing TX characteristic after flashing, forget/re-pair JamMate to refresh the cached Bluetooth service. Clear the site's old service worker/cache if the console still reports 7.15.
+
+Expression pedal initialization, ADC polling and Expression serial prints have been removed. The unused pedal header remains available. The serial RX ring is reduced from 16 KiB to 8 KiB to leave more heap for the hybrid BLE/A2DP stack; serial import checksum validation remains active.
+
+Validation includes the ESP build, protocol/native checks, and the real browser UI against a test peer both with notifications and with all notifications suppressed. Both browser modes must verify config, read all 35 presets, apply remote state silently and send control writes. These checks do not establish physical BLE/Daisy behavior; retest the actual connection, preset switches, BPM and volume after installing both folders.
+
+The downloadable ZIP contains only `JamMate_Web_v7/`, `JamMate_Ctrl/src/` and `JamMate_Ctrl/include/`. It assumes the existing firmware project and dependencies; no project configuration changed in 7.16.
+
+## 7.15 verified configuration delivery
+
+Update both firmware and the complete v7 web folder for this release. The Connection popup and console identify v7.15. The browser negotiates acknowledged notifications before reading configuration. Each notification fragment must be confirmed with `[0x7F, transaction16LE, nextOffset16LE]`; the all-zero transaction/offset enables this mode. ESP retries a missing acknowledgement up to three times. The browser tolerates duplicate fragments, including a retried final fragment, without applying a logical message twice. ACK writes are serialized with commands and serviced between command fragments.
+
+Configuration is read in browser-paced pages: 0x54 payload `[offset16LE, requestedCount16LE]`; 0x55 payload `[version=2, total16LE, offset16LE, wholeFileCRC16LE, data]`. Pages carry at most 96 data bytes. Only the fully assembled, checksum-verified configuration reaches the app validator. Older version-1 full replies remain readable. Progress and the original schema/transport error are retained instead of being replaced by a generic control-lock message.
+
+The ESP logs the first/final config page and first-page transport details. Delivery timeouts identify command/transaction/offset and whether ACK mode is enabled. Browser timeouts include received-notification and rejected-frame counts. Idle loop telemetry is no longer sent repeatedly; changing loop progress is capped at 2 Hz, and full state reconciliation runs every 30 seconds. This leaves bandwidth for initial state and preset transfers.
+
+Tests cover the real firmware sender under a lost ACK and a non-acknowledging peer, config-page reconstruction, and the real UI against an ACK-paced test peer with an intentionally dropped middle-fragment ACK. These are software checks; physical connection/control needs retesting.
+
+
+## 7.14.1 connection reset hardening
+
+The reported abort occurs during the configuration reply, before current state. The reply now streams flash bytes into a fixed 4,100-byte buffer, borrowed by the notification task until transmission completes. It no longer constructs String/vector copies or allocates a multi-kilobyte frame on the heap. Other replies use checked malloc and transfer ownership directly to the queue, removing the extra intermediate copy. Large sync buffers are kept off the Arduino loop stack. MTU and connection metadata are captured from GATT events instead of reading the server's changing peer map from the sender task. Task creation failures are checked.
+
+Firmware reports `sync-recovery 7.14.1`. Boot/config/state/catalog logs include reset reason, available heap and stack minimum. PlatformIO monitor uses `esp32_exception_decoder` at 115200 baud to decode any subsequent backtrace against the matching local ELF. This hardening builds and passes host tests, but the physical reset must be retested on the ESP. The v7.14 web app remains compatible; do not erase LittleFS.
+
 ## 7.14 hardware follow-up
 
 The first repair incorrectly used the new-write validator for old flash files. This caused preset switches to stick at an existing slot whose record widths differed. Flash reads now use a separate bounded legacy reader, preserving the stored knob/dropdown boundaries for known older layouts, leaving added fields at their defaults, and never rewriting the original file. New writes remain strictly validated. Navigation also advances past a genuinely corrupt slot on the next click. Legacy formats have no parameter-name/schema IDs, so verify the sound of older presets whose DSP parameter meanings changed before explicitly saving them.

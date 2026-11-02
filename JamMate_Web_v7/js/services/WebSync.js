@@ -63,11 +63,11 @@ export class WebSync {
     this.send(Uint8Array.of(SYNC_CMD.SLOT_REQUEST,2,0,bank,slot));
   }
   checkTimeout(now=Date.now()){
-    if(this.catalogPending&&now-this.catalogStartedAt>5000){
+    if(this.catalogPending&&now-this.catalogStartedAt>10000){
       if(this.catalogTries<3)this._requestCatalog();
       else{this.catalogPending=false;this.started=false;this.onStatus?.('Preset catalog unavailable; reconnect to retry');}
     }
-    if(this.requesting && now-this.slotStartedAt>5000){
+    if(this.requesting && now-this.slotStartedAt>15000){
       if(this.requesting.tries<3)this._requestSlot();
       else this._finishFailedSlot();
     }

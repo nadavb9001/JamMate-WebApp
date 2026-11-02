@@ -13,17 +13,17 @@
  *     flatIdx 1..K   → knob k-1   value: 0–255
  *     flatIdx K+1..  → dropdown d value: selectedIndex
  */
-import { NamLoader } from './NamLoader.js?v=14-sync-recovery';
-import { NamBrowserV2b } from './ui/NamBrowserV2b.js?v=14-sync-recovery';
-import { APP_CONFIG } from './config.js?v=14-sync-recovery';
-import { View } from './ui/View.js?v=14-sync-recovery';
-import { Knob } from './ui/Knob.js?v=14-sync-recovery';
-import { BLEService } from './services/BLEService.js?v=14-sync-recovery';
-import { WebSync, crc16 } from './services/WebSync.js?v=14-sync-recovery';
-import { readDeviceConfig } from './services/ConfigSync.js?v=14-sync-recovery';
-import { Protocol } from './services/Protocol.js?v=14-sync-recovery';
-import { upgradeSelects } from './ui/CustomSelect.js?v=14-sync-recovery';
-import { installThemeManager } from './ui/ThemeManager.js?v=14-sync-recovery';
+import { NamLoader } from './NamLoader.js?v=16-uart-tx';
+import { NamBrowserV2b } from './ui/NamBrowserV2b.js?v=16-uart-tx';
+import { APP_CONFIG } from './config.js?v=16-uart-tx';
+import { View } from './ui/View.js?v=16-uart-tx';
+import { Knob } from './ui/Knob.js?v=16-uart-tx';
+import { BLEService } from './services/BLEService.js?v=16-uart-tx';
+import { WebSync, crc16 } from './services/WebSync.js?v=16-uart-tx';
+import { readDeviceConfig } from './services/ConfigSync.js?v=16-uart-tx';
+import { Protocol } from './services/Protocol.js?v=16-uart-tx';
+import { upgradeSelects } from './ui/CustomSelect.js?v=16-uart-tx';
+import { installThemeManager } from './ui/ThemeManager.js?v=16-uart-tx';
 
 const PRESETS_LOCKED = false;
 
@@ -97,7 +97,7 @@ export const app = {
     this.loopLength   = 0;
     this.loopTracks   = 1;
 
-    console.info("[JamMate] Web build v7.14-sync-recovery");
+    console.info("[JamMate] Web build v7.16-uart-tx");
     View.init(this);
     this.webSync = new WebSync({
       send: packet => BLEService.send(packet).catch(e => console.warn('[SYNC] send',e)),
@@ -133,6 +133,7 @@ export const app = {
       onControl:(settings)=>this.syncRemoteControl(settings),
     });
 
+    BLEService.onConfigProgress=(done,total)=>View.updateStatus(`Reading ESP configuration: ${done}/${total} bytes`);
     BLEService.onStatusChange = (status) => {
       View.updateConnectionStatus(status);
       if(status==='disconnected'||status==='reconnecting') {
@@ -202,14 +203,14 @@ export const app = {
           try {
             const bytes=new Uint8Array(dataView.buffer,dataView.byteOffset,dataView.byteLength);
             this.deviceConfigText=readDeviceConfig(bytes,this.config);
-            BLEService.configReady=true;
+            BLEService.configReady=true;BLEService.configurationError=null;
             if(!this._readingDeviceState){
               this._readingDeviceState=BLEService.readCurrentState()
                 .catch(e=>View.updateStatus('Connected, but ESP state sync failed: '+e.message))
                 .finally(()=>{this._readingDeviceState=null;});
             }
             View.updateStatus('Device configuration verified');
-          }catch(e){BLEService.configReady=false;View.updateStatus(e.message);}
+          }catch(e){BLEService.configReady=false;BLEService.configurationError=e.message;console.error('[CONFIG]',e.message);View.updateStatus(e.message);}
           return;
         }
         if(!BLEService.configReady)return;
@@ -1066,7 +1067,7 @@ export const app = {
         if(isLast&&(ack[4]|ack[5]<<8)!==crc16(bytes))throw Error('Applied configuration checksum differs');
         offset=nextOffset;index++;
       }
-      const reply=await BLEService.request(Uint8Array.of(0x54,0,0),b=>b[0]===0x55);
+      const reply=await BLEService._readConfiguration();
       if(reply[3]!==1||new TextDecoder().decode(reply.subarray(4))!==text)throw Error('Configuration readback differs');
       readDeviceConfig(reply.subarray(3),this.config);
       BLEService.configReady=true;

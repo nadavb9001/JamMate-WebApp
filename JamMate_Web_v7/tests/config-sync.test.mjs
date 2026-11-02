@@ -14,7 +14,7 @@ assert.throws(()=>readDeviceConfig(encoded(text.replace('threshold_db,','')),con
 assert.throws(()=>readDeviceConfig(Uint8Array.of(2),config));
 const inputs=Object.fromEntries(['drumEnable','looperEnable','autoArm','bounceMode','tunerEnable','drumStyle','loopSync','loopLength','trackSelect','playbackMode'].map(k=>[k,{checked:false,value:'0'}]));
 let assembled=[],fail=false,reads=0;const statuses=[];
-const ble={isConnected:true,configReady:true,async request(packet,matches){
+const ble={isConnected:true,configReady:true,async _readConfiguration(){return this.request(Uint8Array.of(0x54,0,0),b=>b[0]===0x55);},async request(packet,matches){
  const p=new Uint8Array(packet);
  let response;
  if(p[0]===0x52){

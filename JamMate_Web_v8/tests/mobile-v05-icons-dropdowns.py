@@ -1,9 +1,9 @@
 from pathlib import Path
 from playwright.sync_api import sync_playwright
 ROOT=Path(__file__).resolve().parent.parent
-css=(ROOT/'css/main.css').read_text().replace('?v=8.2','')+'\n'+(ROOT/'css/mobile-neon.css').read_text().replace('?v=8.2','')
-selectjs=(ROOT/'js/ui/CustomSelect.js').read_text().replace('?v=8.2','').replace('export function upgradeSelects','function upgradeSelects').replace('export function disposeSelects','function disposeSelects')
-js=(ROOT/'js/ui/mobile-shell.js').read_text().replace('?v=8.2','').replace("import { upgradeSelects, disposeSelects } from './CustomSelect.js';",'').replace("import { currentJamMateTheme } from './ThemeManager.js';",'const currentJamMateTheme=()=>"metal";').replace('export const FX_ORDER','const FX_ORDER').replace('export const BANKS','const BANKS').replace('export function installMobileShell','function installMobileShell')+'\nwindow.__make=installMobileShell;'
+css=(ROOT/'css/main.css').read_text().replace('?v=8.3','')+'\n'+(ROOT/'css/mobile-neon.css').read_text().replace('?v=8.3','')
+selectjs=(ROOT/'js/ui/CustomSelect.js').read_text().replace('?v=8.3','').replace('export function upgradeSelects','function upgradeSelects').replace('export function disposeSelects','function disposeSelects')
+js=(ROOT/'js/ui/mobile-shell.js').read_text().replace('?v=8.3','').replace("import { upgradeSelects, disposeSelects } from './CustomSelect.js';",'').replace("import { currentJamMateTheme } from './ThemeManager.js';",'const currentJamMateTheme=()=>"metal";').replace('export const FX_ORDER','const FX_ORDER').replace('export const BANKS','const BANKS').replace('export function installMobileShell','function installMobileShell')+'\nwindow.__make=installMobileShell;'
 for width,height in ((320,568),(390,844)):
   with sync_playwright() as p:
     browser=p.chromium.launch(headless=True,executable_path='/usr/bin/chromium',args=['--no-sandbox','--disable-dev-shm-usage'])

@@ -1,6 +1,6 @@
-import {uploadResource,downloadResource} from './Resources.js?v=8.2';
-import {HEADER,MAX,DATA,ACK,HELLO,crc16,packet,unpack,Receiver} from './Wire.js?v=8.2';
-import {Protocol} from './Protocol.js?v=8.2';
+import {uploadResource,downloadResource} from './Resources.js?v=8.3';
+import {HEADER,MAX,DATA,ACK,HELLO,crc16,packet,unpack,Receiver} from './Wire.js?v=8.3';
+import {Protocol} from './Protocol.js?v=8.3';
 const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 const deadline=(action,label,ms=5000)=>{
  let timer;return Promise.race([Promise.resolve().then(action),new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error(label+' timed out')),ms);})]).finally(()=>clearTimeout(timer));
@@ -11,10 +11,11 @@ export const BLEService={
  CHARACTERISTIC_UUID:'8a8e0002-8a8e-4800-8000-4a616d4d6174',
  NOTIFY_UUID:'8a8e0003-8a8e-4800-8000-4a616d4d6174',
  device:null,isConnected:false,configReady:false,isSyncing:false,shouldReconnect:false,
- configurationError:null,onStatusChange:null,onDataReceived:null,onConfigProgress:null,
+ lastError:null,configurationError:null,onStatusChange:null,onDataReceived:null,onConfigProgress:null,
  _session:0,_epoch:0,_id:0,_att:20,_window:4,_rx:new Receiver(),_queue:[],_waiters:new Set(),
  _gattQueue:[],_gattBusy:false,_sending:false,_reconnecting:false,_pingBlocked:false,
- rxNotifications:0,rxRejected:0,
+ rxNotifications:0,rxRejected:0,rxReadbacks:0,
+ _readTimer:null,_readBusy:false,_lastNotifyAt:0,_recoverUntil:0,_usingReadback:false,_stateRecovery:null,
  _setStatus(status){this.onStatusChange?.(status);},
  async connect(){
   if(!navigator.bluetooth)throw Error('Web Bluetooth is unavailable in this browser');
@@ -25,7 +26,7 @@ export const BLEService={
    this._disconnectListener=()=>this._handleDisconnect();
    this.device.addEventListener('gattserverdisconnected',this._disconnectListener);
    await this._connectGatt();
-  }catch(e){this.shouldReconnect=false;this.device?.gatt.disconnect();this._clear();this._setStatus('Connection failed: '+e.message);throw e;}
+  }catch(e){this.lastError=e.message;this.shouldReconnect=false;this.device?.gatt.disconnect();this._clear();this._setStatus('Connection failed: '+e.message);throw e;}
  },
  async _connectGatt(){
   const epoch=++this._epoch;
@@ -34,27 +35,31 @@ export const BLEService={
   const service=await deadline(()=>server.getPrimaryService(this.SERVICE_UUID),'V8 service discovery');check();
   const write=await deadline(()=>service.getCharacteristic(this.CHARACTERISTIC_UUID),'RX discovery');check();
   const notify=await deadline(()=>service.getCharacteristic(this.NOTIFY_UUID),'TX discovery');check();
+  if(write.properties?.read===false||notify.properties?.read===false)throw Error('Install v8.3 firmware. If already installed, forget/re-pair JamMate to refresh its Bluetooth services.');
   this.characteristic=write;this.notifyCharacteristic=notify;
   this._dataListener=e=>{if(epoch===this._epoch)this._handleData(e);};
   notify.addEventListener('characteristicvaluechanged',this._dataListener);
   await deadline(()=>notify.startNotifications(),'Notification subscription');check();
   this._session=crypto.getRandomValues(new Uint32Array(1))[0]||1;
   this._att=20;this._rx.reset();this._id=0;this.rxNotifications=this.rxRejected=0;
-  this.isConnected=true;this.configReady=false;this.configurationError=null;
+  this.isConnected=true;this._lastNotifyAt=Date.now();this._recoverUntil=Date.now()+6000;this._usingReadback=false;this._readBusy=false;this.rxReadbacks=0;
+  clearTimeout(this._readTimer);this._readTimer=null;this._armReadback();
+  this.configReady=false;this.configurationError=null;
   this._setStatus('syncing');
   // HELLO is always 20 bytes, including on the minimum ATT MTU.
   const hello=this._response(b=>b[0]===0,5000);
   await this._write(packet(HELLO,0,0,0,4,0,this._session,Uint8Array.of(8,4,244,0)));
   const caps=await hello;
   if(caps.length!==7||caps[3]!==8)throw Error('ESP does not support JamMate v8');
-  this._window=Math.max(1,Math.min(4,caps[4]));this._att=Math.max(20,Math.min(244,caps[5]|caps[6]<<8));
+  if(!(caps[4]&0x80))throw Error('Install firmware v8.3 for notification recovery');
+  this._window=Math.max(1,Math.min(4,caps[4]&15));this._att=Math.max(20,Math.min(244,caps[5]|caps[6]<<8));
   console.log(`[V8] session ready: ATT=${this._att}, window=${this._window}`);
   await this._readConfiguration();
   if(!this.configReady)throw Error(this.configurationError||'Device configuration not verified');
   // The existing config callback requests current state. Wait for its completion.
   if(!this._stateReceived)await this._response(b=>b[0]===0x31,15000);
   if(epoch!==this._epoch)throw Error('Connection changed during sync');
-  this._setStatus('connected');
+  this.lastError=null;this._setStatus('connected');
  },
  _response(matches,timeout){
   let waiter;
@@ -74,20 +79,48 @@ export const BLEService={
    this._gattQueue.push({bytes,priority,epoch:this._epoch,char:this.characteristic,resolve,reject});this._drainGatt();
   });
  },
+ _read(char){
+  return new Promise((resolve,reject)=>{this._gattQueue.push({read:true,priority:true,epoch:this._epoch,char,resolve,reject});this._drainGatt();});
+ },
+ _recoveryPending(){
+  return this.isConnected&&!!(this._flight||this._waiters.size||(Date.now()<=this._recoverUntil&&((this._rx.current&&!this._rx.current.complete)||(this._stateRecovery&&Date.now()<this._stateRecovery.until))));
+ },
+ _armReadback(){
+  if(this._readTimer||!this.isConnected)return;
+  this._readTimer=setTimeout(()=>{
+   this._readTimer=null;this._recoverReadback().finally(()=>{if(this._recoveryPending())this._armReadback();});
+  },250);
+ },
+ async _recoverReadback(){
+  if(!this._recoveryPending()||this._readBusy||Date.now()-this._lastNotifyAt<600)return;
+  if(!this.characteristic?.readValue||!this.notifyCharacteristic?.readValue)return;
+  this._readBusy=true;const epoch=this._epoch;
+  try{
+   for(const char of (this._flight?[this.characteristic,this.notifyCharacteristic]:[this.notifyCharacteristic])){
+    const value=await this._read(char);if(epoch!==this._epoch)return;
+    if(value.byteLength>=HEADER&&value.getUint8(0)===0xd8){
+     if(!this._usingReadback){this._usingReadback=true;console.warn('[V8] Notification recovery using active-transfer readback');}
+     this._handleData({target:{value}},'read');
+    }
+   }
+  }catch(e){if(epoch===this._epoch)console.warn('[V8] Readback:',e.message);}
+  finally{if(epoch===this._epoch)this._readBusy=false;}
+ },
  async _drainGatt(){
   if(this._gattBusy)return;this._gattBusy=true;
   try{while(this._gattQueue.length){
    const high=this._gattQueue.findIndex(q=>q.priority),q=this._gattQueue.splice(high<0?0:high,1)[0];
-   if(!this.isConnected||q.epoch!==this._epoch||q.char!==this.characteristic){q.reject(Error('BLE disconnected'));continue;}
+   if(!this.isConnected||q.epoch!==this._epoch||(q.char!==this.characteristic&&q.char!==this.notifyCharacteristic)){q.reject(Error('BLE disconnected'));continue;}
    try{
-    await deadline(()=>{
+    const value=await deadline(()=>{
+     if(q.read)return q.char.readValue();
      // Confirm transport ACKs/HELLO at GATT level. Bulk DATA retains fast WNR.
      if(q.priority&&q.char.writeValueWithResponse)return q.char.writeValueWithResponse(q.bytes);
      if(q.char.writeValueWithoutResponse)return q.char.writeValueWithoutResponse(q.bytes);
      return q.char.writeValueWithResponse(q.bytes);
-    },q.bytes[2]===ACK?'Transport ACK write':'BLE write',2500);
-    if(q.epoch!==this._epoch)throw Error('BLE disconnected');q.resolve();
-   }catch(e){q.reject(e);if(q.epoch===this._epoch){console.error('[V8]',e.message);this.device?.gatt.disconnect();this._handleDisconnect();}}
+    },q.read?'Transfer readback':q.bytes[2]===ACK?'Transport ACK write':'BLE write',2500);
+    if(q.epoch!==this._epoch)throw Error('BLE disconnected');q.resolve(value);
+   }catch(e){q.reject(e);if(q.epoch===this._epoch){this.lastError=e.message;console.error('[V8]',e.message);this.device?.gatt.disconnect();this._handleDisconnect();}}
   }}finally{this._gattBusy=false;if(this._gattQueue.length)this._drainGatt();}
  },
  send(data,active=()=>true){
@@ -100,6 +133,10 @@ export const BLEService={
   if(!this.configReady&&![0x01,0x52,0x54].includes(op))return Promise.reject(Error(this.configurationError||'Reading device configuration'));
   if(data.length>MAX)return Promise.reject(Error('Transfer block exceeds negotiated message bound'));
   if(this._queue.length>=128)return Promise.reject(Error('Device command queue is full'));
+  this._recoverUntil=Date.now()+6000;
+  const replies=op===0x37?[0x38]:op===0x39?[0x3a]:op===0x30?[0x31]:op===0x54?[0x55]:op===0x47||op===0x41||op===0x42?[0x3e]:op===0x32||op===0x33?[0x34]:op===0x20||op===0x27?[0x36,0x27,0x34]:op===0x22?[0x22,0x34]:op===0x25||op===0x26?[0x3f,0x26]:op===0x23||op===0x43||op===0x44?[0x49,0x3e]:op===0x24?[0x3e]:op===0x40?[0x57]:null;
+  if(replies)this._stateRecovery={ops:replies,until:this._recoverUntil};
+  this._armReadback();
   return new Promise((resolve,reject)=>{
    this._queue.push({op,active,data:Uint8Array.from(data),priority:data.length>200?1:0,epoch:this._epoch,resolve,reject});this._pump();
   });
@@ -131,12 +168,16 @@ export const BLEService={
   }while(flight.next<total||(!total&&!flight.complete));
   }finally{if(this._flight===flight)this._flight=null;}
  },
- _handleData(event){
-  const p=unpack(asBytes(event.target.value),this._session);if(!p){this.rxRejected++;return;}this.rxNotifications++;
+ _handleData(event,source='notify'){
+  if(source==='notify')this._lastNotifyAt=Date.now();else this.rxReadbacks++;
+  const p=unpack(asBytes(event.target.value),this._session);if(!p){this.rxRejected++;return;}if(source==='notify')this.rxNotifications++;
   if(p.type===ACK){const f=this._flight;if(f&&p.id===f.id&&p.op===f.op&&(p.offset===0||p.offset>=f.next)&&p.offset<=f.max){f.next=p.offset;f.complete=true;this._wake?.();}return;}
   const result=this._rx.accept(p);
   if(result.next!==undefined)this._write(packet(ACK,p.op,p.id,result.next,0,0,this._session)).catch(()=>{});
-  if(result.message)this._dispatch(result.message.op,result.message.data);
+  if(result.message){
+   if(this._stateRecovery?.ops.includes(result.message.op))this._stateRecovery=null;
+   this._dispatch(result.message.op,result.message.data);
+  }
  },
  _dispatch(op,data){
   const record=new Uint8Array(data.length+3);record[0]=op;record[1]=data.length&255;record[2]=data.length>>8;record.set(data,3);
@@ -155,7 +196,7 @@ export const BLEService={
  async readCurrentState(timeout=15000){return this.request(Protocol.createGetState(),b=>b[0]===0x31,timeout);},
  async disconnect(){this.shouldReconnect=false;this.device?.gatt.disconnect();this._clear();this._setStatus('disconnected');},
  _clear(){
-  ++this._epoch;this.isConnected=false;this.configReady=false;this._stateReceived=false;this._session=0;this._rx.reset();this._wake?.();
+  ++this._epoch;clearTimeout(this._readTimer);this._readTimer=null;this.isConnected=false;this.configReady=false;this._stateReceived=false;this._stateRecovery=null;this._session=0;this._rx.reset();this._wake?.();
   if(this.notifyCharacteristic&&this._dataListener)this.notifyCharacteristic.removeEventListener('characteristicvaluechanged',this._dataListener);
   this.characteristic=this.notifyCharacteristic=null;
   for(const q of this._gattQueue.splice(0))q.reject(Error('BLE disconnected'));
@@ -167,7 +208,7 @@ export const BLEService={
   if(this._reconnecting)return;this._reconnecting=true;
   try{for(let attempt=0;attempt<8&&this.shouldReconnect;attempt++){
    await sleep(Math.min(10000,500*2**attempt));if(!this.shouldReconnect)break;
-   try{await this._connectGatt();if(!this.isConnected)throw Error('Connection dropped during sync');return;}catch(e){console.warn('[V8] reconnect',e.message);this._clear();this.device?.gatt.disconnect();}
+   try{await this._connectGatt();if(!this.isConnected)throw Error('Connection dropped during sync');return;}catch(e){this.lastError=e.message;console.warn('[V8] reconnect',e.message);this._clear();this.device?.gatt.disconnect();}
   }if(this.shouldReconnect){this.shouldReconnect=false;this._setStatus('disconnected');}
   }finally{this._reconnecting=false;}
  },

@@ -13,17 +13,17 @@
  *     flatIdx 1..K   → knob k-1   value: 0–255
  *     flatIdx K+1..  → dropdown d value: selectedIndex
  */
-import { NamLoader } from './NamLoader.js?v=8.2';
-import { NamBrowserV2b } from './ui/NamBrowserV2b.js?v=8.2';
-import { APP_CONFIG } from './config.js?v=8.2';
-import { View } from './ui/View.js?v=8.2';
-import { Knob } from './ui/Knob.js?v=8.2';
-import { BLEService } from './services/BLEService.js?v=8.2';
-import { WebSync, crc16 } from './services/WebSync.js?v=8.2';
-import { readDeviceConfig } from './services/ConfigSync.js?v=8.2';
-import { Protocol } from './services/Protocol.js?v=8.2';
-import { upgradeSelects } from './ui/CustomSelect.js?v=8.2';
-import { installThemeManager } from './ui/ThemeManager.js?v=8.2';
+import { NamLoader } from './NamLoader.js?v=8.3';
+import { NamBrowserV2b } from './ui/NamBrowserV2b.js?v=8.3';
+import { APP_CONFIG } from './config.js?v=8.3';
+import { View } from './ui/View.js?v=8.3';
+import { Knob } from './ui/Knob.js?v=8.3';
+import { BLEService } from './services/BLEService.js?v=8.3';
+import { WebSync, crc16 } from './services/WebSync.js?v=8.3';
+import { readDeviceConfig } from './services/ConfigSync.js?v=8.3';
+import { Protocol } from './services/Protocol.js?v=8.3';
+import { upgradeSelects } from './ui/CustomSelect.js?v=8.3';
+import { installThemeManager } from './ui/ThemeManager.js?v=8.3';
 
 const PRESETS_LOCKED = false;
 
@@ -97,7 +97,7 @@ export const app = {
     this.loopLength   = 0;
     this.loopTracks   = 1;
 
-    console.info("[JamMate] Web build v8.2");
+    console.info("[JamMate] Web build v8.3");
     View.init(this);
     this.webSync = new WebSync({
       send: packet => BLEService.send(packet).catch(e => console.warn('[SYNC] send',e)),
@@ -124,6 +124,7 @@ export const app = {
 
     BLEService.onConfigProgress=(done,total)=>View.updateStatus(`Reading ESP configuration: ${done}/${total} bytes`);
     BLEService.onStatusChange = (status) => {
+      this.connectionError=BLEService.lastError||null;
       View.updateConnectionStatus(status);
       if(status==='disconnected'||status==='reconnecting') {
         this.webSync.reset();this._remoteBank=null;this._remoteSlot=null;

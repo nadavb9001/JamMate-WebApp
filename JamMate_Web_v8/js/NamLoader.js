@@ -1,5 +1,5 @@
-import { BLEService } from './services/BLEService.js?v=8.2';
-import { Protocol } from './services/Protocol.js?v=8.2';
+import { BLEService } from './services/BLEService.js?v=8.3';
+import { Protocol } from './services/Protocol.js?v=8.3';
 
 const T3K_CLIENT_ID = 't3k_pub_UdyZ5sYtaceVAFXOLFwGtuLs4QvwQeLe';
 const T3K_BASE = 'https://www.tone3000.com/api/v1';

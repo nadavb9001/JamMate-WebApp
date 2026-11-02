@@ -16,7 +16,7 @@ export class Receiver {
  constructor(){this.reset();}
  accept(p){
   if(p.type!==DATA||!p.id||p.total>MAX||p.offset>p.total||p.data.length>p.total-p.offset||(!p.data.length&&p.total))return {};
-  if(this.current?.id!==p.id){if(p.offset)return {};this.current={...p,used:0,bytes:new Uint8Array(p.total),complete:false};}
+  if(this.current?.id!==p.id){if(p.offset)return {next:0};this.current={...p,used:0,bytes:new Uint8Array(p.total),complete:false};}
   const c=this.current;if(c.op!==p.op||c.total!==p.total||c.crc!==p.crc)return {};
   if(p.offset<c.used||c.complete)return {next:c.used};
   if(p.offset!==c.used)return {next:c.used};

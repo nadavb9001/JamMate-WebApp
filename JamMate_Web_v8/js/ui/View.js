@@ -1,6 +1,6 @@
-import { Knob } from './Knob.js?v=8.2';
-import { IIRDesigner } from './IIRDesigner.js?v=8.2';
-import { upgradeSelects } from './CustomSelect.js?v=8.2';
+import { Knob } from './Knob.js?v=8.3';
+import { IIRDesigner } from './IIRDesigner.js?v=8.3';
+import { upgradeSelects } from './CustomSelect.js?v=8.3';
 
 export const View = {
     init(app) {
@@ -33,8 +33,11 @@ export const View = {
         switch (status) {
             case 'connected':    this.ledEl.classList.add('connected');  this.updateStatus('Connected to JamMate'); break;
             case 'connecting':   this.ledEl.classList.add('connecting'); this.updateStatus('Connecting…');         break;
+            case 'syncing': this.ledEl.classList.add('connecting'); this.updateStatus('Verifying device configuration and state…'); break;
+            case 'reconnecting': this.ledEl.classList.add('connecting'); this.updateStatus('Reconnecting…'); break;
             case 'disconnected': this.updateStatus('Disconnected');                                                break;
             case 'error':        this.ledEl.classList.add('error');      this.updateStatus('Connection Error');    break;
+            default: this.ledEl.classList.add('error');this.updateStatus(status);break;
         }
     },
 

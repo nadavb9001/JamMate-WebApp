@@ -1,5 +1,16 @@
 # Device synchronization repair
 
+## 7.15 verified configuration delivery
+
+Update both firmware and the complete v7 web folder for this release. The Connection popup and console identify v7.15. The browser negotiates acknowledged notifications before reading configuration. Each notification fragment must be confirmed with `[0x7F, transaction16LE, nextOffset16LE]`; the all-zero transaction/offset enables this mode. ESP retries a missing acknowledgement up to three times. The browser tolerates duplicate fragments, including a retried final fragment, without applying a logical message twice. ACK writes are serialized with commands and serviced between command fragments.
+
+Configuration is read in browser-paced pages: 0x54 payload `[offset16LE, requestedCount16LE]`; 0x55 payload `[version=2, total16LE, offset16LE, wholeFileCRC16LE, data]`. Pages carry at most 96 data bytes. Only the fully assembled, checksum-verified configuration reaches the app validator. Older version-1 full replies remain readable. Progress and the original schema/transport error are retained instead of being replaced by a generic control-lock message.
+
+The ESP logs the first/final config page and first-page transport details. Delivery timeouts identify command/transaction/offset and whether ACK mode is enabled. Browser timeouts include received-notification and rejected-frame counts. Idle loop telemetry is no longer sent repeatedly; changing loop progress is capped at 2 Hz, and full state reconciliation runs every 30 seconds. This leaves bandwidth for initial state and preset transfers.
+
+Tests cover the real firmware sender under a lost ACK and a non-acknowledging peer, config-page reconstruction, and the real UI against an ACK-paced test peer with an intentionally dropped middle-fragment ACK. These are software checks; physical connection/control needs retesting.
+
+
 ## 7.14.1 connection reset hardening
 
 The reported abort occurs during the configuration reply, before current state. The reply now streams flash bytes into a fixed 4,100-byte buffer, borrowed by the notification task until transmission completes. It no longer constructs String/vector copies or allocates a multi-kilobyte frame on the heap. Other replies use checked malloc and transfer ownership directly to the queue, removing the extra intermediate copy. Large sync buffers are kept off the Arduino loop stack. MTU and connection metadata are captured from GATT events instead of reading the server's changing peer map from the sender task. Task creation failures are checked.

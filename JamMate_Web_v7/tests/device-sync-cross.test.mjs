@@ -32,6 +32,11 @@ try{
  assert.ok(!bluetooth.includes('pServer->getPeerMTU('));
  assert.ok(!bluetooth.includes('std::vector<uint8_t> frame'));
  assert.ok(bluetooth.includes('const uint8_t* bytes=event->write.value'));
+ const txStart=bluetooth.indexOf('  void transmit('),txEnd=bluetooth.indexOf('  void sendBLEBlob(',txStart);
+ fs.writeFileSync(path.join(temp,'transmit-method.inc'),bluetooth.slice(txStart,txEnd));
+ execFileSync('g++',['-std=c++17','-I'+path.join(esp,'include'),'-I'+temp,path.join(esp,'test/native/notify-host.cpp'),'-o',path.join(temp,'notify')]);
+ process.stdout.write(execFileSync(path.join(temp,'notify')));
+
  const mainUI=fs.readFileSync(path.join(esp,'src/DisplayManager_Main.cpp'),'utf8');
  assert.ok(mainUI.includes('setTempo(next)'));
 

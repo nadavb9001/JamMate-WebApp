@@ -14,7 +14,7 @@
 // CMD 0x50  UPDATE_CONFIG: raw minimal-JSON bytes of APP_CONFIG layout
 // ================================================================
 
-import { APP_CONFIG, buildFlatParams } from '../config.js?v=14-sync-recovery';
+import { APP_CONFIG, buildFlatParams } from '../config.js?v=15-config-pages';
 
 export const Protocol = {
   CMD: {

@@ -44,14 +44,14 @@ reconnect.handle(SYNC_CMD.CONTROL,Uint8Array.of(1,80,0,2,120,1,100,2,0,4,0,0));a
 const timed=create();timed.catalog(manifest());assert.equal(timed.requesting,null); // all cached
 blobs[7]=Uint8Array.of(3,120,20,4,71,19,44,55);
 timed.catalog(manifest());assert.equal(timed.requesting.tries,1);
-timed.checkTimeout(timed.slotStartedAt+5001);assert.equal(timed.requesting.tries,2);
-timed.checkTimeout(timed.slotStartedAt+5001);assert.equal(timed.requesting.tries,3);
-timed.checkTimeout(timed.slotStartedAt+5001);assert.equal(timed.syncFailed,1);
+timed.checkTimeout(timed.slotStartedAt+15001);assert.equal(timed.requesting.tries,2);
+timed.checkTimeout(timed.slotStartedAt+15001);assert.equal(timed.requesting.tries,3);
+timed.checkTimeout(timed.slotStartedAt+15001);assert.equal(timed.syncFailed,1);
 reconnect.reset();assert.equal(reconnect.started,false);assert.equal(reconnect.lastBeat,null);
 const missing=create();missing.start();
-missing.checkTimeout(missing.catalogStartedAt+5001);assert.equal(missing.catalogTries,2);
-missing.checkTimeout(missing.catalogStartedAt+5001);assert.equal(missing.catalogTries,3);
-missing.checkTimeout(missing.catalogStartedAt+5001);assert.equal(missing.started,false);
+missing.checkTimeout(missing.catalogStartedAt+10001);assert.equal(missing.catalogTries,2);
+missing.checkTimeout(missing.catalogStartedAt+10001);assert.equal(missing.catalogTries,3);
+missing.checkTimeout(missing.catalogStartedAt+10001);assert.equal(missing.started,false);
 const partial=manifest();partial[4]=0;partial[5]=0;
 const corruptSlot=create();assert.equal(corruptSlot.catalog(partial),true);assert.equal(corruptSlot.syncFailed,1);
 const duplicate=manifest();duplicate[8]=duplicate[2];duplicate[9]=duplicate[3];assert.equal(create().catalog(duplicate),false);

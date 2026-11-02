@@ -7,6 +7,8 @@ assert.equal(rx.accept(parts[0],0),null);
 assert.deepEqual(rx.accept(small[0],1),tuner);
 let complete;for(const part of parts.slice(1))complete=rx.accept(part,2);
 assert.deepEqual(complete,blob,'tuner notifications cannot be swallowed by blob assembly');
+const dup=new FrameReceiver();dup.accept(parts[0],0);dup.accept(parts[1],1);dup.accept(parts[1],2);assert.equal(dup.error,null);assert.equal(dup.ackOffset,20);
+let dupResult;for(const p of parts.slice(2))dupResult=dup.accept(p,3);assert.deepEqual(dupResult,blob);dup.accept(parts.at(-1),4);assert.equal(dup.ackOffset,blob.length);
 const bad=fragments(blob,3);bad.at(-1)[10]^=1;for(const part of bad)complete=rx.accept(part,3);assert.equal(complete,null);
 assert.equal(rx.accept(parts[0],0),null);assert.equal(rx.accept(parts[1],6000),null,'expired partial frame rejected');
 assert.equal(rx.accept(parts[0],0),null);assert.equal(rx.accept(parts[2],1),null,'sequence gap rejected');
@@ -22,7 +24,7 @@ BLEService.characteristic={async writeValueWithResponse(p){
  if(data?.[0]===0x54)notify(Uint8Array.of(0x55,2,0,1,65));
  if(data?.[0]===0x52)notify(Uint8Array.of(0x53,0,data[3],data[4],0,0));
 }};
-await assert.rejects(BLEService.send(Uint8Array.of(0x20,3,0,1,1,30)),/not been verified/);
+await assert.rejects(BLEService.send(Uint8Array.of(0x20,3,0,1,1,30)),/Reading device configuration/);
 const reply=await BLEService.request(Uint8Array.of(0x54,0,0),b=>b[0]===0x55);
 assert.deepEqual(reply,Uint8Array.of(0x55,2,0,1,65));
 assert.equal(received.at(-1).cmd,0x55);assert.equal(received.at(-1).dataView.getUint8(0),1);

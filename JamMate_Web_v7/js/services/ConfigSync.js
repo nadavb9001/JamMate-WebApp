@@ -12,7 +12,7 @@ export function readDeviceConfig(bytes, config) {
     const knobs=f[1]?f[1].split(','):[],drops=f[2]?f[2].split(','):[];
     const options=drops.length?f[3].split(';').map(s=>s?s.split(':'):[]):[];
     if(knobs.length!==tab.params.knobs.length||drops.length!==tab.params.dropdowns.length||options.length!==drops.length||options.some(o=>o.length>28))
-      throw Error('Device parameter layout differs; upload current configuration');
+      throw Error(`Device ${tab.short_name} layout differs: ${knobs.length} knobs/${drops.length} dropdowns; web expects ${tab.params.knobs.length}/${tab.params.dropdowns.length}`);
     return {knobs,drops,options};
   });
   for(let i=0;i<parsed.length;i++){

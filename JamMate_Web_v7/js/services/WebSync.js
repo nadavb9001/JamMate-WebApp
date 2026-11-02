@@ -1,4 +1,4 @@
-// JamMate device-authoritative state replication, protocol v1.
+// JamMate v8 device-authoritative state replication.
 // DSP -> ESP -> Web supplies time and status. Never write cached presets TO
 // the device automatically. The cache is a read-only offline mirror.
 export const SYNC_CMD = Object.freeze({CATALOG_REQUEST:0x37,CATALOG_DATA:0x38,
@@ -119,8 +119,8 @@ export class WebSync {
     if(!(bytes instanceof Uint8Array))bytes=new Uint8Array(bytes);
     if(cmd===SYNC_CMD.CATALOG_DATA)return this.catalog(bytes);
     if(cmd===SYNC_CMD.SLOT_DATA)return this.slot(bytes);
+    if(cmd===0x27){if(bytes.length>=3&&bytes[1]===bytes.length-2)for(let i=0;i<bytes[1];i++)this.onParam?.(bytes[0],i,bytes[2+i]);return true;}
     if(cmd===SYNC_CMD.PARAM){if(bytes.length>=3)this.onParam?.(bytes[0],bytes[1],bytes[2]);return true;}
-    if(cmd===0x20||cmd===0x21){if(bytes.length>=(cmd===0x21?2:3))this.onParam?.(bytes[0],cmd===0x21?0:bytes[1],cmd===0x21?bytes[1]:bytes[2]);return true;}
     if(cmd===0x26){if(bytes.length>=1)this.onSelection?.(null,null,bytes[0],null);return true;}
     if(cmd===SYNC_CMD.SELECTION){if(bytes.length===4){
       this.lastSelection=[bytes[0],bytes[1]];this.onSelection?.(...Array.from(bytes));

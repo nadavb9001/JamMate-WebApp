@@ -1,5 +1,5 @@
 // ================================================================
-// Protocol.js  —  BLE Packet Builders
+// Protocol.js  —  Domain Command Builders (Wire.js encodes BLE)
 //
 // FLAT PARAM CONVENTION (matches config.js):
 //   For any effect, the flat param array is:
@@ -11,20 +11,19 @@
 //   flatParamIndex 1..K  = knob k             value: 0..255
 //   flatParamIndex K+1.. = dropdown d         value: 0..255
 //
-// CMD 0x50  UPDATE_CONFIG: raw minimal-JSON bytes of APP_CONFIG layout
+// Domain records are in-process values; Wire.js defines the v8 BLE format.
 // ================================================================
 
-import { APP_CONFIG, buildFlatParams } from '../config.js?v=16-uart-tx';
+import { APP_CONFIG, buildFlatParams } from '../config.js?v=8.0';
 
 export const Protocol = {
   CMD: {
     PING:                0x01,
     SET_PARAM:           0x20,
-    SET_TOGGLE:          0x21,   // legacy; prefer SET_PARAM idx=0
     SET_EQ_BAND:         0x22,
     SET_UTIL:            0x23,
     SET_BYPASS:          0x24,
-    SET_GLOBAL:          0x25,  // BPM / Bluetooth; ESP ignores legacy master byte
+    SET_GLOBAL:          0x25,  // BPM / Bluetooth
     SET_MASTER_VOLUME:   0x26,  // explicit master-volume change
     GET_STATE:           0x30,
     STATE_DATA:          0x31,
@@ -49,7 +48,6 @@ export const Protocol = {
     SET_LOOPER_ENABLE:   0x47,  // dedicated enable; preserved drums
     NAM_LIST_DATA:       0x45,
     IR_LIST_DATA:        0x46,
-    UPDATE_CONFIG:       0x50,   // legacy: [[k,d],...] counts-only upload
     UPDATE_CONFIG_CHUNK: 0x52,  // chunked full-name config upload
     CONFIG_READ:        0x54,
     CONFIG_DATA:        0x55,
@@ -60,23 +58,14 @@ export const Protocol = {
     CMD_START_MIDI_SCAN: 0x62,
     READ_SD_CARD:        0x63,
     SAVE_TO_SD:          0x64,
-    NAM_UPLOAD_START:    0x70,   // [0x70][len16][weightCount32][crc32][nameLen16][name]
-    NAM_HEADER_ACK:      0x71,   // [0x71][status]
-    NAM_UPLOAD_CHUNK:    0x72,   // [0x72][len16][chunkIndex16][data]
-    NAM_CHUNK_ACK:       0x73,   // [0x73][status][chunkIndex16]
-    NAM_UPLOAD_END:      0x74,
     NAM_EJECT:           0x75,
-    NAM_DONE_ACK:        0x76,   // [0x76][status] final bytes/CRC result
-    MIDI_UPLOAD_START:   0x80,   // [0x80][len16][fileSize32LE][nameLen8][name]
-    MIDI_UPLOAD_CHUNK:   0x81,   // [0x81][len16][chunkIdx16LE][data]
-    MIDI_UPLOAD_END:     0x82,   // [0x82][0x00][0x00]
   },
 
   // ----------------------------------------------------------------
-  // Simple 1-byte system packet (no payload)
+  // Empty domain command
   // ----------------------------------------------------------------
   createSystemPacket(cmdId) {
-    const buffer = new ArrayBuffer(1);
+    const buffer = new ArrayBuffer(3);
     new DataView(buffer).setUint8(0, cmdId);
     return buffer;
   },
@@ -92,7 +81,7 @@ export const Protocol = {
   // ----------------------------------------------------------------
   // SET_PARAM  —  single flat-index parameter update
   //
-  //   Wire format: [CMD(1)][payloadLen16LE(2)][fxId(1)][flatIdx(1)][value(1)]
+  //   Domain record: [CMD(1)][payloadLen16LE(2)][fxId(1)][flatIdx(1)][value(1)]
   //
   //   flatIdx 0     = checkbox (enable/disable)  value 0 or 1
   //   flatIdx 1..K  = knob[flatIdx-1]            value 0..255
@@ -112,6 +101,12 @@ export const Protocol = {
   // ----------------------------------------------------------------
   // TOGGLE  —  convenience wrapper: flat index 0 = checkbox
   // ----------------------------------------------------------------
+  createEffectUpdate(fxId, state, params) {
+    const tab=APP_CONFIG.tabs[fxId];if(!tab)throw Error('Invalid effect');
+    const flat=buildFlatParams(tab,state,params),b=new Uint8Array(5+flat.length);
+    b[0]=0x27;b[1]=flat.length+2;b[3]=fxId;b[4]=flat.length;b.set(flat,5);return b;
+  },
+
   createToggleUpdate(fxId, isEnabled) {
     return this.createParamUpdate(fxId, 0, isEnabled ? 1 : 0);
   },
@@ -138,7 +133,7 @@ export const Protocol = {
     while(new TextEncoder().encode(safeName).length>31)safeName=Array.from(safeName).slice(0,-1).join('');
     const nameBytes = new TextEncoder().encode(safeName);
 
-    // Keep legacy blob layout, but do not bake 100% into presets.
+    // Keep the flash preset layout, but do not bake 100% into presets.
     parts.push(new Uint8Array([0x03, state.bpm || 120, Math.min(100, Math.max(0, Math.round(state.master ?? 20))), nameBytes.length]));
     parts.push(nameBytes);
 
@@ -299,27 +294,6 @@ export const Protocol = {
   },
 
   // ----------------------------------------------------------------
-  // UPDATE_CONFIG (CMD 0x50) — legacy counts-only upload, kept for back-compat
-  // ---------------------------------------------------------------
-  createConfigUpload(config) {
-    const layout    = (config.tabs || []).map(tab => [
-      (tab.params.knobs     || []).length,
-      (tab.params.dropdowns || []).length,
-    ]);
-    const json      = JSON.stringify(layout);
-    const jsonBytes = new TextEncoder().encode(json);
-    const buf = new Uint8Array(3 + jsonBytes.length);
-    buf[0] = this.CMD.UPDATE_CONFIG;
-    buf[1] = jsonBytes.length & 0xFF;
-    buf[2] = (jsonBytes.length >> 8) & 0xFF;
-    buf.set(jsonBytes, 3);
-    return buf;
-  },
-
-  // Back-compat alias
-  createConfigPacket(config) { return this.createConfigUpload(config || {}); },
-
-  // ----------------------------------------------------------------
   // SAVE PRESET
   // ----------------------------------------------------------------
   createSavePreset(bank, num, appState) {
@@ -363,7 +337,7 @@ export const Protocol = {
 
   // ----------------------------------------------------------------
   // BYPASS  (CMD 0x24)
-  //   Wire format: [CMD(1)][payloadLen16LE(2)][bypassed(1)]
+  //   Domain record: [CMD(1)][payloadLen16LE(2)][bypassed(1)]
   //   bypassed: 0 = signal active, 1 = bypassed
   // ----------------------------------------------------------------
   createBypassPacket(bypassed) {
@@ -383,8 +357,8 @@ export const Protocol = {
     return new Uint8Array([this.CMD.SET_MASTER_VOLUME, 1, 0, value]).buffer;
   },
 
-  createGlobalUpdate(master, btVol, bpm, a2dpEnabled, bleEnabled, flashReq, resetReq) {
-    const buf  = new ArrayBuffer(7);
+  createGlobalUpdate(btVol, bpm, a2dpEnabled, bleEnabled, flashReq, resetReq) {
+    const buf  = new ArrayBuffer(6);
     const view = new DataView(buf);
     let flags = 0;
     if (a2dpEnabled) flags |= 1;
@@ -392,11 +366,10 @@ export const Protocol = {
     if (flashReq)    flags |= 4;
     if (resetReq)    flags |= 8;
     view.setUint8(0,  this.CMD.SET_GLOBAL);
-    view.setUint16(1, 4, true);
-    view.setUint8(3,  Math.round(master));
-    view.setUint8(4,  Math.round(btVol));
-    view.setUint8(5,  Math.round(bpm));
-    view.setUint8(6,  flags);
+    view.setUint16(1, 3, true);
+    view.setUint8(3,  Math.round(btVol));
+    view.setUint8(4,  Math.round(bpm));
+    view.setUint8(5,  flags);
     return buf;
   },
 
@@ -434,9 +407,9 @@ export const Protocol = {
   // ----------------------------------------------------------------
   // DRUM + LOOPER CONFIG  (CMD 0x41)
   //
-  // Wire format: [CMD][lenL][lenH] "DRUM"(4) [payload(12)]
+  // Domain record: [CMD][lenL][lenH][payload(12)]
   //
-  // Payload (12 bytes after the 4-byte tag, matches DSP DRUM dispatch):
+  // Payload (12 bytes; the ESP supplies the DSP tag):
   //   [0]  drumEnable    0/1
   //   [1]  drumLevel     0-100
   //   [2]  bpm           0-255
@@ -449,12 +422,11 @@ export const Protocol = {
   //   [9]  autoArm       0/1   (was loopArm 3-way; Daisy uses >0 as true)
   //   [10] loopLength    bars to auto-stop (0=free,4/8/12/16)
   //   [11] trackSelect   0-3   (active track index; was loopTracks 1-4)
-  // Total packet = 3 (hdr) + 4 (tag) + 12 (payload) = 19 bytes
+  // Total domain record = 3 (hdr) + 12 (payload) = 15 bytes
   // ----------------------------------------------------------------
   createDrumUpdate(drumEnable, drumLevel, bpm, style, fill, drumNumber,
                    looperEnable, looperLevel, loopSync, autoArm, loopLength, trackSelect) {
-    const TAG        = [0x44, 0x52, 0x55, 0x4D]; // "DRUM"
-    const payloadLen = TAG.length + 12;            // 16 bytes total
+    const payloadLen = 12;
     const buf        = new ArrayBuffer(3 + payloadLen);
     const view       = new DataView(buf);
     const data       = new Uint8Array(buf);
@@ -463,7 +435,6 @@ export const Protocol = {
     view.setUint16(1, payloadLen, true);
 
     let o = 3;
-    TAG.forEach(b => { data[o++] = b; });
 
     data[o++] = drumEnable    ? 1 : 0;
     data[o++] = Math.round(drumLevel)    & 0xFF;
@@ -598,43 +569,6 @@ export const Protocol = {
   // ----------------------------------------------------------------
   // NAM TRANSFER PACKETS
   // ----------------------------------------------------------------
-  createNamStart(weightCount, crc, name) {
-    const safeName = String(name || 'model.nam').slice(0, 64);
-    const nameBytes = new TextEncoder().encode(safeName);
-
-    // Payload format, after [cmd][payloadLen16LE]:
-    //   uint32 weightCount       number of float32 weights that follow
-    //   uint32 crc32             CRC of the raw little-endian float32 weight bytes
-    //   uint16 nameLen
-    //   uint8[nameLen] UTF-8 filename/model name
-    const payloadLen = 4 + 4 + 2 + nameBytes.length;
-    const buf = new Uint8Array(3 + payloadLen);
-    const view = new DataView(buf.buffer);
-
-    buf[0] = this.CMD.NAM_UPLOAD_START;
-    view.setUint16(1, payloadLen, true);
-    view.setUint32(3, weightCount >>> 0, true);
-    view.setUint32(7, crc >>> 0, true);
-    view.setUint16(11, nameBytes.length, true);
-    buf.set(nameBytes, 13);
-    return buf;
-  },
-
-  createNamChunk(index, data) {
-    const payloadLen = 2 + data.length; // index(2) + data(N)
-    const buf = new Uint8Array(3 + payloadLen);
-    const view = new DataView(buf.buffer);
-    buf[0] = this.CMD.NAM_UPLOAD_CHUNK;
-    view.setUint16(1, payloadLen, true);
-    view.setUint16(3, index, true);
-    buf.set(data, 5);
-    return buf;
-  },
-
-  createNamEnd() {
-    return this.createSystemPacket(this.CMD.NAM_UPLOAD_END);
-  },
-
   createNamEject() {
     return this.createSystemPacket(this.CMD.NAM_EJECT);
   },
@@ -642,31 +576,4 @@ export const Protocol = {
   // ----------------------------------------------------------------
   // MIDI FILE TRANSFER PACKETS
   // ----------------------------------------------------------------
-  createMidiStart(fileSize, name) {
-    const nameBytes = new TextEncoder().encode(String(name || 'pattern.mid').slice(0, 64));
-    const payloadLen = 4 + 1 + nameBytes.length; // fileSize32 + nameLen8 + name
-    const buf = new Uint8Array(3 + payloadLen);
-    const view = new DataView(buf.buffer);
-    buf[0] = this.CMD.MIDI_UPLOAD_START;
-    view.setUint16(1, payloadLen, true);
-    view.setUint32(3, fileSize >>> 0, true);
-    buf[7] = nameBytes.length;
-    buf.set(nameBytes, 8);
-    return buf;
-  },
-
-  createMidiChunk(index, data) {
-    const payloadLen = 2 + data.length; // chunkIdx16LE + data
-    const buf = new Uint8Array(3 + payloadLen);
-    const view = new DataView(buf.buffer);
-    buf[0] = this.CMD.MIDI_UPLOAD_CHUNK;
-    view.setUint16(1, payloadLen, true);
-    view.setUint16(3, index, true);
-    buf.set(data, 5);
-    return buf;
-  },
-
-  createMidiEnd() {
-    return this.createSystemPacket(this.CMD.MIDI_UPLOAD_END);
-  },
 };

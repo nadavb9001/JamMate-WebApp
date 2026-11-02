@@ -33,7 +33,7 @@ app.effectStates={}; app.effectParams={}; app.config={tabs:[]}; app.currentEffec
 assert.equal(ctx.Protocol.CMD.SET_MASTER_VOLUME,0x26);
 app.sendGlobalUpdate();
 assert.equal(packets.at(-1)[0],0x25,'BPM/BT global packet unchanged');
-assert.equal(packets.at(-1)[3],20,'packet currently contains UI volume but ESP must ignore it');
+assert.deepEqual([...packets.at(-1)],[0x25,3,0,50,120,3],'v8 global payload contains BT volume, BPM and flags; master is independent');
 app.sendMasterVolumeUpdate();
 assert.deepEqual([...packets.at(-1)],[0x26,1,0,20]);
 nodes.masterKnob.knob.value=63;

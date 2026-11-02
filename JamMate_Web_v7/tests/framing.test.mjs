@@ -1,37 +1,19 @@
 import assert from 'node:assert/strict';
-import {fragments,FrameReceiver} from '../js/services/Framing.js';
-import {BLEService} from '../js/services/BLEService.js';
-const blob=Uint8Array.from({length:600},(_,i)=>i%256),tuner=Uint8Array.of(0x35,4,0,0,0,220,67);
-const rx=new FrameReceiver(),parts=fragments(blob,1),small=fragments(tuner,2);
-assert.equal(rx.accept(parts[0],0),null);
-assert.deepEqual(rx.accept(small[0],1),tuner);
-let complete;for(const part of parts.slice(1))complete=rx.accept(part,2);
-assert.deepEqual(complete,blob,'tuner notifications cannot be swallowed by blob assembly');
-const dup=new FrameReceiver();dup.accept(parts[0],0);dup.accept(parts[1],1);dup.accept(parts[1],2);assert.equal(dup.error,null);assert.equal(dup.ackOffset,20);
-let dupResult;for(const p of parts.slice(2))dupResult=dup.accept(p,3);assert.deepEqual(dupResult,blob);dup.accept(parts.at(-1),4);assert.equal(dup.ackOffset,blob.length);
-const bad=fragments(blob,3);bad.at(-1)[10]^=1;for(const part of bad)complete=rx.accept(part,3);assert.equal(complete,null);
-assert.equal(rx.accept(parts[0],0),null);assert.equal(rx.accept(parts[1],6000),null,'expired partial frame rejected');
-assert.equal(rx.accept(parts[0],0),null);assert.equal(rx.accept(parts[2],1),null,'sequence gap rejected');
-assert.deepEqual(rx.accept(fragments(tuner,4)[0],2),tuner,'receiver recovers after failure');
-assert.throws(()=>fragments(new Uint8Array(6145),1));
-const notify=bytes=>{for(const p of fragments(bytes,90))BLEService._handleData({target:{value:new DataView(p.buffer)}});};
-let stateRequests=0;
-const received=[];BLEService.onDataReceived=p=>received.push(p);
-BLEService.isConnected=true;BLEService.configReady=false;let id=0;const device=new FrameReceiver(),writes=[];
-BLEService.characteristic={async writeValueWithResponse(p){
- writes.push(p);const data=device.accept(p);
- if(data?.[0]===0x30 && ++stateRequests>1)notify(Uint8Array.of(0x31,4,0,3,137,38,0));
- if(data?.[0]===0x54)notify(Uint8Array.of(0x55,2,0,1,65));
- if(data?.[0]===0x52)notify(Uint8Array.of(0x53,0,data[3],data[4],0,0));
+import {BLEService as ble} from '../js/services/BLEService.js';
+import {Receiver,unpack,packet,DATA,ACK} from '../js/services/Wire.js';
+ble.isConnected=ble.configReady=true;ble._session=17;ble._att=20;ble._window=4;ble._epoch=1;
+const peer=new Receiver();let lost=false,completed=0,emptyAckLost=false;
+ble.characteristic={writeValueWithoutResponse:async b=>{
+ const p=unpack(b,17);if(p.type!==DATA)return;
+ if(p.offset===8&&!lost){lost=true;return;}
+ const r=peer.accept(p);if(r.message)completed++;
+ if(r.next!==undefined){if(!p.total&&!emptyAckLost){emptyAckLost=true;return;}const ack=packet(ACK,p.op,p.id,r.next,0,0,17);ble._handleData({target:{value:new DataView(ack.buffer)}});}
 }};
-await assert.rejects(BLEService.send(Uint8Array.of(0x20,3,0,1,1,30)),/Reading device configuration/);
-const reply=await BLEService.request(Uint8Array.of(0x54,0,0),b=>b[0]===0x55);
-assert.deepEqual(reply,Uint8Array.of(0x55,2,0,1,65));
-assert.equal(received.at(-1).cmd,0x55);assert.equal(received.at(-1).dataView.getUint8(0),1);
-BLEService.configReady=true;
-const stateReply=await BLEService.readCurrentState(10);assert.equal(stateRequests,2);assert.equal(stateReply[0],0x31);
-await Promise.all([BLEService.send(blob),BLEService.send(tuner)]);
-assert.ok(writes.every(p=>p.length<=20),'safe at minimum ATT MTU');
-const waiting=BLEService.request(Uint8Array.of(1,0,0),()=>false,10000);
-BLEService._handleDisconnect();await assert.rejects(waiting,/disconnected/);
-console.log('PASS framed BLE: interleaving, CRC, gaps, deadlines, recovery, minimum MTU, config gate, response matching and disconnect rejection');
+await ble.sendMessage(0x91,Uint8Array.from({length:101},(_,i)=>i));assert.equal(completed,1);assert.ok(lost);
+await ble.sendMessage(1);assert.equal(completed,2);
+const rejected=ble.rxRejected;ble._handleData({target:{value:new DataView(Uint8Array.of(0x7e,1,0).buffer)}});assert.equal(ble.rxRejected,rejected+1);
+ble.characteristic={writeValueWithoutResponse:async()=>{}};
+const pending=ble.sendMessage(0x20,Uint8Array.of(1,1,33));const failure=assert.rejects(pending,/disconnected/);
+await new Promise(resolve=>setTimeout(resolve,5));ble._clear();await failure;
+await assert.rejects(ble.sendMessage(0x20,Uint8Array.of(1,1,33)),/disconnected/);
+console.log('PASS v8 browser sender: minimum MTU, lost data, empty messages, old-frame rejection and disconnect cancellation');

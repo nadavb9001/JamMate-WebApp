@@ -13,17 +13,17 @@
  *     flatIdx 1..K   → knob k-1   value: 0–255
  *     flatIdx K+1..  → dropdown d value: selectedIndex
  */
-import { NamLoader } from './NamLoader.js?v=16-uart-tx';
-import { NamBrowserV2b } from './ui/NamBrowserV2b.js?v=16-uart-tx';
-import { APP_CONFIG } from './config.js?v=16-uart-tx';
-import { View } from './ui/View.js?v=16-uart-tx';
-import { Knob } from './ui/Knob.js?v=16-uart-tx';
-import { BLEService } from './services/BLEService.js?v=16-uart-tx';
-import { WebSync, crc16 } from './services/WebSync.js?v=16-uart-tx';
-import { readDeviceConfig } from './services/ConfigSync.js?v=16-uart-tx';
-import { Protocol } from './services/Protocol.js?v=16-uart-tx';
-import { upgradeSelects } from './ui/CustomSelect.js?v=16-uart-tx';
-import { installThemeManager } from './ui/ThemeManager.js?v=16-uart-tx';
+import { NamLoader } from './NamLoader.js?v=8.0';
+import { NamBrowserV2b } from './ui/NamBrowserV2b.js?v=8.0';
+import { APP_CONFIG } from './config.js?v=8.0';
+import { View } from './ui/View.js?v=8.0';
+import { Knob } from './ui/Knob.js?v=8.0';
+import { BLEService } from './services/BLEService.js?v=8.0';
+import { WebSync, crc16 } from './services/WebSync.js?v=8.0';
+import { readDeviceConfig } from './services/ConfigSync.js?v=8.0';
+import { Protocol } from './services/Protocol.js?v=8.0';
+import { upgradeSelects } from './ui/CustomSelect.js?v=8.0';
+import { installThemeManager } from './ui/ThemeManager.js?v=8.0';
 
 const PRESETS_LOCKED = false;
 
@@ -97,7 +97,7 @@ export const app = {
     this.loopLength   = 0;
     this.loopTracks   = 1;
 
-    console.info("[JamMate] Web build v7.16-uart-tx");
+    console.info("[JamMate] Web build v8.0");
     View.init(this);
     this.webSync = new WebSync({
       send: packet => BLEService.send(packet).catch(e => console.warn('[SYNC] send',e)),
@@ -175,25 +175,6 @@ export const app = {
       } catch (_) { /* malformed — ignore */ }
     };
 
-    const _handleNamAck = (cmd, dv, payloadOnly = false) => {
-      let status = 0;
-      let index = null;
-
-      try {
-        if (payloadOnly) {
-          if (dv.byteLength >= 1) status = dv.getUint8(0);
-          if (dv.byteLength >= 3) index = dv.getUint16(1, true);
-        } else {
-          if (dv.byteLength >= 2) status = dv.getUint8(1);
-          if (dv.byteLength >= 4) index = dv.getUint16(2, true);
-        }
-      } catch (_) {
-        status = 1;
-      }
-
-      NamLoader.handleAck(cmd, status, index);
-    };
-
     BLEService.onDataReceived = (packet) => {
       // CASE A: reassembled { cmd, dataView }
       if (packet && typeof packet === 'object' && packet.cmd !== undefined) {
@@ -214,6 +195,22 @@ export const app = {
           return;
         }
         if(!BLEService.configReady)return;
+        if(cmd===0x49&&dataView.byteLength===11){
+          const b=new Uint8Array(dataView.buffer,dataView.byteOffset,11);
+          this.usbMode=b[2];this.uartEnabled=!!b[3];this.utilState.noise={enabled:!!b[4],level:b[5]};this.utilState.tone={enabled:!!b[6],level:b[7],freq:b[8]|b[9]<<8};this.presetsLocked=!!b[10];
+          for(const [id,value] of Object.entries({btEnableCheck:b[0],bleEnableCheck:1,uartEnable:b[3]})){const el=document.getElementById(id);if(el)el.checked=!!value;}
+          for(const [id,value] of [['blVolKnob',b[1]],['whiteNoiseLevelKnob',b[5]],['toneLevelKnob',b[7]]]){const k=document.getElementById(id)?.knob;if(k){k.value=value;k.draw();}}
+          for(const [id,value] of [['usbMode',b[2]],['toneFreqInput',b[8]|b[9]<<8]]){const el=document.getElementById(id);if(el)el.value=String(value);}
+          View.setButtonActive('whiteNoiseBtn',!!b[4]);View.setButtonActive('toneBtn',!!b[6]);window.JamMateMobile?.syncSystem?.(this);
+          return;
+        }
+        if(cmd===0x48 && dataView.byteLength===1){window.JamMateMobile?.setTelemetry({cpu:dataView.getUint8(0)});return;}
+        if(cmd===0x22 && dataView.byteLength===6){
+          const band=dataView.getUint8(0);if(band>=12)return;
+          this.currentEQPoints[band]={enabled:!!dataView.getUint8(1),freq:dataView.getUint16(2,true),gain:dataView.getInt8(4),q:dataView.getUint8(5)/10};
+          if(this.iirDesigner){this.isUpdatingUI=true;try{this.iirDesigner.loadPoints(this.currentEQPoints);}finally{this.isUpdatingUI=false;}}return;
+        }
+
         if(cmd===0x57){
           if(dataView.byteLength===144){const b=new Uint8Array(dataView.buffer,dataView.byteOffset,144);this.drumPattern=Array.from({length:9},(_,i)=>Array.from(b.slice(i*16,i*16+16)));}
           return;
@@ -226,19 +223,8 @@ export const app = {
           return;
         }
         if(this.webSync.handle(cmd,new Uint8Array(dataView.buffer,dataView.byteOffset,dataView.byteLength))) return;
-        if (cmd === Protocol.CMD.SET_GLOBAL && dataView.byteLength >= 1) {
-          this.syncMasterVolume(dataView.getUint8(0));
-          return;
-        }
         if (cmd === Protocol.CMD.TUNER_DATA) {
           _handleTuner(dataView, true);
-          return;
-        }
-        // Handle reassembled NAM upload ACKs.
-        if (cmd === Protocol.CMD.NAM_HEADER_ACK ||
-            cmd === Protocol.CMD.NAM_CHUNK_ACK ||
-            cmd === Protocol.CMD.NAM_DONE_ACK) {
-          _handleNamAck(cmd, dataView, true);
           return;
         }
         if (cmd === Protocol.CMD.NAM_LIST_DATA) {
@@ -260,57 +246,7 @@ export const app = {
         return;
       }
 
-      // CASE B: raw DataView (full frame)
-      if (packet instanceof DataView) {
-        const cmd = packet.getUint8(0);
-        if(cmd===0x48 && packet.byteLength>=2) {
-          window.JamMateMobile?.setTelemetry({cpu:packet.getUint8(1)});
-          return;
-        }
-        if(!BLEService.configReady)return;
-        if(cmd===0x22 && packet.byteLength===7){
-          const b=packet.getUint8(1);if(b>=12)return;
-          if(!this.currentEQPoints)this.currentEQPoints=[];
-          this.currentEQPoints[b]={enabled:!!packet.getUint8(2),freq:packet.getUint16(3,true),gain:packet.getInt8(5),q:packet.getUint8(6)/10};
-          if(this.iirDesigner){this.isUpdatingUI=true;try{this.iirDesigner.loadPoints(this.currentEQPoints);}finally{this.isUpdatingUI=false;}}
-          return;
-        }
-        if(this.webSync.handle(cmd,new Uint8Array(packet.buffer,packet.byteOffset+1,packet.byteLength-1))) return;
 
-        if (cmd === 0x31 || cmd === 0x34) {
-          this.loadStateFromBlob(packet.buffer, cmd === 0x31);
-          return;
-        }
-        if (cmd === Protocol.CMD.SET_GLOBAL && packet.byteLength >= 2) {
-          this.syncMasterVolume(packet.getUint8(1));
-          return;
-        }
-        if (cmd === 0x35) {
-          _handleTuner(packet, false);
-          return;
-        }
-        // Handle raw NAM upload ACKs.
-        if (cmd === Protocol.CMD.NAM_HEADER_ACK ||
-            cmd === Protocol.CMD.NAM_CHUNK_ACK ||
-            cmd === Protocol.CMD.NAM_DONE_ACK) {
-          _handleNamAck(cmd, packet, false);
-          return;
-        }
-        if (cmd === Protocol.CMD.NAM_LIST_DATA) {
-          const index = packet.getUint8(1);
-          if (index === 255) { this.clearNamModels(); return; }
-          const name = new TextDecoder().decode(new Uint8Array(packet.buffer.slice(2)));
-          this.addNamModel(index, name);
-          return;
-        }
-        if (cmd === Protocol.CMD.IR_LIST_DATA) {
-          const index = packet.getUint8(1);
-          if (index === 255) { this.clearIrFiles(); return; }
-          const name = new TextDecoder().decode(new Uint8Array(packet.buffer.slice(2)));
-          this.addIrFile(index, name);
-          return;
-        }
-      }
     };
 
     this.setupTabs();
@@ -436,28 +372,12 @@ export const app = {
   // streamMidiToESP — sends raw MIDI bytes to ESP in BLE chunks
   // ============================================================
   async streamMidiToESP(name, buffer) {
-    const CHUNK = 200;
-    const bytes = new Uint8Array(buffer);
-    const total = bytes.length;
-    const nchunks = Math.ceil(total / CHUNK);
+    View.updateStatus(`MIDI: sending ${name}…`);
+    try{
+      await BLEService.uploadResource('midi',new Uint8Array(buffer),name,{onProgress:(done,total)=>View.updateStatus(`MIDI: ${done}/${total} bytes`)});
+      View.updateStatus(`MIDI forwarded to DSP: ${name}`);
+    }catch(e){View.updateStatus('MIDI transfer failed: '+e.message);}
 
-    View.updateStatus(`MIDI: sending ${name} (${total} B)…`);
-    BLEService._pingBlocked = true;
-    try {
-      await BLEService.send(Protocol.createMidiStart(total, name));
-      for (let i = 0; i < nchunks; i++) {
-        const slice = bytes.slice(i * CHUNK, (i + 1) * CHUNK);
-        await BLEService.send(Protocol.createMidiChunk(i, slice));
-        View.updateStatus(`MIDI: chunk ${i + 1}/${nchunks}`);
-        await new Promise(r => setTimeout(r, 8));
-      }
-      await BLEService.send(Protocol.createMidiEnd());
-      View.updateStatus(`MIDI sent: ${name}`);
-    } catch (err) {
-      View.updateStatus(`MIDI send error: ${err.message}`);
-    } finally {
-      BLEService._pingBlocked = false;
-    }
   },
 
   // ============================================================
@@ -1033,15 +953,13 @@ export const app = {
 
   sendGlobalUpdate(flash = false, reset = false) {
     if (this.isUpdatingUI) return;
-    const masterEl  = document.getElementById('masterKnob');
     const btVolEl   = document.getElementById('blVolKnob');
     const bpmEl     = document.getElementById('bpmKnob');
-    const master    = masterEl && masterEl.knob ? masterEl.knob.value : 20;
     const btVol     = btVolEl  && btVolEl.knob  ? btVolEl.knob.value  : 50;
     const bpm       = bpmEl    && bpmEl.knob    ? bpmEl.knob.value    : 120;
     const btEnable  = document.getElementById('btEnableCheck')  ? document.getElementById('btEnableCheck').checked  : true;
     const bleEnable = document.getElementById('bleEnableCheck') ? document.getElementById('bleEnableCheck').checked : true;
-    this.sendDevice(Protocol.createGlobalUpdate(master, btVol, bpm, btEnable, bleEnable, flash, reset));
+    this.sendDevice(Protocol.createGlobalUpdate(btVol, bpm, btEnable, bleEnable, flash, reset));
     if (flash) View.updateStatus('Sending Flash Command...');
     if (reset) View.updateStatus('Sending Reset Command...');
   },

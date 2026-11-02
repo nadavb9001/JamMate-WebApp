@@ -3,7 +3,7 @@
  * TONE3000-inspired selection UX: real tone thumbnails, pack details and
  * explicit A2 model selection. NamLoader retains OAuth, BLE and validation.
  */
-import { BLEService } from '../services/BLEService.js?v=16-uart-tx';
+import { BLEService } from '../services/BLEService.js?v=8.0';
 
 const $ = id => document.getElementById(id);
 const txt = (el, value) => { if (el) el.textContent = String(value ?? ''); return el; };

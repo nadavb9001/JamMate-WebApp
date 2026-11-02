@@ -1,0 +1,37 @@
+import fs from 'node:fs';
+import vm from 'node:vm';
+import assert from 'node:assert/strict';
+const dir=new URL('../', import.meta.url).pathname;
+const context={console,Uint8Array,ArrayBuffer,DataView,TextEncoder,TextDecoder,setTimeout,clearTimeout};
+const wires=[];
+const inputs={
+ looperEnable:{checked:false}, bpmKnob:{knob:{value:120}},loopLevelKnob:{knob:{value:50}},
+};
+context.document={getElementById(id){return inputs[id]||null}};
+context.View={updateStatus(){}};
+context.BLEService={async send(data){wires.push(new Uint8Array(data));await new Promise(r=>setTimeout(r,2));}};
+context.APP_CONFIG={tabs:[]};
+vm.createContext(context);
+const protocol=fs.readFileSync(dir+'js/services/Protocol.js','utf8').replace(/^import .*?;\s*$/gm,'').replace('export const Protocol','const Protocol');
+vm.runInContext(protocol+'\nthis.Protocol=Protocol;',context);
+const appFile=fs.readFileSync(dir+'js/app.js','utf8').replace(/^import .*?;\s*$/gm,'').replace('export const app','const app');
+vm.runInContext(appFile+'\nthis.app=app;',context);
+const a=context.app;
+a.looperEnabled=false;a.loopSync=0;a.autoArm=false;a.loopLevel=50;a.trackSelect=0;a.drumLevel=30;a.drumEnabled=false;
+await a.sendLoopButton('rec');
+assert.equal(wires.length,2);
+assert.equal(wires[0][0],0x47);assert.equal(wires[0][3],1,'dedicated looper enable before REC');
+assert.equal(wires[1][0],0x42);assert.equal(wires[1][3+1],1,'Record pulse');
+assert.equal(wires[1][3+15],64,'Level 50% mapped to LOOP range 0..127');
+assert.equal(a.looperEnabled,true);
+assert.equal(inputs.looperEnable.checked,true);
+assert.equal(wires[1][3+8],0,'manual quantization');
+assert.equal(wires[1][3+11],0,'no auto arm for manual');
+wires.length=0;
+a.loopSync=2;a.autoArm=true;a.loopLevel=0;
+await a.sendLoopConfig();await a.sendLoopButton('rec');
+assert.deepEqual(wires.map(x=>x[0]),[0x42,0x42]);
+assert.equal(wires[0][3+15],0,'Zero gain must remain zero');
+assert.equal(wires[1][3+8],2,'Bar quantization kept');
+assert.equal(wires[1][3+11],1,'Arm mode kept');
+console.log('PASS Looper BLE order, explicit enable, manual mode, bar/arm mode, level 0..127');

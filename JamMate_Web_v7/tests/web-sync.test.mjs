@@ -29,8 +29,9 @@ assert.deepEqual(send.shift(),[0x39,2,0,2,2]);
 const corruption=Uint8Array.from([2,2,...blobs[12]]);corruption[3]^=1;
 reconnect.slot(corruption);assert.deepEqual(send.shift(),[0x39,2,0,2,2]); // retry corrupted slot
 reconnect.slot(Uint8Array.from([2,2,...blobs[12]]));assert.equal(reconnect._readLocal(2,2).crc,crc16(blobs[12]));
-reconnect.handle(0x20,Uint8Array.of(2,4,77));reconnect.handle(0x21,Uint8Array.of(1,0));
+reconnect.handle(0x36,Uint8Array.of(2,4,77));reconnect.handle(0x36,Uint8Array.of(1,0,0));
 assert.deepEqual(changes.slice(-2),[[2,4,77],[1,0,0]]);
+reconnect.handle(0x27,Uint8Array.of(2,3,1,44,55));assert.deepEqual(changes.slice(-3),[[2,0,1],[2,1,44],[2,2,55]]);
 reconnect.handle(SYNC_CMD.SELECTION,Uint8Array.of(5,4,20,120));assert.deepEqual(selections.at(-1),[5,4,20,120]);
 const d=new Uint8Array(16),v=new DataView(d.buffer);d[0]=1;d[1]=3;d[2]=0;d[3]=4;v.setUint32(4,5,true);v.setUint32(8,48000,true);v.setUint16(12,1200,true);v.setUint16(14,42,true);
 reconnect.handle(SYNC_CMD.BEAT,d);assert.equal(beats.length,1);assert.equal(beats[0].bar,5);

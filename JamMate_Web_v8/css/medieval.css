@@ -1,0 +1,313 @@
+/* JamMate — Medieval / Vintage edition, independent visual skin over v0.5.
+   Styles are scoped to the mounted mobile shell to preserve BLE, file transfers,
+   legacy editors, the quick HUD and responsive layout. No imported web fonts. */
+:root{color-scheme:dark}
+body.jm-mobile-active{
+ background:#130f0b!important;color:#f6e9cd!important;
+ font-family:Georgia,'Palatino Linotype','Book Antiqua',serif!important;
+}
+#jmMobile{
+ --teal:#d6b46b;--bg:#18100c;--ink:#f6ebcf;--gold:#d2ae6c;--edge:#a27a43;
+ --wine:#7b3035;--verdigris:#537765;--steel:#718382;--paper:#e9d5a9;
+ color:#f4e6c9!important;
+ background:
+  radial-gradient(ellipse 110% 31% at 50% 0%,#6a3c273f,transparent 70%),
+  repeating-linear-gradient(0deg,#ffdfaa03 0 1px,transparent 1px 5px),
+  linear-gradient(155deg,#241b15 0%,#130e0b 52%,#221710 100%)!important;
+ font-family:Georgia,'Palatino Linotype','Book Antiqua',serif;
+}
+#jmMobile::before{content:'';position:absolute;inset:4px;border:1px solid #a57b4a55;pointer-events:none;z-index:0}
+#jmMobile .jm-head,#jmMobile .jm-scroll,#jmMobile .jm-foot{position:relative;z-index:1}
+#jmMobile button,#jmMobile input,#jmMobile select,
+body.jm-mobile-active .csel-trigger,body.jm-mobile-active .csel-item{font-family:inherit}
+#jmMobile .jm-head{
+ min-height:57px;background:linear-gradient(180deg,#3a281b,#1c150f)!important;
+ border-bottom:3px double #b08a4b!important;box-shadow:0 4px 12px #0009, inset 0 1px #edd3a454;
+}
+#jmMobile .jm-head>strong{
+ color:#f5dfab!important;font:900 clamp(21px,6vw,30px)/1.1 Georgia,serif;
+ letter-spacing:.08em!important;text-shadow:1px 2px 1px #000,0 0 13px #ab884759!important;
+}
+#jmMobile .jm-head>strong::first-letter{font-size:1.15em;color:#fbd798}
+#jmMobile .jm-icon,#jmMobile .jm-connect{color:#dfc48a!important;text-shadow:none!important;filter:none!important}
+#jmMobile .jm-connect{border:1px solid #a9864f!important;border-radius:50%!important;background:#38261a!important}
+#jmMobile .jm-connect.is-connected{background:#354936!important;color:#c7e7b3!important;box-shadow:0 0 0 2px #b68f50!important}
+#jmMobile .jm-scroll{scrollbar-color:#b99356 transparent}
+#jmMobile .jm-foot{
+ background:linear-gradient(#352417,#21170f)!important;
+ border-top:3px double #ae8346!important;color:#f6e6bc!important;
+ font-size:13px!important;box-shadow:0 -4px 16px #0007;
+}
+#jmMobile .jm-foot-meter{background:#160d08!important;border:1px solid #966d3e!important}
+#jmMobile .jm-foot-meter i{background:linear-gradient(90deg,#687c59,#d2ad64)!important}
+#jmBeatText{color:#f4da99!important}
+#jmBeatLed{border-color:#8d6738!important;background:#392819!important;box-shadow:0 0 0 3px #1d140b!important}
+#jmMobile .jm-beat.is-on{background:#9fca80!important;border-color:#ccbd73!important;box-shadow:0 0 7px #a5ce6388!important}
+#jmMobile .jm-beat.is-downbeat{background:#e6bb66!important;border-color:#ffe0a0!important}
+/* Illuminated parchment preset selector with etched gold and manuscript flourish. */
+#jmMobile .jm-preset{
+ background: url('../assets/medieval-filigree.svg') center bottom/100% auto no-repeat,
+  radial-gradient(ellipse at 50% 0%,#fdf0c6,#dac194 78%)!important;
+ border:3px double #9a6032!important;border-radius:13px!important;
+ box-shadow:inset 0 0 0 3px #f7e5bc,inset 0 0 20px #8b603f7c,0 4px 12px #0008!important;
+}
+#jmMobile .jm-wave{display:none!important}
+#jmMobile .jm-preset-fields label{font-family:Georgia,serif!important;color:#522c1c!important;text-shadow:none!important;font-size:15px!important;letter-spacing:.04em!important}
+#jmMobile .jm-preset-fields select,#jmMobile .jm-preset-fields .csel-trigger{
+ background:linear-gradient(#f8e7bf,#dec493)!important;color:#392619!important;
+ border:2px solid #8f6b36!important;border-radius:7px!important;
+ font:900 clamp(19px,5.5vw,26px) Georgia,serif!important;
+ box-shadow:0 2px 0 #fff7d499,inset 0 0 10px #7c4b2338!important;
+}
+#jmMobile .jm-preset-fields label:last-child .csel-trigger,
+#jmMobile .jm-preset-fields label:last-child select{border-color:#813f42!important}
+#jmMobile .jm-preset-fields .csel-arrow{color:#7a4b29!important}
+/* Wooden value meters — all current global slider handlers continue unchanged. */
+#jmMobile .jm-data{
+ background:linear-gradient(145deg,#3b2a1d,#201711)!important;
+ border:2px solid #a58550!important;border-radius:10px!important;
+ box-shadow:inset 0 0 0 2px #1b120a,inset 0 0 20px #070300b0,0 4px 12px #0007!important;
+ --panel-color:#d7ab63!important;
+}
+#jmMobile .jm-vol{--panel-color:#af6d5a!important}
+#jmMobile .jm-data>span{color:#eed6a5;font-size:15px!important;letter-spacing:.09em;font-variant:small-caps}
+#jmMobile .jm-data>strong{color:#fff0c9!important;text-shadow:0 2px 1px #000!important;font-family:Georgia,serif;font-variant-numeric:lining-nums tabular-nums}
+#jmMobile .jm-data>input[type=range]{accent-color:#d5aa60!important}
+#jmMobile .jm-data>input[type=range]::-webkit-slider-runnable-track{background:linear-gradient(to right,#c7a367 var(--value-progress,0%),#160e09 var(--value-progress,0%))!important;border-color:#84643a!important}
+#jmMobile .jm-data>input[type=range]::-webkit-slider-thumb{background:#f8e7bc!important;border-color:#805a32!important;box-shadow:0 0 0 2px #d4b880!important}
+/* Menu buttons: engraved symbols, warm and legible, selected role by colored wax rim. */
+#jmMobile .jm-menu-tile,#jmMobile .jm-effect{
+ background:
+  linear-gradient(120deg,transparent 0 20%,#c6a4740a 50%,transparent 75%),
+  linear-gradient(170deg,#493322,#24180f 77%)!important;
+ border:2px solid #b18b50!important;border-radius:9px!important;
+ box-shadow:inset 0 0 0 1px #e0bd7e66,inset 0 -8px 13px #0a060573,0 2px 7px #000a!important;
+ color:#f9ebca!important;
+}
+#jmMobile .jm-menu-tile:active,#jmMobile .jm-effect:active{transform:translateY(1px);box-shadow:inset 0 2px 5px #0009!important}
+#jmMobile .jm-menu-tile .jm-symbol,#jmMobile .jm-effect-glyph{
+ color:#edd19a!important;filter:drop-shadow(1px 2px #090704)!important;
+}
+#jmMobile .jm-menu-tile .jm-svg-icon,#jmMobile .jm-effect .jm-svg-icon{stroke-width:1.9}
+#jmMobile .jm-menu-tile:nth-child(2),#jmMobile .jm-effect:nth-child(3n+2){border-color:#73806a!important}
+#jmMobile .jm-menu-tile:nth-child(3),#jmMobile .jm-effect:nth-child(3n){border-color:#8c5a53!important}
+#jmMobile .jm-save{
+ background:linear-gradient(135deg,#456148,#263b2b)!important;
+ border:2px solid #d6b878!important;border-radius:8px!important;
+ color:#ffedbe!important;box-shadow:inset 0 0 0 1px #e6c78777,0 4px 10px #0009!important;
+ font-variant:small-caps;letter-spacing:.05em;
+}
+#jmMobile .jm-title,#jmMobile .jm-mounted-title{
+ color:#f6ddb0!important;text-shadow:0 2px 1px #000!important;
+ font:900 clamp(23px,7vw,32px) Georgia,serif!important;
+ letter-spacing:.04em!important;
+}
+#jmMobile .jm-section-cap{color:#c9ad80!important}
+/* Effects grid: OFF = subdued leather, ON = brass ornament. */
+#jmMobile .jm-effect{border-color:#8d744f!important;background:linear-gradient(145deg,#30271e,#16110e)!important}
+#jmMobile .jm-effect:has(.jm-effect-toggle.on){border-color:#c2a05d!important;box-shadow:inset 0 0 0 1px #ead29b88,0 0 0 1px #846039!important}
+#jmMobile .jm-effect-open b{color:#efddbd!important;text-shadow:0 1px #000;font-family:Georgia,serif}
+#jmMobile .jm-effect-toggle{border:1px solid #8a6f4b!important;background:#2c241c!important;color:#b8a68c!important;border-radius:4px!important}
+#jmMobile .jm-effect-toggle.on{background:#436447!important;color:#f3ecd3!important;border-color:#b5b571!important;box-shadow:none!important}
+/* FX parameters: warm parchment cards, dark ink captions and burnished progress. */
+#jmMobile .jm-param-head{
+ --param-tone:#b99555!important;
+ background:linear-gradient(120deg,#4f3525,#2c2019)!important;
+ border:2px solid #c19b5d!important;border-radius:9px!important;
+ box-shadow:inset 0 0 0 1px #dbc18c66!important;
+}
+#jmMobile .jm-param-head span{color:#dabf90!important;font-size:12px!important}
+#jmMobile .jm-param-head h2{color:#fff0c9!important;font-family:Georgia,serif}
+#jmMobile .jm-param-enable{color:#d9e7bc!important}
+#jmMobile input[type=checkbox]{accent-color:#718e62!important}
+#jmMobile .jm-param{
+ background:linear-gradient(155deg,#f2dfb3,#d3b789)!important;
+ border:1.5px solid #9d7d51!important;border-radius:7px!important;
+ box-shadow:inset 0 0 0 1px #fff2d17a,0 2px 7px #0006!important;
+ color:#3f281c!important;
+}
+#jmMobile .jm-param span{color:#5b3726!important;font-family:Georgia,serif;font-size:clamp(12px,3.2vw,14px)!important}
+#jmMobile .jm-param strong{color:#3b2119!important;font-family:Georgia,serif;font-weight:900}
+#jmMobile .jm-param input[type=range],#jmMobile .jm-drum-settings input[type=range]{accent-color:#884d36!important}
+#jmMobile .jm-param select,#jmMobile .jm-param .csel-trigger{
+ color:#3b2417!important;background:#fae9c6!important;border:1px solid #927044!important;border-radius:5px!important;
+}
+/* Brass mechanical dials for both drum and looper, telemetry unchanged. */
+#jmMobile .jm-ring{
+ background:conic-gradient(from -90deg,#bc995d 0 14%,#3b2c20 14% 100%)!important;
+ border:3px solid #b99860;border-radius:50%;box-shadow:0 0 0 4px #392417,0 0 0 5px #d4b376,inset 0 0 15px #000!important;
+}
+#jmMobile .jm-ring.looper{background:conic-gradient(from -90deg,#974a3d 0 var(--ring-progress,0%),#3b2c20 var(--ring-progress,0%) 100%)!important}
+#jmMobile .jm-ring::before{border-color:#b9945433;border-top-color:#dcbe81!important;opacity:.6!important}
+#jmMobile .jm-ring.looper::before{border-top-color:#ba5a4d!important}
+#jmMobile .jm-ring-inner{background:radial-gradient(circle,#37261a,#1d150f)!important;border:1px solid #9d7a43}
+#jmMobile .jm-ring-inner small,#jmMobile .jm-ring-inner span{color:#d3b786!important}
+#jmMobile .jm-ring-inner strong{color:#f4dbab!important;text-shadow:0 2px #000}
+#jmMobile .jm-metric-row>div,#jmMobile .jm-edit-list label,#jmMobile .jm-drum-settings label,
+#jmMobile .jm-note{background:#3b2a1e!important;color:#f1dbb3!important;border-color:#997348!important;border-radius:6px!important}
+#jmMobile .jm-metric-row b,#jmMobile .jm-drum-settings strong{color:#f7d18c!important}
+#jmMobile .jm-edit-list select,#jmMobile .jm-drum-settings select,
+#jmMobile .jm-edit-list input{color:#f9e6bc!important;background:#21160f!important;border-color:#98754a!important}
+#jmMobile .jm-three-actions button,#jmMobile .jm-secondary-actions button,#jmMobile .jm-mode-list button{
+ background:linear-gradient(#533c29,#2d2017)!important;border:2px solid #bc985a!important;
+ color:#f3dbac!important;border-radius:7px!important;
+}
+#jmMobile .jm-three-actions button.red{border-color:#9f4a43!important;color:#f5b8a4!important}
+#jmMobile .jm-three-actions button.green{border-color:#799467!important;color:#d4e6bd!important}
+#jmMobile .jm-three-actions button.blue{border-color:#a78b58!important;color:#f4d99a!important}
+/* Scroll sheets and quick HUD read like parchment banners. */
+#jmMobile .jm-overlay{background:#090502c9!important;backdrop-filter:blur(5px)}
+#jmMobile .jm-sheet{
+ background:linear-gradient(160deg,#332316,#1a120c 73%)!important;
+ border:4px double #c8a66d!important;border-radius:12px!important;
+ box-shadow:0 20px 45px #000d,inset 0 0 0 2px #614326!important;
+}
+#jmMobile .jm-sheet-head{color:#f5dca6!important;border-bottom:2px solid #9e7645!important;font-family:Georgia,serif}
+#jmMobile .jm-sheet-head button{background:#3f2d1e!important;border:1px solid #b08a54!important}
+#jmMobile .jm-hud{
+ top:calc(env(safe-area-inset-top,0px) + 5px)!important;
+ background:linear-gradient(#f5dfb0,#d4b483)!important;
+ border:3px double #7e4d31!important;border-radius:7px!important;
+ color:#3b2317!important;box-shadow:0 8px 28px #000c,inset 0 0 0 2px #fff6d280!important;
+ text-shadow:none!important;min-height:66px!important;
+}
+#jmMobile .jm-hud-title{color:#6d3a2d!important;font-weight:900}
+#jmMobile .jm-hud-value{color:#351f13!important;font:bold clamp(22px,7vw,36px) Georgia,serif!important}
+/* Setup, Files, NAM, Tuner: visually unify the legacy surfaces without moving
+   the live elements or changing their event handlers. */
+#jmMobile .jm-embedded-tab .panel,#jmMobile .jm-setup-display,#jmMobile .jm-embedded-tab .nam-topbar{
+ background:linear-gradient(170deg,#3d2e20,#201810)!important;
+ border:2px solid #947347!important;border-radius:8px!important;
+ box-shadow:inset 0 0 0 1px #c6a47755,0 3px 9px #0008!important;
+}
+#jmMobile .jm-embedded-tab .panel-title,#jmMobile .jm-embedded-tab .nam-library-head h3,
+#jmMobile .jm-setup-display-title{color:#efc988!important;font-family:Georgia,serif}
+#jmMobile .jm-embedded-tab button,#jmMobile .jm-fullscreen-btn,#jmMobile .jm-easy-setting{
+ background:linear-gradient(145deg,#58412c,#312215)!important;
+ color:#f5dfb4!important;border:1.5px solid #a88855!important;border-radius:7px!important;
+ text-shadow:none!important;
+}
+#jmMobile .jm-easy-setting.active{border-color:#adba79!important;background:#35402e!important}
+#jmMobile .jm-easy-setting.active .jm-easy-setting-state{background:#647b4d!important;border-color:#d0c185!important;color:#fff6cc!important}
+#jmMobile .jm-easy-setting-state{background:#322519!important;color:#f2dbb1!important;border-color:#947344!important}
+#jmMobile .jm-embedded-tab .checkbox{background:#332519!important;border-color:#8f704a!important;color:#f6dfb1!important}
+#jmMobile .jm-embedded-tab .checkbox,#jmMobile .jm-embedded-tab .field,
+#jmMobile .jm-embedded-tab .nam-filter-field{color:#eed8b0!important}
+#jmMobile .jm-embedded-tab input:not([type=checkbox]):not([type=file]),
+#jmMobile .jm-embedded-tab select,#jmMobile .jm-embedded-tab textarea{
+ background:#261a12!important;color:#f3dfba!important;border:1px solid #957246!important;
+}
+#jmMobile .jm-embedded-tab input[type=checkbox]{accent-color:#899e68!important}
+#jmMobile .jm-embedded-tab input[type=range]{accent-color:#cfa563!important}
+#jmMobile #reset-btn{border-color:#a04f40!important;background:#572b25!important;color:#ffe1ce!important}
+#jmMobile #flash-btn{border-color:#d1a351!important;background:#5b4228!important;color:#ffebc8!important}
+#jmMobile #tuner-tab .tuner-display{
+ background:radial-gradient(ellipse at center,#4b3424,#1d140e 70%)!important;
+ border:3px double #b79557!important;
+}
+#jmMobile #tuner-tab .string-display{color:#f8da9b!important;-webkit-text-fill-color:#f8da9b!important;filter:drop-shadow(0 2px #000)!important}
+#jmMobile #tuner-tab .tuner-gauge{
+ border-bottom-color:#c39e5a!important;
+ background:repeating-conic-gradient(from -55deg at 50% 100%,#c7a36c88 0deg 1deg,transparent 1deg 8deg),radial-gradient(ellipse at center bottom,#76533380,transparent 70%)!important;
+}
+#jmMobile #tuner-tab .tuner-needle{background:#e4b967!important;box-shadow:0 0 8px #dfb66a!important}
+#jmMobile #tuner-tab .freq-display{color:#f7e2b8!important}
+#jmMobile #tuner-tab .cents-display{color:#d6b36c!important}
+#jmMobile #loader-tab .waveform-canvas,#jmMobile #loader-tab .spectrum-canvas{
+ background:#241811!important;border-color:#af8a55!important;box-shadow:inset 0 0 12px #0008!important;
+}
+#jmMobile #loader-tab .file-upload-btn button,#jmMobile #loader-tab #btnSendIR,
+#jmMobile #nam-tab #btnNamSearch{
+ background:linear-gradient(#65442b,#382316)!important;border-color:#b58a50!important;color:#ffebc1!important;
+}
+#jmMobile #nam-tab .nam-tone-card,#jmMobile #nam-tab .nam-card,
+#jmMobile #nam-tab .nam-detail,#jmMobile #nam-tab .nam-local-row,#jmMobile #nam-tab .nam-device-row{
+ background:linear-gradient(165deg,#3d3022,#1d1711)!important;border:2px solid #a1814b!important;
+ box-shadow:inset 0 0 0 1px #dbb77b33,0 2px 8px #0008!important;
+}
+#jmMobile #nam-tab .nam-progress-bar-wrap{background:#25190e!important}
+#jmMobile #nam-tab .nam-progress-bar{background:linear-gradient(90deg,#806049,#d0ac6a)!important}
+#jmMobile #nam-tab .nam-device-name{color:#f2dfb5!important}
+/* Single anchored medieval popover for all custom selects, including lists
+   dynamically created by the mobile shell and original menus. */
+body.jm-mobile-active .csel-panel{
+ background:linear-gradient(#f4e0b9,#dfbf8f)!important;
+ border:2px solid #90683e!important;border-radius:7px!important;
+ box-shadow:0 12px 24px #000b,inset 0 0 0 1px #fff2d299!important;
+ max-height:min(208px,37dvh)!important;
+}
+body.jm-mobile-active .csel-panel .csel-item{color:#412c1b!important;font-family:Georgia,serif!important;font-weight:800}
+body.jm-mobile-active .csel-panel .csel-item--active{
+ color:#fff0c9!important;background:#754532!important;box-shadow:inset 4px 0 #d8ae64!important;
+}
+#jmMobile .csel-trigger{
+ color:#f4ddb6!important;background:#312418!important;border:1px solid #9f7c4c!important;border-radius:6px!important;
+ box-shadow:inset 0 0 6px #0006!important;
+}
+#jmMobile .csel-trigger--open{border-color:#e6c283!important;box-shadow:0 0 0 2px #9b7944!important}
+#jmMobile .csel-arrow{color:#e6c17f!important}
+#jmMobile .jm-param .csel-trigger{background:#f8e5bd!important;color:#402a1c!important}
+#jmMobile .jm-param .csel-arrow,#jmMobile .jm-preset-fields .csel-arrow{color:#7c512f!important}
+#jmMobile button:focus-visible,#jmMobile input:focus-visible,#jmMobile select:focus-visible,
+#jmMobile .csel-trigger:focus-visible{outline:3px solid #f7d78f!important;outline-offset:2px!important}
+/* A smaller device still fits all 18 effects and footer without shrinking the
+   tap targets below the original v0.5 grid allocation. */
+@media(max-width:359px){
+ #jmMobile .jm-head>strong{font-size:21px}
+ #jmMobile .jm-menu-tile{font-size:11px}
+ #jmMobile .jm-preset-fields label{font-size:13px!important}
+ #jmMobile .jm-param{padding:7px 5px}
+ #jmMobile .jm-param strong{font-size:16px}
+}
+@media(prefers-reduced-motion:reduce){
+ #jmMobile .jm-menu-tile,#jmMobile .jm-effect{transition:none!important}
+}
+/* Original Save Preset dialog and legacy Easy Mode popup use the same material
+   palette. Their DOM/events stay owned by the original v0.5 application. */
+body.jm-mobile-active #saveModal.active,
+body.jm-mobile-active #easyEffectPopup{
+ background:#090502cb!important;
+ backdrop-filter:blur(5px)!important;
+}
+body.jm-mobile-active #saveModal .solo-effect-container,
+body.jm-mobile-active #easyEffectPopup .solo-effect-container{
+ background:linear-gradient(#473322,#21170e)!important;
+ border:4px double #c5a26a!important;
+ border-radius:10px!important;
+ box-shadow:0 22px 45px #000e,inset 0 0 0 2px #6f5132!important;
+ color:#fae5c0!important;
+}
+body.jm-mobile-active #saveModal .solo-effect-title,
+body.jm-mobile-active #easyEffectPopup .solo-effect-title{
+ color:#f6d89a!important;font:900 25px Georgia,serif!important;
+}
+body.jm-mobile-active #saveModal select,
+body.jm-mobile-active #easyEffectPopup select{
+ background:#302216!important;color:#f5ddb5!important;
+ border:1px solid #bb975d!important;
+}
+body.jm-mobile-active #saveModal button,
+body.jm-mobile-active #easyEffectPopup button{
+ background:#4f3725!important;color:#f4ddad!important;
+ border:1px solid #ba975c!important;border-radius:7px!important;
+}
+body.jm-mobile-active #easyEffectPopup #generatedKnobs .knob-container,
+body.jm-mobile-active #easyEffectPopup .dropdowns-grid>*,
+body.jm-mobile-active #easyEffectPopup .knob-container{
+ background:linear-gradient(#5a432d,#2f2016)!important;border-color:#a78852!important;
+ color:#f2dcaf!important;
+}
+@media(max-width:359px){
+ body.jm-mobile-active #saveModal .solo-effect-container{padding:12px!important}
+}
+#jmMobile .jm-head>strong{display:flex;align-items:center;justify-content:center;gap:7px}
+#jmMobile .jm-head>strong::before{
+ content:'';display:block;flex:0 0 26px;width:26px;height:29px;
+ background:url('../assets/medieval-crest.svg') center/contain no-repeat;
+}
+/* Theme setting belongs to the illuminated-manuscript panel, too. */
+#jmMobile .jm-theme-mobile-label{color:#dec18d!important;border-top-color:#9f824e!important}
+#jmMobile .jm-theme-mobile-label .csel-trigger,#jmMobile .jm-theme-mobile-label select{background:linear-gradient(#f4e0b5,#d7b980)!important;color:#3a2415!important;border:2px solid #916637!important;box-shadow:inset 0 1px #fff7dd!important;font-family:Georgia,serif!important}
+body.jm-mobile-active .csel-panel{background:linear-gradient(#e2c999,#a88857)!important;border:2px solid #926e3e!important;color:#39231a!important;box-shadow:0 9px 22px #000a!important}
+body.jm-mobile-active .csel-panel .csel-item{color:#382519!important;border-bottom:1px solid #815e3c!important}
+body.jm-mobile-active .csel-panel .csel-item--active{background:#7e5f3e!important;color:#fff4d6!important}

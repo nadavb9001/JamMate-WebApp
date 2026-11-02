@@ -1,7 +1,7 @@
 /** JamMate mobile-first shell. Legacy application remains mounted (and owns BLE/protocol/state).
  * No synthetic timing: graphical ring/beacon are placeholders until transport telemetry is wired. */
-import { upgradeSelects, disposeSelects } from './CustomSelect.js?v=16-uart-tx';
-import { currentJamMateTheme } from './ThemeManager.js?v=16-uart-tx';
+import { upgradeSelects, disposeSelects } from './CustomSelect.js?v=8.0';
+import { currentJamMateTheme } from './ThemeManager.js?v=8.0';
 export const FX_ORDER = [0,1,2,3,4,15,5,6,7,8,9,10,11,12,13,14,16,17];
 const FX_NAMES = ['Gate','Comp','Wah','OvrDrv','Dist','NAM','EQ','Harm','Vibr','Chor','Octv','Flng','Phsr','Trem','Amp','Dely','Rvrb','Gnrc'];
 // Crisp inline SVGs: no icon font, emoji fallback, network dependency or bitmap scaling.
@@ -328,7 +328,7 @@ export function installMobileShell(app){
        id==='whiteNoiseBtn'?(app.utilState?.noise?.enabled?'ON':'OFF'):(app.utilState?.tone?.enabled?'ON':'OFF')));
    }
  },true);
- $('jmBack').addEventListener('click',()=>{if(active==='params')showScreen('fx');else if(active==='home')popup('CONNECTION',t=>t.innerHTML=`<small>JamMate v7.16 · UART TX</small><div class="jm-mode-list"><button data-action="connect">Connect JamMate</button><button data-screen="setup">Setup and Display</button></div>`);else showScreen('home');});
+ $('jmBack').addEventListener('click',()=>{if(active==='params')showScreen('fx');else if(active==='home')popup('CONNECTION',t=>t.innerHTML=`<small>JamMate v8.0 · BLE</small><div class="jm-mode-list"><button data-action="connect">Connect JamMate</button><button data-screen="setup">Setup and Display</button></div>`);else showScreen('home');});
  $('jmConnect').addEventListener('click',()=>bridgeClick('btnConnect'));
  $('jmClose').addEventListener('click',closeModal);modal.addEventListener('click',e=>{if(e.target===modal)closeModal();}); document.addEventListener('keydown',e=>{if(e.key==='Escape'){if(!modal.hidden)closeModal();else if(active!=='home')showScreen('home');}});
  // Explicit main menu action handlers inside modal are routed through delegation.
@@ -370,6 +370,14 @@ export function installMobileShell(app){
    const edit=flat<=count?root.querySelector(`[data-knob="${flat-1}"]`):root.querySelector(`[data-dropdown="${flat-count-1}"]`);
    if(edit && document.activeElement!==edit){edit.value=String(value);
       const lab=root.querySelector(`[data-param-value="${flat-1}"]`);if(lab)lab.textContent=String(value);
+   }
+ },
+ syncSystem(state){
+   const noise=state.utilState.noise,tone=state.utilState.tone;
+   root.querySelectorAll('[data-util-enable]').forEach(el=>el.checked=!!state.utilState[el.dataset.utilEnable]?.enabled);
+   for(const [key,value] of [['noiseLevel',noise.level],['toneLevel',tone.level],['toneFreq',tone.freq]]){
+     root.querySelectorAll(`[data-util-output="${key}"]`).forEach(el=>el.textContent=value+(key==='toneFreq'?' Hz':'%'));
+     root.querySelectorAll(`[data-util-slider="${key}"]`).forEach(el=>{if(document.activeElement!==el)el.value=String(key==='toneFreq'?Math.round(1000*Math.log(Math.max(20,value)/20)/Math.log(1000)):value);});
    }
  },
  syncControls(state){

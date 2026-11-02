@@ -1,205 +1,158 @@
-import {crc16} from './WebSync.js?v=16-uart-tx';
-import {fragments, FrameReceiver} from './Framing.js?v=16-uart-tx';
-import { Protocol } from './Protocol.js?v=16-uart-tx';
-
-export const BLEService = {
-    // ESP32 Nordic UART Service
-    SERVICE_UUID:        "6e400001-b5a3-f393-e0a9-e50e24dcca9f",
-    CHARACTERISTIC_UUID: "6e400002-b5a3-f393-e0a9-e50e24dcca9f",
-    NOTIFY_UUID: "6e400003-b5a3-f393-e0a9-e50e24dcca9f",
-
-    // JDY-67 / JDY-series custom service
-    JDY_SERVICE_UUID: "0000ffe0-0000-1000-8000-00805f9b34fb",
-    JDY_WRITE_UUID:   "0000ffe1-0000-1000-8000-00805f9b34fb", // FFE1: transparent UART (write→UART TX, notify←UART RX)
-    JDY_NOTIFY_UUID:  "0000ffe1-0000-1000-8000-00805f9b34fb",
-
-    device: null,
-    server: null,
-    characteristic: null,       // write characteristic
-    notifyCharacteristic: null,  // notify characteristic (same as above for NUS, separate for JDY)
-    isConnected: false,
-    isSyncing: false,
-    shouldReconnect: false, // [NEW] Flag to distinguish intentional vs accidental disconnects
-
-    // Reassembly State
-    rxBuffer: null,      
-    rxExpectedLen: 0,    
-    rxCmd: 0,            
-
-    onStatusChange: null,
-    onDataReceived: null,
-
-    _keepAliveTimer: null,
-    _pingBlocked: false,
-    _writeChain: Promise.resolve(),
-    _frames: new FrameReceiver(),
-    _txId: 0,
-    _connectionEpoch: 0,
-    _waiters: new Set(),
-    configReady: false,
-    configurationError: null,
-    onConfigProgress: null,
-    rxNotifications: 0,
-    rxRejected: 0,
-    _pendingAcks: [],
-    _readTimer: null,
-    _readBusy: false,
-    _lastNotificationAt: 0,
-    _usingReadback: false,
-    _lastReadKey: '',
-    _lastReadAt: 0,
-    rxReadbacks: 0,
-    request(packet, matches, timeout=15000) {
-        return new Promise((resolve,reject)=>{
-            const waiter={matches,resolve,reject};
-            waiter.timer=setTimeout(()=>{this._waiters.delete(waiter);reject(Error('Device response timed out'));},timeout);
-            this._waiters.add(waiter);
-            this.send(packet,()=>this._waiters.has(waiter)).catch(e=>{clearTimeout(waiter.timer);this._waiters.delete(waiter);reject(e);});
-        });
-    },
-    _deliver(packet) {
-        const bytes=packet instanceof DataView?new Uint8Array(packet.buffer,packet.byteOffset,packet.byteLength):null;
-        for(const w of this._waiters){
-            if(bytes&&w.matches(bytes)){clearTimeout(w.timer);this._waiters.delete(w);w.resolve(bytes);}
-        }
-        this.onDataReceived?.(packet);
-    },
-    _completeFrame(bytes) {
-        const cmd=bytes[0];
-        if([0x31,0x34,0x38,0x3a,0x55,0x57].includes(cmd) && (bytes.length<3 || (bytes[1]|bytes[2]<<8)!==bytes.length-3))return;
-        for(const w of this._waiters){if(w.matches(bytes)){clearTimeout(w.timer);this._waiters.delete(w);w.resolve(bytes);}}
-        if([0x31,0x34,0x38,0x3a,0x55,0x57].includes(cmd)) {
-            if(bytes.length<3 || (bytes[1]|bytes[2]<<8)!==bytes.length-3)return;
-            // Paged config is assembled by readConfiguration before the app
-            // sees it. Never validate an individual page as a complete config.
-            if(cmd!==0x55||bytes[3]!==2)this.onDataReceived?.({cmd,dataView:new DataView(bytes.buffer,bytes.byteOffset+3,bytes.length-3)});
-        }else this._deliver(new DataView(bytes.buffer,bytes.byteOffset,bytes.byteLength));
-    },
-
-    async _flushAcks(char,epoch){
-        while(this._pendingAcks.length){
-            const ack=this._pendingAcks.shift();
-            if(!this.isConnected||this.characteristic!==char||this._connectionEpoch!==epoch)return;
-            if(typeof char.writeValueWithoutResponse==='function')await char.writeValueWithoutResponse(ack);
-            else if(typeof char.writeValueWithResponse==='function')await char.writeValueWithResponse(ack);
-            else await char.writeValue(ack);
-        }
-    },
-    _queueTransportAck(id,next){
-        const ack=Uint8Array.of(0x7f,id&255,id>>8,next&255,next>>8);
-        this._pendingAcks.push(ack);
-        const char=this.characteristic,epoch=this._connectionEpoch;
-        const task=this._writeChain.catch(()=>{}).then(()=>this._flushAcks(char,epoch));
-        this._writeChain=task;
-        task.catch(e=>console.warn('[BLE] Notification ACK failed',e.message));
-        return task;
-    },
-    _readTxFallback(){
-        if(!this.isConnected||this._readBusy||Date.now()-this._lastNotificationAt<800||!this.notifyCharacteristic?.readValue)return;
-        this._readBusy=true;
-        const tx=this.notifyCharacteristic,epoch=this._connectionEpoch;
-        const run=this._writeChain.catch(()=>{}).then(async()=>{
-            if(!this.isConnected||this._connectionEpoch!==epoch)return;
-            const value=await tx.readValue();
-            if(!this.isConnected||this._connectionEpoch!==epoch||value.byteLength<11||value.getUint8(0)!==0x7e)return;
-            const key=value.getUint16(2,true)+':'+value.getUint16(4,true);
-            if(key===this._lastReadKey&&Date.now()-this._lastReadAt<1000)return;
-            this._lastReadKey=key;this._lastReadAt=Date.now();
-            if(!this._usingReadback){this._usingReadback=true;console.warn('[BLE] Notifications unavailable; using verified TX readback');}
-            this._handleData({target:{value}},'read');
-        });
-        this._writeChain=run;
-        run.catch(e=>console.warn('[BLE] TX readback failed:',e.message)).finally(()=>{if(this._connectionEpoch===epoch)this._readBusy=false;});
-    },
-    async connect() {
-        if (!navigator.bluetooth) {
-            alert("Web Bluetooth not supported.");
-            return;
-        }
-
-        try {
-            this._setStatus('connecting');
-            this.shouldReconnect = true; // [NEW] User wants to be connected
-
-            // 1. Request Device (User Gesture Required)
-            this.device = await navigator.bluetooth.requestDevice({
-                filters: [{ namePrefix: 'JamMate' }, { namePrefix: 'JDY' }],
-                optionalServices: [this.SERVICE_UUID, this.JDY_SERVICE_UUID]
-            });
-
-            // 2. Setup Disconnect Listener (Once per device instance)
-            this.device.addEventListener('gattserverdisconnected', this._handleDisconnect.bind(this));
-
-            // 3. Connect GATT
-            await this._connectGatt();
-
-        } catch (error) {
-            console.error("BLE Connection Failed:", error);
-            this.shouldReconnect = false; // Reset flag on initial failure
-            this._handleDisconnect();
-            this.configurationError=error.message;this._setStatus("Connection failed: "+error.message);
-        }
-    },
-
-    // [NEW] Extracted internal connection logic for reuse
-    async _connectGatt() {
-        if (!this.device) return;
-
-        this.server = await this.device.gatt.connect();
-
-        let writeChar,notifyChar,nus;
-        try{nus=await this.server.getPrimaryService(this.SERVICE_UUID);}catch{}
-        if(nus){
-            writeChar=await nus.getCharacteristic(this.CHARACTERISTIC_UUID);
-            try{notifyChar=await nus.getCharacteristic(this.NOTIFY_UUID);}
-            catch{throw Error('ESP TX characteristic missing. Install firmware v7.16; if installed, forget/re-pair the device to refresh its Bluetooth service cache.');}
-        }else{
-            const svc=await this.server.getPrimaryService(this.JDY_SERVICE_UUID);
-            writeChar=await svc.getCharacteristic(this.JDY_WRITE_UUID);
-            notifyChar=await svc.getCharacteristic(this.JDY_NOTIFY_UUID);
-        }
-        this.characteristic       = writeChar;
-        this.notifyCharacteristic = notifyChar;
-
-        if (!this._boundDataHandler) this._boundDataHandler = this._handleData.bind(this);
-        this.notifyCharacteristic.addEventListener('characteristicvaluechanged', this._boundDataHandler);
-        let subscribed=true;
-        try{await this.notifyCharacteristic.startNotifications();}
-        catch(e){
-            if(!this.notifyCharacteristic.readValue)throw e;
-            subscribed=false;console.warn('[BLE] Notification subscription failed; using TX readback:',e.message);
-        }
-
-        this._connectionEpoch++;
-        this._frames.reset();
-        this.configReady = false;
-        this.rxNotifications=this.rxRejected=0;
-        this.configurationError=null;
-        this.rxReadbacks=0;this._lastNotificationAt=subscribed?Date.now():0;this._usingReadback=false;this._readBusy=false;
-        this._lastReadKey='';this._lastReadAt=0;
-        this.isConnected = true;
-        this._setStatus('connected');
-        if(this._readTimer)clearInterval(this._readTimer);
-        this._readTimer=setInterval(()=>this._readTxFallback(),400);
-
-        // Handshake — skip if NAM transfer in progress to avoid triggering rxBuffer assembly
-        if (!this._pingBlocked) {
-            await this._queueTransportAck(0,0);
-            console.log("[BLE] Reading paged device configuration...");
-            this._readConfiguration().catch(e=>{
-                this.configurationError='Configuration read failed: '+e.message;
-                console.error('[CONFIG]',this.configurationError);this._setStatus(this.configurationError);
-            });
-        }
-
-        // Keep-alive: prevents Windows BLE adapter from suspending idle connections
-        this._keepAliveTimer = setInterval(() => {
-            if (this.isConnected && !this.isSyncing && !this._pingBlocked) {
-                this.send(Protocol.createPing()).catch(() => {});
-            }
-        }, 10000);
-    },
-
+import {uploadResource,downloadResource} from './Resources.js?v=8.0';
+import {HEADER,MAX,DATA,ACK,HELLO,crc16,packet,unpack,Receiver} from './Wire.js?v=8.0';
+import {Protocol} from './Protocol.js?v=8.0';
+const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+const asBytes=b=>b instanceof Uint8Array?b:new Uint8Array(b.buffer||b,b.byteOffset||0,b.byteLength);
+export const BLEService={
+ SERVICE_UUID:'8a8e0001-8a8e-4800-8000-4a616d4d6174',
+ CHARACTERISTIC_UUID:'8a8e0002-8a8e-4800-8000-4a616d4d6174',
+ NOTIFY_UUID:'8a8e0003-8a8e-4800-8000-4a616d4d6174',
+ device:null,isConnected:false,configReady:false,isSyncing:false,shouldReconnect:false,
+ configurationError:null,onStatusChange:null,onDataReceived:null,onConfigProgress:null,
+ _session:0,_epoch:0,_id:0,_att:20,_window:4,_rx:new Receiver(),_queue:[],_waiters:new Set(),
+ _io:Promise.resolve(),_sending:false,_reconnecting:false,_pingBlocked:false,
+ rxNotifications:0,rxRejected:0,
+ _setStatus(status){this.onStatusChange?.(status);},
+ async connect(){
+  if(!navigator.bluetooth)throw Error('Web Bluetooth is unavailable in this browser');
+  this.shouldReconnect=true;this._setStatus('connecting');
+  try{
+   this.device=await navigator.bluetooth.requestDevice({filters:[{namePrefix:'JamMate'}],optionalServices:[this.SERVICE_UUID]});
+   this._disconnectListener=()=>this._handleDisconnect();
+   this.device.addEventListener('gattserverdisconnected',this._disconnectListener);
+   await this._connectGatt();
+  }catch(e){this.shouldReconnect=false;this.device?.gatt.disconnect();this._clear();this._setStatus('Connection failed: '+e.message);throw e;}
+ },
+ async _connectGatt(){
+  const epoch=++this._epoch;
+  this.server=await this.device.gatt.connect();
+  const service=await this.server.getPrimaryService(this.SERVICE_UUID);
+  this.characteristic=await service.getCharacteristic(this.CHARACTERISTIC_UUID);
+  this.notifyCharacteristic=await service.getCharacteristic(this.NOTIFY_UUID);
+  this._dataListener=e=>this._handleData(e);
+  this.notifyCharacteristic.addEventListener('characteristicvaluechanged',this._dataListener);
+  await this.notifyCharacteristic.startNotifications();
+  if(epoch!==this._epoch||!this.shouldReconnect)throw Error('Connection cancelled');
+  this._session=crypto.getRandomValues(new Uint32Array(1))[0]||1;
+  this._att=20;this._rx.reset();this._id=0;this.rxNotifications=this.rxRejected=0;
+  this.isConnected=true;this.configReady=false;this.configurationError=null;
+  this._setStatus('syncing');
+  // HELLO is always 20 bytes, including on the minimum ATT MTU.
+  const hello=this._response(b=>b[0]===0,5000);
+  await this._write(packet(HELLO,0,0,0,4,0,this._session,Uint8Array.of(8,4,244,0)));
+  const caps=await hello;
+  if(caps.length!==7||caps[3]!==8)throw Error('ESP does not support JamMate v8');
+  this._window=Math.max(1,Math.min(4,caps[4]));this._att=Math.max(20,Math.min(244,caps[5]|caps[6]<<8));
+  console.log(`[V8] session ready: ATT=${this._att}, window=${this._window}`);
+  await this._readConfiguration();
+  if(!this.configReady)throw Error(this.configurationError||'Device configuration not verified');
+  // The existing config callback requests current state. Wait for its completion.
+  if(!this._stateReceived)await this._response(b=>b[0]===0x31,15000);
+  if(epoch!==this._epoch)throw Error('Connection changed during sync');
+  this._setStatus('connected');
+  this._keepAliveTimer=setInterval(()=>{if(!this._pingBlocked)this.send(Protocol.createPing()).catch(()=>{});},10000);
+ },
+ _response(matches,timeout){
+  let waiter;
+  const promise=new Promise((resolve,reject)=>{
+   waiter={matches,resolve,reject};waiter.timer=setTimeout(()=>{this._waiters.delete(waiter);reject(Error('Device response timed out'));},timeout);this._waiters.add(waiter);
+  });
+  promise.cancel=()=>{clearTimeout(waiter.timer);this._waiters.delete(waiter);};
+  promise.catch(()=>{});return promise;
+ },
+ request(data,matches,timeout=15000){
+  const response=this._response(matches,timeout);let active=true;
+  return Promise.all([this.send(data,()=>active),response]).then(([,reply])=>reply).finally(()=>{active=false;response.cancel();});
+ },
+ _write(bytes){
+  const char=this.characteristic,epoch=this._epoch;
+  const run=this._io.catch(()=>{}).then(async()=>{
+   if(!this.isConnected||epoch!==this._epoch||char!==this.characteristic)throw Error('BLE disconnected');
+   if(char.writeValueWithoutResponse)await char.writeValueWithoutResponse(bytes);
+   else await char.writeValueWithResponse(bytes);
+  });this._io=run;return run;
+ },
+ send(data,active=()=>true){
+  const b=asBytes(data);
+  if(b.length<3||(b[1]|b[2]<<8)!==b.length-3)return Promise.reject(Error('Invalid v8 command record'));
+  return this.sendMessage(b[0],b.subarray(3),active);
+ },
+ sendMessage(op,data=new Uint8Array(),active=()=>true){
+  if(!this.isConnected)return Promise.reject(Error('BLE disconnected'));
+  if(!this.configReady&&![0x01,0x52,0x54].includes(op))return Promise.reject(Error(this.configurationError||'Reading device configuration'));
+  if(data.length>MAX)return Promise.reject(Error('Transfer block exceeds negotiated message bound'));
+  if(this._queue.length>=128)return Promise.reject(Error('Device command queue is full'));
+  return new Promise((resolve,reject)=>{
+   this._queue.push({op,active,data:Uint8Array.from(data),priority:data.length>200?1:0,epoch:this._epoch,resolve,reject});this._pump();
+  });
+ },
+ async _pump(){
+  if(this._sending)return;this._sending=true;
+  try{while(this._queue.length&&this.isConnected){
+   const index=this._queue.findIndex(q=>q.priority===0),q=this._queue.splice(index<0?0:index,1)[0];
+   if(!q.active()){q.reject(Error('Device request expired'));continue;}
+   try{await this._transfer(q);q.resolve();}catch(e){q.reject(e);if(q.epoch===this._epoch)this.device?.gatt.disconnect();}
+  }}finally{this._sending=false;if(this._queue.length&&this.isConnected)this._pump();}
+ },
+ async _transfer(q){
+  const id=this._id=this._id%65535+1,total=q.data.length,crc=crc16(q.data),chunk=this._att-HEADER;
+  const flight={id,next:0,max:0,complete:false};this._flight=flight;let failures=0,empty=total===0;
+  try{do{
+   if(q.epoch!==this._epoch||!this.isConnected)throw Error('BLE disconnected');
+   if(!q.active())throw Error('Device request expired');
+   const base=flight.next;let end=base;empty=total===0;
+   for(let w=0;w<this._window&&(end<total||empty);w++){
+    const bytes=q.data.subarray(end,Math.min(end+chunk,total));flight.max=end+bytes.length;
+    await this._write(packet(DATA,q.op,id,end,total,crc,this._session,bytes));end+=bytes.length;empty=false;
+   }
+   const until=Date.now()+1000;
+   while((flight.next<end||(!total&&!flight.complete))&&Date.now()<until&&q.epoch===this._epoch){
+    await new Promise(resolve=>{const timer=setTimeout(()=>{this._wake=null;resolve();},Math.max(1,until-Date.now()));this._wake=()=>{clearTimeout(timer);this._wake=null;resolve();};});
+   }
+   if(flight.next===base&&(total||!flight.complete)){if(++failures>=4)throw Error('BLE acknowledgement timed out');}else failures=0;
+  }while(flight.next<total||(!total&&!flight.complete));
+  }finally{if(this._flight===flight)this._flight=null;}
+ },
+ _handleData(event){
+  const p=unpack(asBytes(event.target.value),this._session);if(!p){this.rxRejected++;return;}this.rxNotifications++;
+  if(p.type===ACK){const f=this._flight;if(f&&p.id===f.id&&(p.offset===0||p.offset>=f.next)&&p.offset<=f.max){f.next=p.offset;f.complete=true;this._wake?.();}return;}
+  const result=this._rx.accept(p);
+  if(result.next!==undefined)this._write(packet(ACK,p.op,p.id,result.next,0,0,this._session)).catch(()=>{});
+  if(result.message)this._dispatch(result.message.op,result.message.data);
+ },
+ _dispatch(op,data){
+  const record=new Uint8Array(data.length+3);record[0]=op;record[1]=data.length&255;record[2]=data.length>>8;record.set(data,3);
+  // Response predicates consume the same bounded domain records as builders.
+  // These records are in-process values; only Wire.js packets go over BLE.
+  const rawOps=new Set([0x53,0x59]);
+  const match=rawOps.has(op)?Uint8Array.of(op,...data):record;
+  for(const w of this._waiters)if(w.matches(match)){clearTimeout(w.timer);this._waiters.delete(w);w.resolve(match);}
+  if(op===0)return;
+  if(op===0x31)this._stateReceived=true;
+  if(op===0x55&&data[0]===2)return; // config pages only reach their assembler
+  this.onDataReceived?.({cmd:op,dataView:new DataView(data.buffer,data.byteOffset,data.length)});
+ },
+ uploadResource(kind,bytes,name,options){return uploadResource(this,kind,bytes,name,options);},
+ downloadResource(kind,options){return downloadResource(this,kind,options);},
+ async readCurrentState(timeout=15000){return this.request(Protocol.createGetState(),b=>b[0]===0x31,timeout);},
+ async disconnect(){this.shouldReconnect=false;this.device?.gatt.disconnect();this._clear();this._setStatus('disconnected');},
+ _clear(){
+  ++this._epoch;this.isConnected=false;this.configReady=false;this._stateReceived=false;this._session=0;this._rx.reset();this._wake?.();
+  clearInterval(this._keepAliveTimer);this._keepAliveTimer=null;
+  if(this.notifyCharacteristic&&this._dataListener)this.notifyCharacteristic.removeEventListener('characteristicvaluechanged',this._dataListener);
+  this.characteristic=this.notifyCharacteristic=null;this._io=Promise.resolve();
+  for(const q of this._queue.splice(0))q.reject(Error('BLE disconnected'));
+  for(const w of this._waiters){clearTimeout(w.timer);w.reject(Error('BLE disconnected'));}this._waiters.clear();
+ },
+ _handleDisconnect(){this._clear();this._setStatus(this.shouldReconnect?'reconnecting':'disconnected');if(this.shouldReconnect)this._reconnect();},
+ async _reconnect(){
+  if(this._reconnecting)return;this._reconnecting=true;
+  try{for(let attempt=0;attempt<8&&this.shouldReconnect;attempt++){
+   await sleep(Math.min(10000,500*2**attempt));if(!this.shouldReconnect)break;
+   try{await this._connectGatt();return;}catch(e){console.warn('[V8] reconnect',e.message);this._clear();this.device?.gatt.disconnect();}
+  }if(this.shouldReconnect){this.shouldReconnect=false;this._setStatus('disconnected');}
+  }finally{this._reconnecting=false;}
+ },
     async _readConfiguration(timeout=4000){
         const deadline=Date.now()+120000;
         let offset=0,expectedCrc=null,assembled=null;
@@ -209,16 +162,13 @@ export const BLEService = {
                 if(Date.now()>deadline)throw Error('Configuration download timed out');
                 try{
                     const packet=Uint8Array.of(0x54,4,0,offset&255,offset>>8,96,0);
-                    reply=await this.request(packet,b=>b[0]===0x55&&(b[3]===1||(b.length>=10&&b[3]===2&&(b[6]|b[7]<<8)===offset)),timeout);
+                    reply=await this.request(packet,b=>b[0]===0x55&&(b.length>=10&&b[3]===2&&(b[6]|b[7]<<8)===offset),timeout);
                     break;
                 }catch(e){
                     if(!this.isConnected)throw e;
-                    if(attempt===2)throw Error(`Config read stopped at ${offset} bytes; received ${this.rxNotifications} notifications / ${this.rxReadbacks} readbacks, rejected ${this.rxRejected} frames: ${e.message}`);
+                    if(attempt===2)throw Error(`Config read stopped at ${offset} bytes; received ${this.rxNotifications} notifications, rejected ${this.rxRejected} frames: ${e.message}`);
                 }
             }
-            // Backward-compatible with v7.14 firmware's full reply. The normal
-            // frame dispatcher already passed that complete v1 reply to app.
-            if(reply[3]===1)return reply;
             const total=reply[4]|reply[5]<<8,crc=reply[8]|reply[9]<<8,data=reply.subarray(10);
             if(!total||total>4096||!data.length||data.length>96||offset+data.length>total)throw Error('Invalid configuration page');
             if(!assembled){assembled=new Uint8Array(total);expectedCrc=crc;}
@@ -234,234 +184,5 @@ export const BLEService = {
             }
         }
     },
-    async readCurrentState(timeout=15000){
-        for(let attempt=0;attempt<3;attempt++){
-            try{return await this.request(Protocol.createGetState(),b=>b[0]===0x31,timeout);}
-            catch(e){if(!this.isConnected||attempt===2)throw e;}
-        }
-    },
-    async disconnect() {
-        this.shouldReconnect = false; // [NEW] Intentional disconnect
-        if (this.device && this.device.gatt.connected) {
-            this.device.gatt.disconnect();
-        } else {
-            this._handleDisconnect();
-        }
-    },
 
-    async send(data, active=()=>true) {
-        if (!this.characteristic || !this.isConnected) {
-            throw new Error('BLE is not connected');
-        }
-        if (!this.configReady && ![0x01,0x52,0x54].includes(new Uint8Array(data.buffer || data, data.byteOffset || 0, data.byteLength)[0])) throw Error(this.configurationError||'Reading device configuration; controls will unlock after verification');
-        if (this.isSyncing) {
-            throw new Error('BLE is busy syncing');
-        }
-
-        // Web Bluetooth permits only one GATT write at a time. Catalog sync,
-        // keep-alive and knob events can otherwise collide during connect.
-        const char = this.characteristic,epoch=this._connectionEpoch;
-        const write = async () => {
-            for(const frame of fragments(data,++this._txId)){
-                await this._flushAcks(char,epoch);
-                if(!active())throw Error('Device request expired');
-                if (!this.isConnected || this.characteristic !== char || this._connectionEpoch!==epoch) throw new Error('BLE disconnected');
-                if(typeof char.writeValueWithResponse==='function')await char.writeValueWithResponse(frame);
-                else await char.writeValue(frame);
-                await this._flushAcks(char,epoch);
-            }
-        };
-        const task = this._writeChain.catch(() => {}).then(write);
-        this._writeChain = task;
-        return task;
-    },
-
-    _handleDisconnect() {
-        this._connectionEpoch++;
-        this._writeChain=Promise.resolve();
-        this._pendingAcks=[];
-        if(this._readTimer){clearInterval(this._readTimer);this._readTimer=null;}
-        // Stop keep-alive
-        if (this._keepAliveTimer) {
-            clearInterval(this._keepAliveTimer);
-            this._keepAliveTimer = null;
-        }
-
-        // Clear handles (But keep this.device if we want to reconnect)
-        if (this.notifyCharacteristic && this._boundDataHandler)
-            this.notifyCharacteristic.removeEventListener('characteristicvaluechanged', this._boundDataHandler);
-        this.server = null;
-        this.characteristic = null;
-        this.notifyCharacteristic = null;
-        this.isConnected = false;
-        this.isSyncing = false;
-        
-        // Reset Buffer
-        this.rxBuffer = null;
-        this.rxExpectedLen = 0;
-        this.configReady = false;
-        this._frames.reset();
-        for(const w of this._waiters){clearTimeout(w.timer);w.reject(Error('BLE disconnected'));}
-        this._waiters.clear();
-        
-        // [NEW] Auto-Reconnect Logic
-        if (this.shouldReconnect && this.device) {
-            console.log("[BLE] Connection lost unexpectedly. Attempting reconnect...");
-            this._setStatus('reconnecting');
-            this._attemptReconnectLoop();
-        } else {
-            // Intentional disconnect or fatal error
-            this.device = null;
-            this._setStatus('disconnected');
-        }
-    },
-
-    // [NEW] Retry Loop
-    async _attemptReconnectLoop() {
-        const maxRetries = 5;
-        const retryDelay = 1500; // 1.5s delay to let ESP32 stack recover
-
-        for (let i = 0; i < maxRetries; i++) {
-            if (!this.shouldReconnect || !this.device) break; // Stop if user cancelled
-
-            try {
-                console.log(`[BLE] Reconnect attempt ${i + 1}/${maxRetries}...`);
-                await new Promise(resolve => setTimeout(resolve, retryDelay));
-                
-                await this._connectGatt();
-                
-                console.log("[BLE] Reconnected successfully!");
-                return; // Exit loop on success
-            } catch (err) {
-                console.log(`[BLE] Reconnect attempt ${i + 1} failed:`, err);
-            }
-        }
-
-        // If we reach here, all retries failed
-        console.error("[BLE] Max reconnect attempts reached.");
-        this.shouldReconnect = false;
-        this.device = null;
-        this._setStatus('disconnected');
-        alert("Connection lost. Please reconnect manually.");
-    },
-
-    _handleData(event,source='notify') {
-        if(source==='read')this.rxReadbacks++;
-        else{this.rxNotifications++;this._lastNotificationAt=Date.now();}
-        const view = event.target.value;
-        const incoming = new Uint8Array(view.buffer, view.byteOffset, view.byteLength);
-
-        if(incoming[0]===0x7e){
-            const complete=this._frames.accept(incoming);
-            if(this._frames.error){this.rxRejected++;console.warn("[BLE] "+this._frames.error);}
-            if(this._frames.ackOffset!==null && this._frames.ackOffset!==undefined){
-                const v=new DataView(incoming.buffer,incoming.byteOffset,incoming.length);
-                this._queueTransportAck(v.getUint16(2,true),this._frames.ackOffset);
-            }
-            if(complete)this._completeFrame(complete);
-            return;
-        }
-        // Legacy unframed peers remain readable; config verification prevents edits.
-        // Ignore ESP-side heartbeat
-        if (incoming.length === 1 && incoming[0] === 0xFF) return;
-
-        // NAM ACKs must never be swallowed by rxBuffer assembly
-        const cmd0 = incoming[0];
-        if (cmd0 === 0x71 || cmd0 === 0x73 || cmd0 === 0x76) {
-            if (this.onDataReceived) this.onDataReceived(event.target.value);
-            return;
-        }
-
-        // --- REASSEMBLY LOGIC ---
-
-        // Case 1: We are already building a packet
-        if (this.rxBuffer) {
-            // Append new chunk
-            const newBuffer = new Uint8Array(this.rxBuffer.length + incoming.length);
-            newBuffer.set(this.rxBuffer);
-            newBuffer.set(incoming, this.rxBuffer.length);
-            this.rxBuffer = newBuffer;
-
-            // Check if complete
-            if (this.rxBuffer.length >= this.rxExpectedLen) {
-                this._finalizePacket();
-            }
-            return;
-        }
-
-        // Case 2: New Packet Start
-        const cmd = incoming[0];
-
-        // Check if this is a Large Data Command (0x31 or 0x34) that needs reassembly
-        if (cmd === 0x31 || cmd === 0x34 || cmd === 0x38 || cmd === 0x3A) {
-            // Header format: [CMD, LEN_L, LEN_H]
-            if (incoming.length >= 3) {
-                const len = incoming[1] | (incoming[2] << 8);
-                this.rxExpectedLen = len;
-                this.rxCmd = cmd;
-                
-                // Start buffer with whatever payload data came in this first packet (bytes 3+)
-                this.rxBuffer = incoming.slice(3);
-                
-                // Optimization: If message was small and arrived fully in one packet
-                if (this.rxBuffer.length >= this.rxExpectedLen) {
-                    this._finalizePacket();
-                }
-            }
-        } 
-        else {
-            // Single-packet command (like ACK), pass through immediately
-            if (this.onDataReceived) {
-                this.onDataReceived(event.target.value);
-            }
-        }
-    },
-
-    _finalizePacket() {
-		const finalPayloadView = new DataView(this.rxBuffer.buffer.slice(0, this.rxExpectedLen));
-		console.log(`[BLE] Reassembled ${this.rxExpectedLen} bytes. Passing to App.`);
-		
-		if (this.onDataReceived) {
-			// Passing the CMD ID and the assembled DataView to the handler
-			this.onDataReceived({ cmd: this.rxCmd, dataView: finalPayloadView });
-		}
-		
-		// Reset State
-		this.rxExpectedLen = 0;
-		this.rxCmd = 0;
-		this.rxBuffer = null;
-    },
-    
-    _setStatus(status) {
-        if (this.onStatusChange) this.onStatusChange(status);
-    },
-
-    _decodePacket(data) {
-        const b = new Uint8Array(data instanceof ArrayBuffer ? data : data.buffer);
-        const hex = Array.from(b).map(x => x.toString(16).padStart(2,'0')).join(' ');
-        const FX = ['GATE','COMP','AWAH','OVRD','DIST','EQUL','HARM','VIBR','CHOR','OCTV','FLNG','PHAS','TREM','_FIR','DELY','_NAM','RVRB','GNRC'];
-        const CMD = {
-            0x01:'PING', 0x20:'SET_PARAM', 0x21:'SET_TOGGLE', 0x22:'SET_EQ',
-            0x23:'SET_UTIL', 0x24:'BYPASS', 0x25:'GLOBAL', 0x30:'GET_STATE',
-            0x32:'SAVE_PRESET', 0x33:'LOAD_PRESET', 0x40:'DRUM_PATTERN',
-            0x41:'DRUM_UPDATE', 0x42:'LOOP_BTN', 0x43:'USB_MODE',
-            0x50:'CONFIG', 0x60:'FLASH', 0x61:'RESET',
-            0x70:'NAM_START', 0x72:'NAM_CHUNK', 0x74:'NAM_END',
-            0x80:'MIDI_START', 0x81:'MIDI_CHUNK', 0x82:'MIDI_END',
-        };
-        const cmd  = b[0];
-        const name = CMD[cmd] || `CMD_${cmd.toString(16)}`;
-        if (cmd === 0x20 && b.length >= 4) {
-            const fx    = FX[b[3]] || `fx${b[3]}`;
-            const param = b[4];
-            const val   = b[5];
-            return `${name} ${fx} param=${param} val=${val}  [${hex}]`;
-        }
-        if (cmd === 0x21 && b.length >= 4) {
-            const fx = FX[b[3]] || `fx${b[3]}`;
-            const en = b[4];
-            return `${name} ${fx} en=${en}  [${hex}]`;
-        }
-        return `${name}  [${hex}]`;
-    },
 };

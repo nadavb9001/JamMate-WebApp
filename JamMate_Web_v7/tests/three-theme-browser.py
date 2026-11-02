@@ -1,10 +1,10 @@
 from pathlib import Path
 from playwright.sync_api import sync_playwright
 ROOT=Path(__file__).resolve().parent.parent
-base=(ROOT/'css/main.css').read_text().replace('?v=16-uart-tx','')+'\n'+(ROOT/'css/mobile-neon.css').read_text().replace('?v=16-uart-tx','')
-selectjs=(ROOT/'js/ui/CustomSelect.js').read_text().replace('?v=16-uart-tx','').replace('export function upgradeSelects','function upgradeSelects').replace('export function disposeSelects','function disposeSelects')
-manager=(ROOT/'js/ui/ThemeManager.js').read_text().replace('?v=16-uart-tx','').replace('export function ', 'function ')
-shell=(ROOT/'js/ui/mobile-shell.js').read_text().replace('?v=16-uart-tx','').replace("import { upgradeSelects, disposeSelects } from './CustomSelect.js';",'').replace("import { currentJamMateTheme } from './ThemeManager.js';",'').replace('export const FX_ORDER','const FX_ORDER').replace('export const BANKS','const BANKS').replace('export function installMobileShell','function installMobileShell')+'\nwindow.__make=installMobileShell;'
+base=(ROOT/'css/main.css').read_text().replace('?v=8.0','')+'\n'+(ROOT/'css/mobile-neon.css').read_text().replace('?v=8.0','')
+selectjs=(ROOT/'js/ui/CustomSelect.js').read_text().replace('?v=8.0','').replace('export function upgradeSelects','function upgradeSelects').replace('export function disposeSelects','function disposeSelects')
+manager=(ROOT/'js/ui/ThemeManager.js').read_text().replace('?v=8.0','').replace('export function ', 'function ')
+shell=(ROOT/'js/ui/mobile-shell.js').read_text().replace('?v=8.0','').replace("import { upgradeSelects, disposeSelects } from './CustomSelect.js';",'').replace("import { currentJamMateTheme } from './ThemeManager.js';",'').replace('export const FX_ORDER','const FX_ORDER').replace('export const BANKS','const BANKS').replace('export function installMobileShell','function installMobileShell')+'\nwindow.__make=installMobileShell;'
 for w,h in [(320,568),(390,844)]:
  with sync_playwright() as pw:
   browser=pw.chromium.launch(executable_path='/usr/bin/chromium',headless=True,args=['--no-sandbox'])
@@ -17,7 +17,7 @@ for w,h in [(320,568),(390,844)]:
   page.add_script_tag(content=manager)
   page.evaluate('installThemeManager()')
   page.add_script_tag(content=shell)
-  page.evaluate('''() => {document.getElementById('masterKnob').knob={value:75,min:0,max:100,draw(){}};document.getElementById('bpmKnob').knob={value:120,min:0,max:255,draw(){}};const app={effectStates:Array.from({length:18},()=>({enabled:false})),effectParams:[],config:{tabs:Array.from({length:18},()=>({title:'FX',params:{knobs:[],dropdowns:[]}}))},toggleEffectEnabled(){},onEffectParamChanged(){},sendGlobalUpdate(){}};window.JamMateMobile=window.__make(app);}''')
+  page.evaluate('''() => {document.getElementById('masterKnob').knob={value:75,min:0,max:100,draw(){}};document.getElementById('bpmKnob').knob={value:120,min:0,max:255,draw(){}};const app={utilState:{noise:{enabled:false,level:0},tone:{enabled:false,level:0,freq:670}},effectStates:Array.from({length:18},()=>({enabled:false})),effectParams:[],config:{tabs:Array.from({length:18},()=>({title:'FX',params:{knobs:[],dropdowns:[]}}))},toggleEffectEnabled(){},onEffectParamChanged(){},sendGlobalUpdate(){}};window.JamMateMobile=window.__make(app);}''')
   page.locator('[data-screen=setup]').click()
   assert page.locator('#jmPage .jm-theme-mobile-label').count()==1
   assert page.locator('#jmPage .jm-theme-mobile-label .csel-trigger').count()==1

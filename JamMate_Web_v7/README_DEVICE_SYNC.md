@@ -1,92 +1,88 @@
-# Device synchronization repair
+# JamMate v8
 
-## 7.16 separate BLE TX and verified readback
+Use `JamMate_Web_v8/` with the v8 firmware `src/` and `include/` folders. The two projects are on `codex/jammate-v8`; v7 remains available separately. Build using the existing PlatformIO project, flash firmware, and deploy the complete web v8 folder. Do not erase or replace LittleFS. No PlatformIO configuration change is required.
 
-The supplied hardware trace reaches config page 0, then times out waiting for its ACK; the browser reports zero notifications. This release replaces the raw SDK send with the BLE library's notification method on a dedicated UART TX characteristic (`6e400003-b5a3-f393-e0a9-e50e24dcca9f`). Commands use the existing RX characteristic ending in 0002. Incoming writes cannot replace the outgoing characteristic value.
+Web and LCD layouts, artwork, styles, icons, and control arrangements are preserved. `js/config.js` is byte-identical to v7. The paged configuration read, schema checking, ordered upload, flash read verification, applied checksum, and configuration readback are retained. Expression ADC polling remains removed. Audio capture/MP3 recording is deferred at the user's request.
 
-If notifications do not arrive, the browser reads the TX attribute every 400 ms. Readback uses the same fragment, CRC, configuration validation and ACK path as notifications; the ESP keeps each fragment available until acknowledged. The browser logs `Notifications unavailable; using verified TX readback` when this fallback is used. This path is slower than working notifications.
+## One BLE protocol
 
-Update both firmware `src/` and `include/` and the entire `JamMate_Web_v7/` folder. Build/flash firmware without erasing LittleFS or uploading a replacement filesystem. Firmware and web console must show 7.16. If connection reports a missing TX characteristic after flashing, forget/re-pair JamMate to refresh the cached Bluetooth service. Clear the site's old service worker/cache if the console still reports 7.15.
+V8 uses a distinct service so a cached v7 device cannot be mistaken for v8:
 
-Expression pedal initialization, ADC polling and Expression serial prints have been removed. The unused pedal header remains available. The serial RX ring is reduced from 16 KiB to 8 KiB to leave more heap for the hybrid BLE/A2DP stack; serial import checksum validation remains active.
+- Service: `8a8e0001-8a8e-4800-8000-4a616d4d6174`
+- RX command/ACK writes: `8a8e0002-8a8e-4800-8000-4a616d4d6174`
+- TX data/ACK notifications: `8a8e0003-8a8e-4800-8000-4a616d4d6174`
 
-Validation includes the ESP build, protocol/native checks, and the real browser UI against a test peer both with notifications and with all notifications suppressed. Both browser modes must verify config, read all 35 presets, apply remote state silently and send control writes. These checks do not establish physical BLE/Daisy behavior; retest the actual connection, preset switches, BPM and volume after installing both folders.
+Every packet has a 16-byte little-endian header:
 
-The downloadable ZIP contains only `JamMate_Web_v7/`, `JamMate_Ctrl/src/` and `JamMate_Ctrl/include/`. It assumes the existing firmware project and dependencies; no project configuration changed in 7.16.
+| Offset | Field |
+| --- | --- |
+| 0 | magic `D8` |
+| 1 | version `08` |
+| 2 | DATA=1, ACK=2, HELLO=3 |
+| 3 | operation |
+| 4 | transaction u16, nonzero for DATA |
+| 6 | byte offset u16; ACK contains next expected offset |
+| 8 | complete payload size u16, maximum 2048 |
+| 10 | CRC16/Modbus of complete payload |
+| 12 | random browser session u32 |
+| 16 | binary payload fragment |
 
-## 7.15 verified configuration delivery
+HELLO is exactly 20 bytes, with payload `[8,4,244,0]`. The ESP replies with operation 0 and `[8, window, ATT-size-u16]`. DATA/ACK use that session. A new GATT connection must establish a new session. No raw packets, old framing, JDY fallback, legacy counts uploads or old NAM/MIDI BLE transfer commands are accepted.
 
-Update both firmware and the complete v7 web folder for this release. The Connection popup and console identify v7.15. The browser negotiates acknowledged notifications before reading configuration. Each notification fragment must be confirmed with `[0x7F, transaction16LE, nextOffset16LE]`; the all-zero transaction/offset enables this mode. ESP retries a missing acknowledgement up to three times. The browser tolerates duplicate fragments, including a retried final fragment, without applying a logical message twice. ACK writes are serialized with commands and serviced between command fragments.
+A four-fragment window and cumulative ACKs replace per-fragment round trips. Packet size follows the actual negotiated MTU (20 to 244 ATT bytes, leaving 4 to 228 payload bytes). Missing fragments resume from the receiver's offset; duplicate complete messages are not applied twice. Whole-message checksum failure restarts the message. Repeated stalls close the connection instead of silently losing data. No fixed inter-chunk sleeps are inserted. The ESP requests a 7.5–15 ms connection interval; the host decides the actual interval and throughput. Hardware throughput has not been measured.
 
-Configuration is read in browser-paced pages: 0x54 payload `[offset16LE, requestedCount16LE]`; 0x55 payload `[version=2, total16LE, offset16LE, wholeFileCRC16LE, data]`. Pages carry at most 96 data bytes. Only the fully assembled, checksum-verified configuration reaches the app validator. Older version-1 full replies remain readable. Progress and the original schema/transport error are retained instead of being replaced by a generic control-lock message.
+The browser serializes GATT operations, services ACKs independently of queued messages, and gives controls priority over bulk blocks. The ESP uses bounded queues and a fixed inbound command pool, avoiding heap allocation for incoming resource blocks. Queue/allocation failures trigger state reconciliation; an inbound command that cannot be queued is not acknowledged as accepted. Bulk data is binary, including little-endian float32 NAM weights. Whole-effect updates use operation `27` with `[effect, flat-count, enable, knobs..., dropdowns...]`; individual parameters still fit one minimum-MTU packet. The unused master byte and redundant DRUM text tag are removed from BLE control payloads. Compression is deliberately absent: it adds RAM/CPU cost and has uncertain benefit for dense model/IR bytes.
 
-The ESP logs the first/final config page and first-page transport details. Delivery timeouts identify command/transaction/offset and whether ACK mode is enabled. Browser timeouts include received-notification and rejected-frame counts. Idle loop telemetry is no longer sent repeatedly; changing loop progress is capped at 2 Hz, and full state reconciliation runs every 30 seconds. This leaves bandwidth for initial state and preset transfers.
+## Connection and state
 
-Tests cover the real firmware sender under a lost ACK and a non-acknowledging peer, config-page reconstruction, and the real UI against an ACK-paced test peer with an intentionally dropped middle-fragment ACK. These are software checks; physical connection/control needs retesting.
+Connect → subscribe → HELLO → verify configuration → fetch current ESP state → ready. A drop cancels requests and queued writes. Reconnect uses bounded exponential backoff and repeats configuration/state synchronization; old session packets cannot apply to the new connection. Interrupted uploads are discarded; they are not replayed blindly.
 
+The ESP owns current state and saved presets. Device and web edits share the existing application/DSP handlers. Selection, master, BPM, all effect enables/knobs/dropdowns, EQ, drum controls/grid, looper controls/status, tuner, bypass, utilities, A2DP volume/enable, USB mode and UART status replicate to the web app. Saved slots are compared by checksum and only changed slots are fetched. There is periodic full reconciliation, plus recovery after queue pressure. Remote UI updates do not send edits back.
 
-## 7.14.1 connection reset hardening
+Domain records inside JS/C++ retain operation names and preset storage layout. Their local `[operation,length,payload]` representation is never sent directly over BLE; `Wire.js` and `JmV8.hpp` define the sole on-air format. Existing flash preset readers remain to preserve user files; these are storage readers, not alternate communication protocols.
 
-The reported abort occurs during the configuration reply, before current state. The reply now streams flash bytes into a fixed 4,100-byte buffer, borrowed by the notification task until transmission completes. It no longer constructs String/vector copies or allocates a multi-kilobyte frame on the heap. Other replies use checked malloc and transfer ownership directly to the queue, removing the extra intermediate copy. Large sync buffers are kept off the Arduino loop stack. MTU and connection metadata are captured from GATT events instead of reading the server's changing peer map from the sender task. Task creation failures are checked.
+The ESP↔DSP protocol definitions, packet layouts, UART rate, and existing control/NAM/MIDI messages remain intact. IR uses the already-defined JMP2 IR object type; it requires an actual DSP that implements that object. MIDI is forwarded in bounded batches between UI loop iterations, with padding only at the end of the file. Its preserved DSP protocol has no commit ACK, so its final success confirms verified receipt and forwarding by the ESP, not DSP persistence. USB status is the last ESP-issued mode, not independent DSP readback. Looper telemetry still reflects the selected track; independent per-track DSP state and a DSP-edited complete drum grid cannot be recovered through the existing DSP interface.
 
-Firmware reports `sync-recovery 7.14.1`. Boot/config/state/catalog logs include reset reason, available heap and stack minimum. PlatformIO monitor uses `esp32_exception_decoder` at 115200 baud to decode any subsequent backtrace against the matching local ELF. This hardening builds and passes host tests, but the physical reset must be retested on the ESP. The v7.14 web app remains compatible; do not erase LittleFS.
+## One resource transfer engine
 
-## 7.14 hardware follow-up
+NAM, IR and MIDI share these operations. All integers are little endian:
 
-The first repair incorrectly used the new-write validator for old flash files. This caused preset switches to stick at an existing slot whose record widths differed. Flash reads now use a separate bounded legacy reader, preserving the stored knob/dropdown boundaries for known older layouts, leaving added fields at their defaults, and never rewriting the original file. New writes remain strictly validated. Navigation also advances past a genuinely corrupt slot on the next click. Legacy formats have no parameter-name/schema IDs, so verify the sound of older presets whose DSP parameter meanings changed before explicitly saving them.
+- `90 BEGIN`: id:u32, kind:u8 (NAM=1, IR=2, MIDI=3), size:u32, CRC32:u32, items:u32, filename-length:u8, filename (1–64 bytes).
+- `91 BLOCK`: id:u32, offset:u32, up to 1024 data bytes.
+- `92 COMMIT` / `93 ABORT`: id:u32.
+- `94 STATUS`: id:u32, status:u8, phase:u8 (begin=0, block=1, commit=2, abort=3), next-offset:u32.
+- `95 READ`: id:u32, kind:u8, offset:u32, requested-size:u16.
+- `96 READ_DATA`: id:u32, status:u8, kind:u8, total:u32, offset:u32, whole-file-CRC32:u32, data.
 
-Main-page and drum-page tempo changes now share one tempo path. Web BPM writes resend even when the cached value matches. Active drum/looper settings are mirrored in DRUM for deployed DSP builds that do not handle the standalone tempo command; no button/fill pulse is sent and stopped drums stay stopped.
+A resource is at most 128 KiB. NAM A2 Lite requires 1871 float32 weights. Uploads stage into LittleFS, enforce offsets, compare duplicate blocks, check size/CRC, and atomically rename the completed file. The DSP receives data only after complete-file verification. NAM/IR completion waits for the existing DSP commit response. Lost connections before commit discard the partial staging file; completed resources remain available for download. Only the latest completed resource of each kind is retained for browser readback.
 
-BLE notifications no longer share the characteristic value buffer with incoming writes. The sender uses the SDK notification API and observes congestion; the receiver copies the write-event bytes. Initial configuration and state reads retry with bounded deadlines. All module imports are versioned to bypass old HTTP caches, and the service worker cache is v14. The Connection popup shows **JamMate v7.14**. Firmware boot logs show **sync-recovery 7.14**; handshake logs report client framing and the actual sent bank/slot/BPM/volume.
+The existing NAM and MIDI UI use this engine. The same API accepts IR bytes without adding new graphics:
 
-
-Deploy this complete v7 web folder together with the repaired JamMate_Ctrl firmware. Older firmware does not implement configuration readback or the framed transport; the web app blocks edits until the device configuration is verified. Do not mix these versions or deploy just app.js. The service worker cache version is updated.
-
-The ESP remains the preset authority. Browser storage is a validated, read-only mirror of the 35 saved slots; unsaved live edits are separate. Connecting reads config (0x54/0x55), verifies version/order/counts, then reads current state (0x30/0x31), selection and controls, and requests the catalog (0x37/0x38). Missing/changed slots use 0x39/0x3A with CRC16. Catalog/slot requests have bounded retries. Periodic state reconciliation recovers dropped notifications; catalogs refresh every 30 seconds and after web saves.
-
-Writes use application confirmation where persistence matters: preset load/save replies are 0x59, and config chunk ACK/NACK is 0x53. Config uploads are ordered, duplicate-safe, size/schema validated, written and read-verified to a temporary file, then renamed over the active file. Only after parsing does the final ACK carry the applied CRC; the browser then reads the exact text back before reporting success. Legacy counts-only uploads are rejected. Labels/options can be read from ESP, while the bundled DSP effect order and parameter counts must match before editing.
-
-Both directions wrap logical messages in fragments:
-
+```js
+await BLEService.uploadResource('ir', bytes, 'cabinet.ir', {
+  onProgress: (done, total) => console.log(done, total)
+});
+const bytesBack = await BLEService.downloadResource('ir');
 ```
-7E 01 transaction:u16LE offset:u16LE total:u16LE crc16:u16LE payload...
-```
 
-The CRC covers the complete logical message. Maximum message size is 6,144 bytes; config text is capped at 4,096 bytes. Browser writes fit the minimum 23-byte ATT MTU; ESP notifications use the negotiated MTU. Assemblies expire after five seconds and reject gaps, inconsistent metadata and bad CRCs. ESP writes are queued onto its main loop; notifications have a separate ordered sender. Queued traffic from a previous connection is discarded.
+IR bytes must match the connected DSP's accepted resource format; this code does not invent a DSP decoder or convert arbitrary WAV files.
 
-Live selection/master/BPM uses 0x3F; effect changes use 0x20/0x21/0x36; EQ uses 0x22. The extended 0x3E controls payload contains, in order:
+## Verification and installation checks
 
-```
-drumEnable level style pattern bpm loopEnable loopLevel(0..127)
-sync autoArm bars track playback bounce muteMask soloMask fill tunerEnable bypass
-```
-
-Remote UI updates do not send control writes back. DSP BEAT packets are forwarded as 0x3C, and ESP selected-track loop status/progress as 0x3D. Tuner frequency remains Float32 little endian in 0x35. The looper display uses one 0..127 level internally, converting percentages at the DRUM boundary.
-
-## Validate
-
-With both repositories checked out as siblings (or set JAMMATE_CTRL_DIR):
+With both repositories checked out as siblings:
 
 ```sh
-cd /workspace/JamMate_Ctrl
-PLATFORMIO_CORE_DIR=/workspace/.platformio /workspace/.venvs/jammate/bin/pio run -e esp32dev -j 4
-
-g++ -std=c++17 -I include test/native/web-sync.cpp -o /tmp/jammate-sync
-/tmp/jammate-sync
-
-cd /workspace/JamMate-WebApp/JamMate_Web_v7
+cd JamMate_Ctrl
+pio run -e esp32dev -j 4
+cd ../JamMate-WebApp/JamMate_Web_v8
 for test in tests/*.mjs; do node "$test" || exit; done
-/workspace/.venvs/jammate/bin/python tests/device-sync-browser.py
-/workspace/.venvs/jammate/bin/python tests/looper-eq-mobile.py
-/workspace/.venvs/jammate/bin/python tests/fx-params-scroll.py
+python tests/device-sync-browser.py
+python tests/looper-eq-mobile.py
+python tests/fx-params-scroll.py
+python tests/three-theme-browser.py
+python tests/visual-parity.py
 ```
 
-The cross-repository test compiles the actual firmware runtime helpers with host adapters, verifies config failure preservation and 35-slot serialization, and feeds those replies into the actual WebSync decoder. Browser tests exercise the real UI against a framed test peer. These are offline checks, not physical BLE/Daisy validation.
+Native cross-tests require `g++` and the firmware checkout, including its test directory. Browser tests require Playwright, Chromium and Pillow. The distribution ZIP contains only web v8 and firmware `src/` + `include/`.
 
-## Existing presets and remaining hardware checks
-
-Back up LittleFS presets before upgrading; do not erase the filesystem. Startup no longer automatically formats a failed mount. Old files are read with their stored record widths and remain unchanged on flash. Structurally corrupt files are reported unreadable; the next switch click can move past them. New saves use the current canonical layout.
-
-The selected DSP protocol reports selected-track state and first-loop duration, not independent state/playheads for every track. Looper phase remains the ESP display estimate, not a sample-accurate DSP position. The sequencer grid can mirror the last web-supplied grid during this boot, but the supplied DSP interface cannot read back an independently modified full grid. Controls reset according to existing firmware/DSP boot behavior; a reconnect restores the current ESP snapshot.
-
-Still verify on hardware: first connection/reconnect with all 35 slots, physical and web edits while playing, low-MTU transfers, tuner notifications during preset/config transfers, dropped packets, A2DP coexistence, save-lock/write failures, power-cycle persistence, all looper buttons and quantization/auto-arm modes, drum auto-start, and real DSP beat/tuner delivery. No firmware flashing or filesystem upload was performed by the repair.
+Still validate on the physical ESP/Daisy: first connection and repeated drops, negotiated MTU/interval and actual throughput, A2DP coexistence, physical/web edits during transfers, repeated preset changes, IR support/format, and save/power-cycle persistence. Software tests and compilation do not establish physical BLE behavior.

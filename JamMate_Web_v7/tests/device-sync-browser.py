@@ -19,8 +19,8 @@ try:
   assert page.locator('#iirCanvas').is_visible()
   assert not errors,errors
   page.evaluate('''async () => {
-    const {app}=await import('./js/app.js?v=12-safety');
-    const {BLEService:ble}=await import('./js/services/BLEService.js');
+    const {app}=await import('./js/app.js?v=14-sync-recovery');
+    const {BLEService:ble}=await import('./js/services/BLEService.js?v=14-sync-recovery');
     const {Protocol}=await import('./js/services/Protocol.js');
     const {FrameReceiver,fragments}=await import('./js/services/Framing.js');
     const {crc16}=await import('./js/services/WebSync.js');
@@ -52,6 +52,16 @@ try:
   page.locator('#jmBack').click();page.locator('#jmBack').click()
   assert page.locator('[data-jm-bpm]').first.inner_text()=='137'
   assert page.evaluate('window.__app.autoArm') is True
+  page.evaluate('window.__writes=[];window.__emit(Uint8Array.of(0x3f,4,1,61,159))')
+  assert page.locator('[data-jm-bank-select]').input_value()=='4'
+  assert page.locator('[data-jm-slot-select]').input_value()=='1'
+  assert page.locator('[data-jm-bpm]').inner_text()=='159'
+  assert page.locator('[data-jm-vol]').inner_text()=='61'
+  assert page.evaluate('window.__writes.length')==0
+  page.locator('[data-screen="drums"]').click();page.locator('[data-drum-toggle="1"]').click()
+  page.locator('[data-jm-global-slider="bpm"]').evaluate("el=>{el.value='171';el.dispatchEvent(new Event('input',{bubbles:true}));el.dispatchEvent(new Event('change',{bubbles:true}));}")
+  page.wait_for_function('window.__writes.some(p=>p[0]===0x25&&p[5]===171)')
+  assert page.evaluate('window.__app.drumEnabled')
   page.evaluate('window.__writes=[];window.__emit(Uint8Array.of(0x36,2,15,91))')
   assert page.evaluate('window.__app.effectParams[2].knob14')==91
   assert page.evaluate('window.__writes.length')==0

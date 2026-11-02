@@ -1,5 +1,14 @@
 # Device synchronization repair
 
+## 7.14 hardware follow-up
+
+The first repair incorrectly used the new-write validator for old flash files. This caused preset switches to stick at an existing slot whose record widths differed. Flash reads now use a separate bounded legacy reader, preserving the stored knob/dropdown boundaries for known older layouts, leaving added fields at their defaults, and never rewriting the original file. New writes remain strictly validated. Navigation also advances past a genuinely corrupt slot on the next click. Legacy formats have no parameter-name/schema IDs, so verify the sound of older presets whose DSP parameter meanings changed before explicitly saving them.
+
+Main-page and drum-page tempo changes now share one tempo path. Web BPM writes resend even when the cached value matches. Active drum/looper settings are mirrored in DRUM for deployed DSP builds that do not handle the standalone tempo command; no button/fill pulse is sent and stopped drums stay stopped.
+
+BLE notifications no longer share the characteristic value buffer with incoming writes. The sender uses the SDK notification API and observes congestion; the receiver copies the write-event bytes. Initial configuration and state reads retry with bounded deadlines. All module imports are versioned to bypass old HTTP caches, and the service worker cache is v14. The Connection popup shows **JamMate v7.14**. Firmware boot logs show **sync-recovery 7.14**; handshake logs report client framing and the actual sent bank/slot/BPM/volume.
+
+
 Deploy this complete v7 web folder together with the repaired JamMate_Ctrl firmware. Older firmware does not implement configuration readback or the framed transport; the web app blocks edits until the device configuration is verified. Do not mix these versions or deploy just app.js. The service worker cache version is updated.
 
 The ESP remains the preset authority. Browser storage is a validated, read-only mirror of the 35 saved slots; unsaved live edits are separate. Connecting reads config (0x54/0x55), verifies version/order/counts, then reads current state (0x30/0x31), selection and controls, and requests the catalog (0x37/0x38). Missing/changed slots use 0x39/0x3A with CRC16. Catalog/slot requests have bounded retries. Periodic state reconciliation recovers dropped notifications; catalogs refresh every 30 seconds and after web saves.
@@ -45,7 +54,7 @@ The cross-repository test compiles the actual firmware runtime helpers with host
 
 ## Existing presets and remaining hardware checks
 
-Back up LittleFS presets before upgrading; do not erase the filesystem. Startup no longer automatically formats a failed mount. Files whose old parameter counts disagree with the active schema are rejected and retained unchanged, rather than silently remapping their parameters. Their catalog entries are reported unreadable/incompatible. Such presets need an explicit migration using their original schema; this repair does not guess that mapping.
+Back up LittleFS presets before upgrading; do not erase the filesystem. Startup no longer automatically formats a failed mount. Old files are read with their stored record widths and remain unchanged on flash. Structurally corrupt files are reported unreadable; the next switch click can move past them. New saves use the current canonical layout.
 
 The selected DSP protocol reports selected-track state and first-loop duration, not independent state/playheads for every track. Looper phase remains the ESP display estimate, not a sample-accurate DSP position. The sequencer grid can mirror the last web-supplied grid during this boot, but the supplied DSP interface cannot read back an independently modified full grid. Controls reset according to existing firmware/DSP boot behavior; a reconnect restores the current ESP snapshot.
 

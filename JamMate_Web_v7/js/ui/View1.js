@@ -1,5 +1,5 @@
-import { Knob } from './Knob.js';
-import { IIRDesigner } from './IIRDesigner.js';
+import { Knob } from './Knob.js?v=14-sync-recovery';
+import { IIRDesigner } from './IIRDesigner.js?v=14-sync-recovery';
 
 export const View = {
     init(app) {

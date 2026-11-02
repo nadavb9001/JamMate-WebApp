@@ -1,5 +1,5 @@
-import {fragments, FrameReceiver} from './Framing.js';
-import { Protocol } from './Protocol.js?v=10-master';
+import {fragments, FrameReceiver} from './Framing.js?v=14-sync-recovery';
+import { Protocol } from './Protocol.js?v=14-sync-recovery';
 
 export const BLEService = {
     // ESP32 Nordic UART Service
@@ -121,8 +121,7 @@ export const BLEService = {
         // Handshake — skip if NAM transfer in progress to avoid triggering rxBuffer assembly
         if (!this._pingBlocked) {
             console.log("[BLE] Requesting state...");
-            this.request(Uint8Array.of(0x54,0,0),b=>b[0]===0x55)
-                .catch(e=>this._setStatus("Configuration read failed: "+e.message));
+            this._readConfiguration().catch(e=>this._setStatus("Configuration read failed: "+e.message));
         }
 
         // Keep-alive: prevents Windows BLE adapter from suspending idle connections
@@ -133,6 +132,18 @@ export const BLEService = {
         }, 10000);
     },
 
+    async _readConfiguration(){
+        for(let attempt=0;attempt<3;attempt++){
+            try{return await this.request(Uint8Array.of(0x54,0,0),b=>b[0]===0x55);}
+            catch(e){if(!this.isConnected||attempt===2)throw e;}
+        }
+    },
+    async readCurrentState(timeout=15000){
+        for(let attempt=0;attempt<3;attempt++){
+            try{return await this.request(Protocol.createGetState(),b=>b[0]===0x31,timeout);}
+            catch(e){if(!this.isConnected||attempt===2)throw e;}
+        }
+    },
     async disconnect() {
         this.shouldReconnect = false; // [NEW] Intentional disconnect
         if (this.device && this.device.gatt.connected) {

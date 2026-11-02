@@ -1,6 +1,6 @@
-const CACHE='jammate-ui-v13-device-sync';
+const CACHE='jammate-ui-v14-sync-recovery';
 const SHELL=['./','./index.html','./manifest.webmanifest','./css/mobile-neon.css','./css/medieval.css','./css/metal.css','./js/ui/ThemeManager.js','./assets/medieval-filigree.svg','./assets/medieval-crest.svg','./assets/metal-grain.svg','./css/main.css','./css/components.css','./css/nam-v2b.css','./js/app.js','./js/services/WebSync.js','./js/services/Framing.js','./js/services/ConfigSync.js','./js/services/BLEService.js','./js/services/Protocol.js','./js/ui/mobile-shell.js','./js/ui/IIRDesigner.js','./js/ui/CustomSelect.js'];
-self.addEventListener('install',event=>{event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(SHELL)));self.skipWaiting();});
+self.addEventListener('install',event=>{event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(SHELL.map(url=>new Request(url,{cache:"reload"})))));self.skipWaiting();});
 self.addEventListener('activate',event=>{event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k.startsWith('jammate-ui-')&&k!==CACHE).map(k=>caches.delete(k)))));self.clients.claim();});
 self.addEventListener('fetch',event=>{
  const r=event.request;

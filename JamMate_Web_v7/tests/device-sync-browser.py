@@ -20,8 +20,8 @@ try:
   assert page.locator('#iirCanvas').is_visible()
   assert not errors,errors
   page.evaluate('''async () => {
-    const {app}=await import('./js/app.js?v=8.0');
-    const {BLEService:ble}=await import('./js/services/BLEService.js?v=8.0');
+    const {app}=await import('./js/app.js?v=8.1');
+    const {BLEService:ble}=await import('./js/services/BLEService.js?v=8.1');
     const {Protocol}=await import('./js/services/Protocol.js');
     const {Receiver,packet,unpack,crc16,DATA,ACK,HELLO}=await import('./js/services/Wire.js');
     window.__app=app;window.__ble=ble;window.__writes=[];
@@ -86,6 +86,15 @@ try:
   page.wait_for_function('window.__ble.configReady',timeout=120000)
   print('V8 CONFIG VERIFIED; waiting for 35 preset slots',flush=True)
   page.wait_for_function('window.__app.webSync.syncReceived===35',timeout=120000)
+  assert page.locator('#jmBeatLed,#jmBeatText,.jm-ring,[data-live-beat]').count()==0
+  page.evaluate('window.__emit(Uint8Array.of(0x48,0x23,1))')
+  page.evaluate('window.JamMateMobile.setTelemetry({tunerHz:440})')
+  assert page.locator('#jmCpu').inner_text()=='CPU 29.1%'
+  assert page.locator('.jm-foot-meter i').evaluate("el=>el.style.width")=='29.1%'
+  page.evaluate('window.__writes=[]')
+  page.clock.install()
+  page.clock.fast_forward(35000)
+  assert page.evaluate('window.__writes.length')==0,'No unsolicited idle BLE requests'
   assert page.evaluate('window.__ble.configReady')
   assert page.evaluate('document.getElementById("presetBank").selectedIndex')==2
   assert page.evaluate('document.getElementById("presetNum").selectedIndex')==3
@@ -103,6 +112,7 @@ try:
   page.locator('[data-jm-global-slider="bpm"]').evaluate("el=>{el.value='171';el.dispatchEvent(new Event('input',{bubbles:true}));el.dispatchEvent(new Event('change',{bubbles:true}));}")
   page.wait_for_function('window.__writes.some(p=>p[0]===0x25&&p[4]===171)')
   assert page.evaluate('window.__app.drumEnabled')
+  assert page.locator('.jm-ring,[data-live-beat]').count()==0
   page.evaluate('window.__writes=[];window.__emit(Uint8Array.of(0x36,2,15,91))')
   assert page.evaluate('window.__app.effectParams[2].knob14')==91
   assert page.evaluate('window.__writes.length')==0
@@ -121,6 +131,6 @@ try:
   assert page.evaluate('window.__ble.configReady')
   page.evaluate('window.__ble.shouldReconnect=false;window.__ble._handleDisconnect()')
   browser.close()
-  print('PASS v8 browser: config read/update, dropped notification recovery, 35 presets, live controls, silent remote edits, NAM resource round trip and automatic reconnect')
+  print('PASS v8 browser: config read/update, dropped notification recovery, 35 presets, live controls, silent remote edits, NAM resource round trip, automatic reconnect, CPU display and idle silence')
 finally:
  server.shutdown();server.server_close()

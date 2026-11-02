@@ -1,6 +1,6 @@
-import {uploadResource,downloadResource} from './Resources.js?v=8.0';
-import {HEADER,MAX,DATA,ACK,HELLO,crc16,packet,unpack,Receiver} from './Wire.js?v=8.0';
-import {Protocol} from './Protocol.js?v=8.0';
+import {uploadResource,downloadResource} from './Resources.js?v=8.1';
+import {HEADER,MAX,DATA,ACK,HELLO,crc16,packet,unpack,Receiver} from './Wire.js?v=8.1';
+import {Protocol} from './Protocol.js?v=8.1';
 const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 const asBytes=b=>b instanceof Uint8Array?b:new Uint8Array(b.buffer||b,b.byteOffset||0,b.byteLength);
 export const BLEService={
@@ -50,7 +50,6 @@ export const BLEService={
   if(!this._stateReceived)await this._response(b=>b[0]===0x31,15000);
   if(epoch!==this._epoch)throw Error('Connection changed during sync');
   this._setStatus('connected');
-  this._keepAliveTimer=setInterval(()=>{if(!this._pingBlocked)this.send(Protocol.createPing()).catch(()=>{});},10000);
  },
  _response(matches,timeout){
   let waiter;
@@ -138,7 +137,6 @@ export const BLEService={
  async disconnect(){this.shouldReconnect=false;this.device?.gatt.disconnect();this._clear();this._setStatus('disconnected');},
  _clear(){
   ++this._epoch;this.isConnected=false;this.configReady=false;this._stateReceived=false;this._session=0;this._rx.reset();this._wake?.();
-  clearInterval(this._keepAliveTimer);this._keepAliveTimer=null;
   if(this.notifyCharacteristic&&this._dataListener)this.notifyCharacteristic.removeEventListener('characteristicvaluechanged',this._dataListener);
   this.characteristic=this.notifyCharacteristic=null;this._io=Promise.resolve();
   for(const q of this._queue.splice(0))q.reject(Error('BLE disconnected'));

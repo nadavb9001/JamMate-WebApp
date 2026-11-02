@@ -13,17 +13,17 @@
  *     flatIdx 1..K   → knob k-1   value: 0–255
  *     flatIdx K+1..  → dropdown d value: selectedIndex
  */
-import { NamLoader } from './NamLoader.js?v=8.0';
-import { NamBrowserV2b } from './ui/NamBrowserV2b.js?v=8.0';
-import { APP_CONFIG } from './config.js?v=8.0';
-import { View } from './ui/View.js?v=8.0';
-import { Knob } from './ui/Knob.js?v=8.0';
-import { BLEService } from './services/BLEService.js?v=8.0';
-import { WebSync, crc16 } from './services/WebSync.js?v=8.0';
-import { readDeviceConfig } from './services/ConfigSync.js?v=8.0';
-import { Protocol } from './services/Protocol.js?v=8.0';
-import { upgradeSelects } from './ui/CustomSelect.js?v=8.0';
-import { installThemeManager } from './ui/ThemeManager.js?v=8.0';
+import { NamLoader } from './NamLoader.js?v=8.1';
+import { NamBrowserV2b } from './ui/NamBrowserV2b.js?v=8.1';
+import { APP_CONFIG } from './config.js?v=8.1';
+import { View } from './ui/View.js?v=8.1';
+import { Knob } from './ui/Knob.js?v=8.1';
+import { BLEService } from './services/BLEService.js?v=8.1';
+import { WebSync, crc16 } from './services/WebSync.js?v=8.1';
+import { readDeviceConfig } from './services/ConfigSync.js?v=8.1';
+import { Protocol } from './services/Protocol.js?v=8.1';
+import { upgradeSelects } from './ui/CustomSelect.js?v=8.1';
+import { installThemeManager } from './ui/ThemeManager.js?v=8.1';
 
 const PRESETS_LOCKED = false;
 
@@ -97,7 +97,7 @@ export const app = {
     this.loopLength   = 0;
     this.loopTracks   = 1;
 
-    console.info("[JamMate] Web build v8.0");
+    console.info("[JamMate] Web build v8.1");
     View.init(this);
     this.webSync = new WebSync({
       send: packet => BLEService.send(packet).catch(e => console.warn('[SYNC] send',e)),
@@ -119,17 +119,6 @@ export const app = {
         }
       },
       onParam:(fx,flat,value)=>this.syncRemoteEffectParam(fx,flat,value),
-      onBeat:(b)=>{
-        // Let syncRemoteBpm update both the stored value and live controls.
-        // Pre-setting this.bpm would make its unchanged-value guard skip
-        // redraw whenever the Daisy transport changes tempo.
-        this.syncRemoteBpm(Math.round(b.bpm10/10));
-        window.JamMateMobile?.setTelemetry({beat:b.beat,beatsPerBar:b.beatsPerBar,
-          downbeat:b.downbeat,bar:b.bar});
-      },
-      onLoop:(status)=>{
-        window.JamMateMobile?.setTelemetry(status);
-      },
       onControl:(settings)=>this.syncRemoteControl(settings),
     });
 
@@ -138,21 +127,14 @@ export const app = {
       View.updateConnectionStatus(status);
       if(status==='disconnected'||status==='reconnecting') {
         this.webSync.reset();this._remoteBank=null;this._remoteSlot=null;
-        window.JamMateMobile?.invalidateBeat?.();
+        window.JamMateMobile?.setTelemetry({cpu:null});
         View.updateTuner(0);
       }
     };
-    // Expire graphics after real DSP beat notifications stop. Never continue
-    // a synthetic clock through a disconnect, pause or stopped transport.
-    if(!this._beatWatchdog) {
-      let hadBeat=false;
-      this._beatWatchdog=setInterval(()=>{
-        if(BLEService.isConnected)this.webSync?.checkTimeout();
-        const live=!!(BLEService.isConnected&&this.webSync?.timing());
-        if(hadBeat&&!live)window.JamMateMobile?.invalidateBeat?.();
-        hadBeat=live;
-      },300);
-    }
+    // Retry only outstanding preset reads. This timer sends nothing when idle.
+    if(!this._syncRetryTimer)this._syncRetryTimer=setInterval(()=>{
+      if(BLEService.isConnected&&(this.webSync.catalogPending||this.webSync.requesting))this.webSync.checkTimeout();
+    },1000);
 
     // ── BLE data received ─────────────────────────────────────────
     let _tunerPending = false;
@@ -204,7 +186,7 @@ export const app = {
           View.setButtonActive('whiteNoiseBtn',!!b[4]);View.setButtonActive('toneBtn',!!b[6]);window.JamMateMobile?.syncSystem?.(this);
           return;
         }
-        if(cmd===0x48 && dataView.byteLength===1){window.JamMateMobile?.setTelemetry({cpu:dataView.getUint8(0)});return;}
+        if(cmd===0x48 && dataView.byteLength===2){window.JamMateMobile?.setTelemetry({cpu:dataView.getUint16(0,true)/10});return;}
         if(cmd===0x22 && dataView.byteLength===6){
           const band=dataView.getUint8(0);if(band>=12)return;
           this.currentEQPoints[band]={enabled:!!dataView.getUint8(1),freq:dataView.getUint16(2,true),gain:dataView.getInt8(4),q:dataView.getUint8(5)/10};
@@ -518,7 +500,7 @@ export const app = {
       looperEnabled:!!looperEnabled,loopLevel:Math.round(loopRaw*100/127),
       loopSync,loopArm,autoArm:!!loopArm,loopLength,trackSelect,playbackMode,
       bounceMode:!!bounceMode,muteMask,soloMask,drumFill,tunerEnabled:!!tunerEnabled,bypassEnabled:!!bypassEnabled});
-    if(!this.webSync?.timing()) this.syncRemoteBpm(drumBpm);
+    this.syncRemoteBpm(drumBpm);
     // Update original fields silently: dispatching change would resend to DSP.
     const fields={drumStyle,drumLevel,drumNumber,drumFill,loopSync,loopLength,trackSelect,playbackMode,muteMask,soloMask};
     for(const [id,value] of Object.entries(fields)){

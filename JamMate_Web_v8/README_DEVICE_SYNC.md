@@ -1,8 +1,12 @@
-# JamMate v8.4.1
+# JamMate v8.4.2
 
 Use `JamMate_Web_v8/` with the v8 firmware `src/` and `include/` folders. The two projects are on `codex/jammate-v8`; v7 remains available separately. Build using the existing PlatformIO project, flash firmware, and deploy the complete web v8 folder. Do not erase or replace LittleFS. No PlatformIO configuration change is required.
 
 Web and LCD layouts, artwork, styles, icons, and control arrangements are preserved. `js/config.js` is byte-identical to v7. The paged configuration read, schema checking, ordered upload, flash read verification, applied checksum, and configuration readback are retained. Expression ADC polling remains removed. Audio capture/MP3 recording is deferred at the user's request.
+
+## 8.4.2 LCD FX parameter access
+
+Firmware-only input fix; the web UI remains v8.4.1. On the LCD FX grid, rotate the navigation encoder to select an effect, short-press to toggle it, and long-press (over 800 ms, then release) to open parameters. In parameters, rotate to select a knob/dropdown, short-press to adjust, rotate to change its value, and short-press to finish. Long-press returns to the FX grid. Volume encoder short-press also opens parameters from the grid; its long-press returns Home from the grid. Volume rotation retains its global assignment. Stale volume-button holds are discarded in the parameter screen. Graphics and DSP protocol are unchanged.
 
 ## 8.4.1 Vintage reverb engine
 

@@ -26,8 +26,8 @@ try:
   assert page.locator('#iirCanvas').is_visible()
   assert not errors,errors
   page.evaluate('''async () => {
-    const {app}=await import('./js/app.js?v=8.4');
-    const {BLEService:ble}=await import('./js/services/BLEService.js?v=8.4');
+    const {app}=await import('./js/app.js?v=8.4.1');
+    const {BLEService:ble}=await import('./js/services/BLEService.js?v=8.4.1');
     const {Protocol}=await import('./js/services/Protocol.js');
     const {Receiver,packet,unpack,crc16,DATA,ACK,HELLO}=await import('./js/services/Wire.js');
     window.__app=app;window.__ble=ble;window.__writes=[];

@@ -1,6 +1,6 @@
-import {uploadResource,downloadResource} from './Resources.js?v=8.4';
-import {HEADER,MAX,DATA,ACK,HELLO,crc16,packet,unpack,Receiver} from './Wire.js?v=8.4';
-import {Protocol} from './Protocol.js?v=8.4';
+import {uploadResource,downloadResource} from './Resources.js?v=8.4.1';
+import {HEADER,MAX,DATA,ACK,HELLO,crc16,packet,unpack,Receiver} from './Wire.js?v=8.4.1';
+import {Protocol} from './Protocol.js?v=8.4.1';
 const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 const deadline=(action,label,ms=5000)=>{
  let timer;return Promise.race([Promise.resolve().then(action),new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error(label+' timed out')),ms);})]).finally(()=>clearTimeout(timer));

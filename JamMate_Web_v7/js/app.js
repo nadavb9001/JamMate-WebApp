@@ -13,22 +13,23 @@
  *     flatIdx 1..K   → knob k-1   value: 0–255
  *     flatIdx K+1..  → dropdown d value: selectedIndex
  */
-import { NamLoader } from './NamLoader.js?v=8.2';
-import { NamBrowserV2b } from './ui/NamBrowserV2b.js?v=8.2';
-import { APP_CONFIG } from './config.js?v=8.2';
-import { View } from './ui/View.js?v=8.2';
-import { Knob } from './ui/Knob.js?v=8.2';
-import { BLEService } from './services/BLEService.js?v=8.2';
-import { WebSync, crc16 } from './services/WebSync.js?v=8.2';
-import { readDeviceConfig } from './services/ConfigSync.js?v=8.2';
-import { Protocol } from './services/Protocol.js?v=8.2';
-import { upgradeSelects } from './ui/CustomSelect.js?v=8.2';
-import { installThemeManager } from './ui/ThemeManager.js?v=8.2';
+import { NamLoader } from './NamLoader.js?v=8.4';
+import { NamBrowserV2b } from './ui/NamBrowserV2b.js?v=8.4';
+import { APP_CONFIG } from './config.js?v=8.4';
+import { View } from './ui/View.js?v=8.4';
+import { Knob } from './ui/Knob.js?v=8.4';
+import { BLEService } from './services/BLEService.js?v=8.4';
+import { WebSync, crc16 } from './services/WebSync.js?v=8.4';
+import { readDeviceConfig } from './services/ConfigSync.js?v=8.4';
+import { Protocol } from './services/Protocol.js?v=8.4';
+import { upgradeSelects } from './ui/CustomSelect.js?v=8.4';
+import { installThemeManager } from './ui/ThemeManager.js?v=8.4';
 
 const PRESETS_LOCKED = false;
 
 export const app = {
-  config: APP_CONFIG,
+  config: JSON.parse(JSON.stringify(APP_CONFIG)),
+  bundledConfig: JSON.parse(JSON.stringify(APP_CONFIG)),
   sendDevice(packet){
     return BLEService.send(packet).catch(e=>{View.updateStatus(e.message);return false;});
   },
@@ -97,7 +98,7 @@ export const app = {
     this.loopLength   = 0;
     this.loopTracks   = 1;
 
-    console.info("[JamMate] Web build v8.2");
+    console.info("[JamMate] Web build v8.4");
     View.init(this);
     this.webSync = new WebSync({
       send: packet => BLEService.send(packet).catch(e => console.warn('[SYNC] send',e)),
@@ -124,6 +125,7 @@ export const app = {
 
     BLEService.onConfigProgress=(done,total)=>View.updateStatus(`Reading ESP configuration: ${done}/${total} bytes`);
     BLEService.onStatusChange = (status) => {
+      this.connectionError=BLEService.lastError||null;
       View.updateConnectionStatus(status);
       if(status==='disconnected'||status==='reconnecting') {
         this.webSync.reset();this._remoteBank=null;this._remoteSlot=null;
@@ -133,7 +135,7 @@ export const app = {
     };
     // Retry only outstanding preset reads. This timer sends nothing when idle.
     if(!this._syncRetryTimer)this._syncRetryTimer=setInterval(()=>{
-      if(BLEService.isConnected&&(this.webSync.catalogPending||this.webSync.requesting))this.webSync.checkTimeout();
+      if(BLEService.isConnected&&BLEService.configReady&&!BLEService.configUploading&&(this.webSync.catalogPending||this.webSync.requesting))this.webSync.checkTimeout();
     },1000);
 
     // ── BLE data received ─────────────────────────────────────────
@@ -163,17 +165,18 @@ export const app = {
         const { cmd, dataView } = packet;
 
         if(cmd===0x55){
+          if(BLEService.configUploading)return;
           try {
             const bytes=new Uint8Array(dataView.buffer,dataView.byteOffset,dataView.byteLength);
             this.deviceConfigText=readDeviceConfig(bytes,this.config);
             BLEService.configReady=true;BLEService.configurationError=null;
             if(!this._readingDeviceState){
               this._readingDeviceState=BLEService.readCurrentState()
-                .catch(e=>View.updateStatus('Connected, but ESP state sync failed: '+e.message))
+                .catch(e=>{if(!BLEService.configUploading)View.updateStatus('Connected, but ESP state sync failed: '+e.message);})
                 .finally(()=>{this._readingDeviceState=null;});
             }
             View.updateStatus('Device configuration verified');
-          }catch(e){BLEService.configReady=false;BLEService.configurationError=e.message;console.error('[CONFIG]',e.message);View.updateStatus(e.message);}
+          }catch(e){BLEService.configReady=false;BLEService.configurationError=e.message;console.warn('[CONFIG]',e.message);View.updateStatus(e.message);}
           return;
         }
         if(!BLEService.configReady)return;
@@ -950,18 +953,25 @@ export const app = {
   // sendConfigUpdate — chunked full-name config upload (0x52 packets)
   // ============================================================
   async sendConfigUpdate() {
+    if(this._configUploadPromise)return this._configUploadPromise;
+    this._configUploadPromise=this._uploadBundledConfig();
+    try{return await this._configUploadPromise;}finally{this._configUploadPromise=null;}
+  },
+  async _uploadBundledConfig() {
     if(!BLEService.isConnected)throw Error('Connect first');
-    View.updateStatus('Uploading config...');
-    const text=Protocol.buildConfigText(this.config),bytes=new TextEncoder().encode(text);
-    BLEService.configReady=false;
+    BLEService.beginConfigurationUpload?.();
+    BLEService.configUploading=true;BLEService.configReady=false;
+    this.webSync?.reset();
+    View.updateStatus('Uploading bundled config.js...');
     try {
+      const text=Protocol.buildConfigText(this.bundledConfig),bytes=new TextEncoder().encode(text);
       let offset=0,index=0;
       while(offset<bytes.length){
         const {packet,isLast,nextOffset}=Protocol.createConfigChunk(bytes,index,offset,160);
         let ack;
         for(let attempt=0;attempt<3;attempt++){
           try{ack=await BLEService.request(packet,b=>b[0]===0x53&&b.length===6&&(b[2]|b[3]<<8)===index);break;}
-          catch(e){if(attempt===2)throw e;}
+          catch(e){if(!BLEService.isConnected||attempt===2)throw e;}
         }
         if(ack[1]!==0)throw Error('ESP rejected config chunk: '+ack[1]);
         if(isLast&&(ack[4]|ack[5]<<8)!==crc16(bytes))throw Error('Applied configuration checksum differs');
@@ -970,9 +980,24 @@ export const app = {
       const reply=await BLEService._readConfiguration();
       if(reply[3]!==1||new TextDecoder().decode(reply.subarray(4))!==text)throw Error('Configuration readback differs');
       readDeviceConfig(reply.subarray(3),this.config);
-      BLEService.configReady=true;
-      View.updateStatus('Configuration applied and read back successfully');
-    }catch(e){BLEService.configReady=false;View.updateStatus('Configuration update failed: '+e.message);throw e;}
+      this.deviceConfigText=text;
+      BLEService.configReady=true;BLEService.configurationError=null;BLEService.lastError=null;
+    }catch(e){
+      BLEService.configReady=false;BLEService.configurationError=e.message;BLEService.lastError=e.message;
+      BLEService._setStatus?.('configuration-required');
+      View.updateStatus('Configuration update failed: '+e.message);throw e;
+    }finally{BLEService.configUploading=false;}
+    // Read exactly one fresh state after verification; its callback starts a
+    // new catalog sync. Config readback itself never starts state/catalog work.
+    try{
+      BLEService._stateReceived=false;
+      await BLEService.readCurrentState();
+      BLEService._setStatus?.('connected');
+      View.updateStatus('Bundled config.js applied, read back and synchronized');
+    }catch(e){
+      View.updateStatus('Configuration applied and verified; state sync failed: '+e.message);
+      throw e;
+    }
   },
 
   // ============================================================
@@ -997,7 +1022,7 @@ export const app = {
     if (btnUpdateConfig) {
       btnUpdateConfig.onclick = async () => {
         if (!BLEService.isConnected) { View.updateStatus('Not connected — connect first'); return; }
-        if (confirm('Upload current config.js to ESP?')) {try{await this.sendConfigUpdate();}catch(e){console.warn(e);}}
+        if (confirm('Upload bundled config.js to ESP and resynchronize?')) {try{await this.sendConfigUpdate();}catch(e){console.warn(e);}}
       };
     }
 
@@ -1023,9 +1048,9 @@ export const app = {
 
     const btnConnect = document.getElementById('btnConnect');
     if (btnConnect) {
-      btnConnect.onclick = () => {
-        if (BLEService.isConnected) BLEService.disconnect();
-        else BLEService.connect();
+      btnConnect.onclick = async () => {
+        try{if(BLEService.isConnected)await BLEService.disconnect();else await BLEService.connect();}
+        catch(e){View.updateStatus(e.message);console.warn('[BLE]',e.message);}
       };
     }
 

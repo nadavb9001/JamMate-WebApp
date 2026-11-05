@@ -192,7 +192,7 @@ export const APP_CONFIG = {
       "dsp_tag": "GNRC",
       "params": {
         "checkbox": "enable",
-        "knobs": ["level", "par1", "par2", "par3", "par4", "par5", "par6", "par7"],
+        "knobs": ["level", "par1", "par2", "par3", "par4", "par5", "par6", "par7", "par8", "par9"],
         "dropdowns": ["generic1", "generic2"]
       }
     }

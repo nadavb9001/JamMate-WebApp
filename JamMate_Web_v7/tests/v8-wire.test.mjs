@@ -10,6 +10,7 @@ const frames=[];for(let off=0;off<data.length;off+=228)frames.push(packet(DATA,0
 const rx=new Receiver();let complete=0;
 for(const f of frames){const p=unpack(f,session);const r=rx.accept(p);if(r.message){assert.deepEqual(r.message.data,data);complete++;}assert.equal(rx.accept(p).next,r.next);}
 assert.equal(complete,1);assert.equal(unpack(frames[0],session+1),null);
+const missingStart=new Receiver();assert.equal(missingStart.accept(unpack(frames[2],session)).next,0);
 const gap=new Receiver();gap.accept(unpack(frames[0],session));assert.equal(gap.accept(unpack(frames[2],session)).next,228);
 const corrupt=frames.map(x=>x.slice());corrupt.at(-1)[16]^=1;const bad=new Receiver();let last;for(const f of corrupt)last=bad.accept(unpack(f,session));assert.equal(last.next,0);assert.equal(last.message,undefined);
 for(const f of frames)last=bad.accept(unpack(f,session));assert.deepEqual(last.message.data,data);

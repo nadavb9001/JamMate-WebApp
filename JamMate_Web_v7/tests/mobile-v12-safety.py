@@ -2,16 +2,16 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright
 from bs4 import BeautifulSoup
 ROOT=Path(__file__).resolve().parent.parent
-soup=BeautifulSoup((ROOT/'index.html').read_text().replace('?v=8.2',''),'html.parser')
+soup=BeautifulSoup((ROOT/'index.html').read_text().replace('?v=8.4',''),'html.parser')
 for t in soup.select('script,link[rel="stylesheet"]'):t.decompose()
 html=str(soup)
-selectjs=(ROOT/'js/ui/CustomSelect.js').read_text().replace('?v=8.2','').replace('export function upgradeSelects','function upgradeSelects').replace('export function disposeSelects','function disposeSelects')
-shelljs=(ROOT/'js/ui/mobile-shell.js').read_text().replace('?v=8.2','').replace("import { upgradeSelects, disposeSelects } from './CustomSelect.js';",'').replace("import { currentJamMateTheme } from './ThemeManager.js';",'const currentJamMateTheme=()=>"metal";').replace('export const FX_ORDER','const FX_ORDER').replace('export const BANKS','const BANKS').replace('export function installMobileShell','function installMobileShell')+'\nwindow.__make=installMobileShell;'
-basecss='\n'.join((ROOT/('css/'+n)).read_text().replace('?v=8.2','') for n in ['main.css','components.css','nam-v2b.css','mobile-neon.css'])
+selectjs=(ROOT/'js/ui/CustomSelect.js').read_text().replace('?v=8.4','').replace('export function upgradeSelects','function upgradeSelects').replace('export function disposeSelects','function disposeSelects')
+shelljs=(ROOT/'js/ui/mobile-shell.js').read_text().replace('?v=8.4','').replace("import { upgradeSelects, disposeSelects } from './CustomSelect.js';",'').replace("import { currentJamMateTheme } from './ThemeManager.js';",'const currentJamMateTheme=()=>"metal";').replace('export const FX_ORDER','const FX_ORDER').replace('export const BANKS','const BANKS').replace('export function installMobileShell','function installMobileShell')+'\nwindow.__make=installMobileShell;'
+basecss='\n'.join((ROOT/('css/'+n)).read_text().replace('?v=8.4','') for n in ['main.css','components.css','nam-v2b.css','mobile-neon.css'])
 with sync_playwright() as p:
  browser=p.chromium.launch(headless=True,executable_path='/usr/bin/chromium',args=['--no-sandbox','--disable-dev-shm-usage'])
  for theme in ['neon','metal','medieval']:
-  css=basecss+('\n'+(ROOT/('css/'+theme+'.css')).read_text().replace('?v=8.2','') if theme!='neon' else '')
+  css=basecss+('\n'+(ROOT/('css/'+theme+'.css')).read_text().replace('?v=8.4','') if theme!='neon' else '')
   for w,h in [(320,568),(375,667),(390,844),(430,932)]:
    context=browser.new_context(viewport={'width':w,'height':h},is_mobile=True,has_touch=True,device_scale_factor=1)
    page=context.new_page();errors=[];page.on('pageerror',lambda err:errors.append(str(err)))

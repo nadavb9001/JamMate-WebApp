@@ -1,8 +1,32 @@
-# JamMate v8.2
+# JamMate v8.4
 
 Use `JamMate_Web_v8/` with the v8 firmware `src/` and `include/` folders. The two projects are on `codex/jammate-v8`; v7 remains available separately. Build using the existing PlatformIO project, flash firmware, and deploy the complete web v8 folder. Do not erase or replace LittleFS. No PlatformIO configuration change is required.
 
 Web and LCD layouts, artwork, styles, icons, and control arrangements are preserved. `js/config.js` is byte-identical to v7. The paged configuration read, schema checking, ordered upload, flash read verification, applied checksum, and configuration readback are retained. Expression ADC polling remains removed. Audio capture/MP3 recording is deferred at the user's request.
+
+## 8.4 config upload and mismatch recovery
+
+A GNRC 8-knob/2-dropdown device can establish BLE but cannot decode the 10-knob web layout safely. It now stays connected in configuration repair mode instead of failing the connection. Controls and automatic preset sync remain locked; use Setup's existing upload configuration action to repair it.
+
+Uploads use an independent copy of the bundled `js/config.js`, so device-provided labels/options cannot overwrite the intended upload source. A single upload runs at a time, pauses normal sync, checks each acknowledgement and final applied checksum, and verifies the complete file by reading it back. Only then does the app request fresh state and restart preset synchronization. Readback during upload cannot start concurrent state/catalog transfers. Upload errors leave controls locked and explain the failure.
+
+The ESP validates the complete configuration before writing it, applies it directly into its existing fixed display label pool without allocating per-line Strings or reading another whole-file copy, and reports success only after the runtime layout matches. The upload staging buffer is fixed at 4097 bytes. The file format, config.js, chunk protocol and DSP protocol are unchanged. Historical GNRC 8/2 presets preserve their dropdown values when loaded with the 10/2 layout; new knobs start at zero.
+
+Deploy the complete v8.4 web folder and flash the matching firmware without erasing LittleFS. Check the console says `Web build v8.4`, connect, and if configuration repair is required use Setup to upload the bundled configuration. Software tests exercise the reported GNRC mismatch, upload/readback, normal sync and reconnect; physical ESP/phone validation is still required.
+
+## 8.3 recover missing notifications without disconnecting on live state
+
+The v8.2 hardware log reports `op=3e`, no matching ACK, no SDK notification errors and MTU 247. The SDK accepted submission; this does not prove the phone received/processed the notification. The exact phone-side cause remains unconfirmed. The code previously forced a disconnect after that missing state ACK.
+
+V8.3 exposes bounded snapshots on the same RX and TX attributes via READ. RX returns the last transport ACK; TX returns the last DATA fragment. Both use the existing v8 packet format, CRC, session checks, reassembly and ACK path. The sender copies bytes into fixed buffers; only the BLE read callback writes the characteristic value, avoiding concurrent String access.
+
+Readback runs only while a command/reply/partial transfer is pending and notifications have been quiet for 600 ms. It stops when the operation is complete; there is no idle readback polling. Reading enables a one-fragment ESP reply window for that connection, so a later fragment cannot overwrite an unread earlier one. A receiver that first sees a later fragment requests offset zero. Normal notification delivery retains the four-fragment window.
+
+A missing ACK for a live-state push (controls, selection, CPU, EQ/effect, live preset or grid) is deferred without closing the link. The next accepted command requests a fresh snapshot. Config/catalog/slot/resource transfers still fail within bounded deadlines. Disconnect logs include the Bluetooth reason code. The web Connection popup retains the last connection error, so a phone user can read it without a developer console.
+
+The browser requires the readback capability bit (HELLO window byte bit 7; low nibble remains window size). Update both firmware and web app. If the browser reports missing READ properties after flashing v8.3, forget/re-pair JamMate once to refresh the cached GATT database. The new READ properties are required; the configuration schema and sync mechanism remain unchanged.
+
+Software validation includes normal notifications, all notifications suppressed, and only controls notifications suppressed, using the real looper screen checkbox and REC button. Normal mode additionally checks unsolicited CPU and physical parameter updates. If notifications are completely unavailable while idle, autonomous ESP changes require the next web operation or reconnect to recover; this is the consequence of avoiding idle polling. Physical phone/ESP validation is still required.
 
 ## 8.2 looper acknowledgement and reconnect repair
 
@@ -19,8 +43,8 @@ Tests cover the real firmware SDK route with distinct interface/connection IDs, 
 V8 uses a distinct service so a cached v7 device cannot be mistaken for v8:
 
 - Service: `8a8e0001-8a8e-4800-8000-4a616d4d6174`
-- RX command/ACK writes: `8a8e0002-8a8e-4800-8000-4a616d4d6174`
-- TX data/ACK notifications: `8a8e0003-8a8e-4800-8000-4a616d4d6174`
+- RX command/ACK writes and ACK snapshot reads: `8a8e0002-8a8e-4800-8000-4a616d4d6174`
+- TX data/ACK notifications and DATA snapshot reads: `8a8e0003-8a8e-4800-8000-4a616d4d6174`
 
 Every packet has a 16-byte little-endian header:
 
@@ -37,9 +61,9 @@ Every packet has a 16-byte little-endian header:
 | 12 | random browser session u32 |
 | 16 | binary payload fragment |
 
-HELLO is exactly 20 bytes, with payload `[8,4,244,0]`. The ESP replies with operation 0 and `[8, window, ATT-size-u16]`. DATA/ACK use that session. A new GATT connection must establish a new session. No raw packets, old framing, JDY fallback, legacy counts uploads or old NAM/MIDI BLE transfer commands are accepted.
+HELLO is exactly 20 bytes, with payload `[8,4,244,0]`. The ESP replies with operation 0 and `[8, window | 0x80, ATT-size-u16]`. DATA/ACK use that session. A new GATT connection must establish a new session. No raw packets, old framing, JDY fallback, legacy counts uploads or old NAM/MIDI BLE transfer commands are accepted.
 
-A four-fragment window and cumulative ACKs replace per-fragment round trips. Packet size follows the actual negotiated MTU (20 to 244 ATT bytes, leaving 4 to 228 payload bytes). Missing fragments resume from the receiver's offset; duplicate complete messages are not applied twice. Whole-message checksum failure restarts the message. Repeated stalls close the connection instead of silently losing data. No fixed inter-chunk sleeps are inserted. The ESP requests a 7.5–15 ms connection interval; the host decides the actual interval and throughput. Hardware throughput has not been measured.
+A four-fragment window and cumulative ACKs replace per-fragment round trips. Packet size follows the actual negotiated MTU (20 to 244 ATT bytes, leaving 4 to 228 payload bytes). Missing fragments resume from the receiver's offset; duplicate complete messages are not applied twice. Whole-message checksum failure restarts the message. Repeated critical-transfer stalls close the connection; stalled live-state pushes are deferred without tearing down the link. No fixed inter-chunk sleeps are inserted. The ESP requests a 7.5–15 ms connection interval; the host decides the actual interval and throughput. Hardware throughput has not been measured.
 
 The browser serializes GATT operations, services ACKs independently of queued messages, and gives controls priority over bulk blocks. The ESP uses bounded queues and a fixed inbound command pool, avoiding heap allocation for incoming resource blocks. Queue/allocation failures trigger state reconciliation; an inbound command that cannot be queued is not acknowledged as accepted. Bulk data is binary, including little-endian float32 NAM weights. Whole-effect updates use operation `27` with `[effect, flat-count, enable, knobs..., dropdowns...]`; individual parameters still fit one minimum-MTU packet. The unused master byte and redundant DRUM text tag are removed from BLE control payloads. Compression is deliberately absent: it adds RAM/CPU cost and has uncertain benefit for dense model/IR bytes.
 

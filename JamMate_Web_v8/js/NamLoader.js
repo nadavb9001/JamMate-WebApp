@@ -1,5 +1,5 @@
-import { BLEService } from './services/BLEService.js?v=8.5';
-import { Protocol } from './services/Protocol.js?v=8.5';
+import { BLEService } from './services/BLEService.js?v=8.6';
+import { Protocol } from './services/Protocol.js?v=8.6';
 
 const T3K_CLIENT_ID = 't3k_pub_UdyZ5sYtaceVAFXOLFwGtuLs4QvwQeLe';
 const T3K_BASE = 'https://www.tone3000.com/api/v1';
@@ -569,7 +569,7 @@ export const NamLoader = {
     }
     panel.style.display = 'block';
     panel.innerHTML = `
-      <strong>✓ ${details.name} loaded</strong>
+      <strong>✓ ${details.name} sent to ESP</strong>
       <div class="nam-success-details">
         <span>Size: ${details.sizeKB}KB</span>
         <span>CRC: ${details.crc32}</span>
@@ -1009,7 +1009,7 @@ export const NamLoader = {
 
     emitSuccess(details);
 
-    onProgress(100, `✓ ${details.name} loaded (${weightCount} weights)`);
+    onProgress(100, `✓ ${details.name} sent to ESP (${weightCount} weights)`);
     onDone(true, details.name, details);
   },
 };

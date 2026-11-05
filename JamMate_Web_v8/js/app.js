@@ -13,18 +13,15 @@
  *     flatIdx 1..K   → knob k-1   value: 0–255
  *     flatIdx K+1..  → dropdown d value: selectedIndex
  */
-import { NamLoader } from './NamLoader.js?v=8.5';
-import { NamBrowserV2b } from './ui/NamBrowserV2b.js?v=8.5';
-import { APP_CONFIG } from './config.js?v=8.5';
-import { View } from './ui/View.js?v=8.5';
-import { Knob } from './ui/Knob.js?v=8.5';
-import { BLEService } from './services/BLEService.js?v=8.5';
-import { WebSync, crc16 } from './services/WebSync.js?v=8.5';
-import { parseDeviceConfig } from './services/ConfigSync.js?v=8.5';
-import { Protocol } from './services/Protocol.js?v=8.5';
-import {crc32} from './services/Resources.js?v=8.5';
-import { upgradeSelects } from './ui/CustomSelect.js?v=8.5';
-import { installThemeManager } from './ui/ThemeManager.js?v=8.5';
+import { NamLoader } from './NamLoader.js?v=8.6';
+import { NamBrowserV2b } from './ui/NamBrowserV2b.js?v=8.6';
+import { APP_CONFIG } from './config.js?v=8.6';
+import { View } from './ui/View.js?v=8.6';
+import { Knob } from './ui/Knob.js?v=8.6';
+import { BLEService } from './services/BLEService.js?v=8.6';
+import { Protocol } from './services/Protocol.js?v=8.6';
+import { upgradeSelects } from './ui/CustomSelect.js?v=8.6';
+import { installThemeManager } from './ui/ThemeManager.js?v=8.6';
 
 const PRESETS_LOCKED = false;
 
@@ -99,132 +96,13 @@ export const app = {
     this.loopLength   = 0;
     this.loopTracks   = 1;
 
-    console.info("[JamMate] Web build v8.5");
+    console.info("[JamMate] Web build v8.6");
     View.init(this);
-    this.webSync = new WebSync({
-      send: packet => BLEService.send(packet).catch(e => console.warn('[SYNC] send',e)),
-      onStatus: text => View.updateStatus(text),
-      onPreset: (bank, slot, blob) => {}, // catalog is a local mirror, never auto-applied
-      onSelection: (bank,slot,volume,bpm) => {
-        if (Number.isInteger(volume)) this.syncMasterVolume(volume);
-        if (Number.isInteger(bpm) && bpm >= 20) this.syncRemoteBpm(bpm);
-        if(Number.isInteger(bank)&&Number.isInteger(slot)&&bank<7&&slot<5){
-          const changed=this._remoteBank!==bank||this._remoteSlot!==slot;
-          this._remoteBank=bank;this._remoteSlot=slot;
-          const bankEl=document.getElementById('presetBank'),slotEl=document.getElementById('presetNum');
-          if(bankEl)bankEl.selectedIndex=bank;
-          if(slotEl)slotEl.selectedIndex=slot;
-          window.dispatchEvent(new Event('jammate:remote-state'));
-          // ESP selected a different preset using its encoders/footswitches.
-          // Request its live state, not the potentially stale browser cache.
-          // ESP sends the corresponding live preset alongside selection. Avoid echo reads.
-        }
-      },
-      onParam:(fx,flat,value)=>this.syncRemoteEffectParam(fx,flat,value),
-      onControl:(settings)=>this.syncRemoteControl(settings),
-    });
-
-    BLEService.onConfigProgress=(done,total)=>View.updateStatus(`Reading ESP configuration: ${done}/${total} bytes`);
-    BLEService.onStatusChange = (status) => {
-      this.connectionError=BLEService.lastError||null;
-      View.updateConnectionStatus(status);
-      if(status==='disconnected'||status==='reconnecting'||status==='recovering') {
-        this.webSync.reset();this._remoteBank=null;this._remoteSlot=null;
-        window.JamMateMobile?.setTelemetry({cpu:null});
-        View.updateTuner(0);
+    BLEService.onStatusChange=status=>{
+      this.connectionError=BLEService.lastError||null;View.updateConnectionStatus(status);
+      if(status==='disconnected'||status==='reconnecting'){
+        window.JamMateMobile?.setTelemetry({cpu:null});View.updateTuner(0);
       }
-    };
-    // Retry only outstanding preset reads. This timer sends nothing when idle.
-    if(!this._syncRetryTimer)this._syncRetryTimer=setInterval(()=>{
-      if(BLEService.isConnected&&BLEService.configReady&&!BLEService.configUploading&&(this.webSync.catalogPending||this.webSync.requesting))this.webSync.checkTimeout();
-    },1000);
-
-    // ── BLE data received ─────────────────────────────────────────
-    let _tunerPending = false;
-    let _tunerFreq    = 0;
-    const _scheduleTuner = (freq) => {
-      _tunerFreq = freq;
-      if (_tunerPending) return;
-      _tunerPending = true;
-      requestAnimationFrame(() => {
-        _tunerPending = false;
-        // The mobile Tuner panel is reparented and may not carry .active.
-        // Frequency still originates from DSP, not a browser-side oscillator.
-        if (Number.isFinite(_tunerFreq)) View.updateTuner(_tunerFreq);
-        window.JamMateMobile?.setTelemetry({tunerHz:_tunerFreq});
-      });
-    };
-    const _handleTuner = (dv, payloadOnly) => {
-      try {
-        _scheduleTuner(payloadOnly ? dv.getFloat32(0, true) : dv.getFloat32(3, true));
-      } catch (_) { /* malformed — ignore */ }
-    };
-
-    BLEService.onDataReceived = (packet) => {
-      // CASE A: reassembled { cmd, dataView }
-      if (packet && typeof packet === 'object' && packet.cmd !== undefined) {
-        const { cmd, dataView } = packet;
-
-        if(cmd===0x55){
-          try{
-            const bytes=new Uint8Array(dataView.buffer,dataView.byteOffset,dataView.byteLength);
-            this.deviceConfig=parseDeviceConfig(bytes);this.deviceConfigText=this.deviceConfig.text;
-          }catch(e){BLEService.configurationError=e.message;console.warn('[CONFIG]',e.message);}
-          return;
-        }
-        if(!BLEService.configReady||BLEService.configUploading)return;
-        if(cmd===0x49&&dataView.byteLength===11){
-          const b=new Uint8Array(dataView.buffer,dataView.byteOffset,11);
-          this.usbMode=b[2];this.uartEnabled=!!b[3];this.utilState.noise={enabled:!!b[4],level:b[5]};this.utilState.tone={enabled:!!b[6],level:b[7],freq:b[8]|b[9]<<8};this.presetsLocked=!!b[10];
-          for(const [id,value] of Object.entries({btEnableCheck:b[0],bleEnableCheck:1,uartEnable:b[3]})){const el=document.getElementById(id);if(el)el.checked=!!value;}
-          for(const [id,value] of [['blVolKnob',b[1]],['whiteNoiseLevelKnob',b[5]],['toneLevelKnob',b[7]]]){const k=document.getElementById(id)?.knob;if(k){k.value=value;k.draw();}}
-          for(const [id,value] of [['usbMode',b[2]],['toneFreqInput',b[8]|b[9]<<8]]){const el=document.getElementById(id);if(el)el.value=String(value);}
-          View.setButtonActive('whiteNoiseBtn',!!b[4]);View.setButtonActive('toneBtn',!!b[6]);window.JamMateMobile?.syncSystem?.(this);
-          return;
-        }
-        if(cmd===0x48 && dataView.byteLength===2){window.JamMateMobile?.setTelemetry({cpu:dataView.getUint16(0,true)/10});return;}
-        if(cmd===0x22 && dataView.byteLength===6){
-          const band=dataView.getUint8(0);if(band>=12)return;
-          this.currentEQPoints[band]={enabled:!!dataView.getUint8(1),freq:dataView.getUint16(2,true),gain:dataView.getInt8(4),q:dataView.getUint8(5)/10};
-          if(this.iirDesigner){this.isUpdatingUI=true;try{this.iirDesigner.loadPoints(this.currentEQPoints);}finally{this.isUpdatingUI=false;}}return;
-        }
-
-        if(cmd===0x57){
-          if(dataView.byteLength===144){const b=new Uint8Array(dataView.buffer,dataView.byteOffset,144);this.drumPattern=Array.from({length:9},(_,i)=>Array.from(b.slice(i*16,i*16+16)));}
-          return;
-        }
-        if (cmd === 0x31 || cmd === 0x34) {
-          console.log(`[BLE] Preset data cmd=0x${cmd.toString(16)}`);
-          this.loadStateFromBlob(dataView.buffer.slice(dataView.byteOffset,dataView.byteOffset+dataView.byteLength), cmd === 0x31);
-          if(cmd===0x31) this.webSync.start();
-          window.dispatchEvent(new Event('jammate:remote-state'));
-          return;
-        }
-        if(this.webSync.handle(cmd,new Uint8Array(dataView.buffer,dataView.byteOffset,dataView.byteLength))) return;
-        if (cmd === Protocol.CMD.TUNER_DATA) {
-          _handleTuner(dataView, true);
-          return;
-        }
-        if (cmd === Protocol.CMD.NAM_LIST_DATA) {
-          const index = dataView.getUint8(0);
-          if (index === 255) { this.clearNamModels(); return; }
-          const name = new TextDecoder().decode(
-            new Uint8Array(dataView.buffer, dataView.byteOffset + 1));
-          this.addNamModel(index, name);
-          return;
-        }
-        if (cmd === Protocol.CMD.IR_LIST_DATA) {
-          const index = dataView.getUint8(0);
-          if (index === 255) { this.clearIrFiles(); return; }
-          const name = new TextDecoder().decode(
-            new Uint8Array(dataView.buffer, dataView.byteOffset + 1));
-          this.addIrFile(index, name);
-          return;
-        }
-        return;
-      }
-
-
     };
 
     this.setupTabs();
@@ -353,7 +231,7 @@ export const app = {
     View.updateStatus(`MIDI: sending ${name}…`);
     try{
       await BLEService.uploadResource('midi',new Uint8Array(buffer),name,{onProgress:(done,total)=>View.updateStatus(`MIDI: ${done}/${total} bytes`)});
-      View.updateStatus(`MIDI forwarded to DSP: ${name}`);
+      View.updateStatus(`MIDI sent to ESP: ${name}`);
     }catch(e){View.updateStatus('MIDI transfer failed: '+e.message);}
 
   },
@@ -652,9 +530,9 @@ export const app = {
       const bankIndex = document.getElementById('presetBank').selectedIndex;
       const slotIndex = document.getElementById('presetNum').selectedIndex;
       View.updateStatus(`Loading B${bankIndex}:P${slotIndex}...`);
-      BLEService.request(Protocol.createLoadReq(bankIndex, slotIndex),b=>b[0]===0x59&&b[1]===0x33&&b[3]===bankIndex&&b[4]===slotIndex)
-        .then(b=>{if(b[2])View.updateStatus('Preset load failed: '+b[2]);})
-        .catch(e=>View.updateStatus('Preset load failed: '+e.message));
+      BLEService.send(Protocol.createLoadReq(bankIndex,slotIndex))
+        .then(()=>View.updateStatus('Preset load request sent'))
+        .catch(e=>View.updateStatus('Preset load send failed: '+e.message));
     };
     document.getElementById('presetBank').addEventListener('change', onPresetSelect);
     document.getElementById('presetNum').addEventListener('change', onPresetSelect);
@@ -699,8 +577,8 @@ export const app = {
         if (state.effectStates[i].enabled) console.log(`  FX[${i}] ENABLED`);
       });
       try{
-        const ack=await BLEService.request(Protocol.createSavePreset(bankIndex, slotIndex, state),b=>b[0]===0x59&&b[1]===0x32&&b[3]===bankIndex&&b[4]===slotIndex);
-        if(ack[2])throw Error('ESP rejected save: '+ack[2]);
+        await BLEService.send(Protocol.createSavePreset(bankIndex,slotIndex,state));
+        View.updateStatus('Preset save request sent');
       }catch(e){View.updateStatus('Preset save failed: '+e.message);return;}
       modal.classList.remove('active');
       modal.style.display = '';
@@ -736,7 +614,7 @@ export const app = {
           this.currentEQPoints.push({ freq: 100, gain: 0, q: 1.4, enabled: true });
         }
         this.currentEQPoints[b] = { freq: f, gain: g, q: q, enabled: (en === 1 || en === true) };
-        if(BLEService.isConnected && BLEService.configReady) BLEService.send(Protocol.createEQUpdate(b, en, f, g, q)).catch(e=>View.updateStatus(e.message));
+        if(BLEService.isConnected) BLEService.send(Protocol.createEQUpdate(b, en, f, g, q)).catch(e=>View.updateStatus(e.message));
       }
     );
   },
@@ -950,55 +828,15 @@ export const app = {
     this._configUploadPromise=this._uploadBundledConfig();
     try{return await this._configUploadPromise;}finally{this._configUploadPromise=null;}
   },
-  async _uploadBundledConfig() {
+  async _uploadBundledConfig(){
     if(!BLEService.isConnected)throw Error('Connect first');
-    await BLEService.waitForConfigurationRead?.();
-    BLEService.beginConfigurationUpload?.();
-    BLEService.configUploading=true;const uploadEpoch=BLEService._epoch;
-    this.webSync?.reset();
-    View.updateStatus('Uploading bundled config.js...');
-    let failed=false;
-    try {
-      const text=Protocol.buildConfigText(this.bundledConfig),bytes=new TextEncoder().encode(text);
-      let offset=0,index=0;
-      while(offset<bytes.length){
-        const {packet,isLast,nextOffset}=Protocol.createConfigChunk(bytes,index,offset,1024);
-        let ack;
-        for(let attempt=0;attempt<3;attempt++){
-          try{ack=await BLEService.request(packet,b=>b[0]===0x53&&b.length===6&&(b[2]|b[3]<<8)===index);break;}
-          catch(e){if(!BLEService.isConnected||BLEService._epoch!==uploadEpoch||attempt===2)throw e;}
-        }
-        if(ack[1]!==0)throw Error('ESP rejected config chunk: '+ack[1]);
-        if(isLast&&(ack[4]|ack[5]<<8)!==crc16(bytes))throw Error('Applied configuration checksum differs');
-        offset=nextOffset;index++;
-      }
-      const checksum=await BLEService.readConfigChecksum();
-      if(checksum!==crc32(bytes))throw Error('Persisted configuration CRC32 differs');
-      const reply=await BLEService._readConfiguration(4000,checksum);
-      if(reply[3]!==1||new TextDecoder().decode(reply.subarray(4))!==text)throw Error('Configuration readback differs');
-      this.deviceConfig=parseDeviceConfig(reply.subarray(3));
-      this.deviceConfigText=text;
-      BLEService.configReady=true;BLEService.configurationError=null;BLEService.lastError=null;
-    }catch(e){
-      failed=true;BLEService.configurationError=e.message;BLEService.lastError=e.message;
-      BLEService._setStatus?.(BLEService._sessionReady?'connected':'recovering');
-      View.updateStatus('Configuration update failed: '+e.message);throw e;
-    }finally{
-      BLEService.configUploading=false;BLEService.configReady=!!BLEService._sessionReady;
-      if(failed&&BLEService._sessionReady&&BLEService._epoch===uploadEpoch)
-        BLEService.readCurrentState().catch(e=>console.warn('[CONFIG] State refresh:',e.message));
+    const bytes=new TextEncoder().encode(Protocol.buildConfigText(this.bundledConfig)),packets=[];
+    for(let offset=0,index=0;offset<bytes.length;index++){
+      const chunk=Protocol.createConfigChunk(bytes,index,offset,160);packets.push(chunk.packet);offset=chunk.nextOffset;
     }
-    // Read exactly one fresh state after verification; its callback starts a
-    // new catalog sync. Config readback itself never starts state/catalog work.
-    try{
-      BLEService._stateReceived=false;
-      await BLEService.readCurrentState();
-      BLEService._setStatus?.('connected');
-      View.updateStatus('Bundled config.js applied, read back and synchronized');
-    }catch(e){
-      View.updateStatus('Configuration applied and verified; state sync failed: '+e.message);
-      throw e;
-    }
+    View.updateStatus('Sending bundled config.js...');
+    await BLEService.sendBatch(packets,(done,total)=>View.updateStatus(`Sending config: ${done}/${total}`));
+    View.updateStatus('Configuration sent to ESP; check the ESP for the result');
   },
 
   // ============================================================
@@ -1023,7 +861,7 @@ export const app = {
     if (btnUpdateConfig) {
       btnUpdateConfig.onclick = async () => {
         if (!BLEService.isConnected) { View.updateStatus('Not connected — connect first'); return; }
-        if (confirm('Upload bundled config.js to ESP and resynchronize?')) {try{await this.sendConfigUpdate();}catch(e){console.warn(e);}}
+        if (confirm('Send bundled config.js to ESP?')) {try{await this.sendConfigUpdate();}catch(e){console.warn(e);}}
       };
     }
 

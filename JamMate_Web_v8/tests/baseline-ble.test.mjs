@@ -1,0 +1,14 @@
+import assert from 'node:assert/strict';
+import {BLEService as ble} from '../js/services/BLEService.js';
+import {Protocol} from '../js/services/Protocol.js';
+let active=0,max=0;const parts=[];
+ble.isConnected=true;ble._epoch=1;ble.characteristic={async writeValueWithResponse(p){active++;max=Math.max(max,active);assert.ok(p.length<=20);parts.push(...p);await new Promise(r=>setImmediate(r));active--;}};
+const a=new Uint8Array(Protocol.createParamUpdate(16,13,2)),b=Uint8Array.from(Protocol.createConfigChunk(new TextEncoder().encode('x'.repeat(180)),0,0,160).packet);
+await Promise.all([ble.send(a),ble.send(b)]);assert.equal(max,1);assert.deepEqual(parts,[...a,...b]);
+parts.length=0;await ble.uploadResource('midi',Uint8Array.from({length:700},(_,i)=>i),'test.mid');
+const ops=[];for(let i=0;i<parts.length;){ops.push(parts[i]);i+=3+parts[i+1]+(parts[i+2]<<8);}assert.deepEqual(ops,[0x90,0x91,0x91,0x92]);
+await assert.rejects(ble.send(Uint8Array.of(1,4,0)),/Invalid baseline/);
+ble.characteristic={async writeValueWithResponse(){throw Error('write rejected');}};
+await assert.rejects(ble.send(a),/write rejected/);assert.equal(ble.isConnected,true);await assert.rejects(ble.send(a),/Reconnect/);
+ble._clear();await assert.rejects(ble.send(a),/disconnected/);
+console.log('PASS baseline browser sender: plain records, serialized confirmed writes, minimum ATT chunks, resource batching, explicit failure without replay or automatic disconnect');

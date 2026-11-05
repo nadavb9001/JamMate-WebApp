@@ -1,5 +1,5 @@
 // ================================================================
-// Protocol.js  —  Domain Command Builders (Wire.js encodes BLE)
+// Protocol.js — baseline raw command records
 //
 // FLAT PARAM CONVENTION (matches config.js):
 //   For any effect, the flat param array is:
@@ -11,10 +11,10 @@
 //   flatParamIndex 1..K  = knob k             value: 0..255
 //   flatParamIndex K+1.. = dropdown d         value: 0..255
 //
-// Domain records are in-process values; Wire.js defines the v8 BLE format.
+// Wire format: command byte, payload length (uint16 LE), payload bytes.
 // ================================================================
 
-import { APP_CONFIG, buildFlatParams } from '../config.js?v=8.5';
+import { APP_CONFIG, buildFlatParams } from '../config.js?v=8.6';
 
 export const Protocol = {
   CMD: {
@@ -222,7 +222,7 @@ export const Protocol = {
       const tab = APP_CONFIG.tabs[id];
       if (tab && flatCount >= 1) {
         state.effectStates[id].enabled = view.getUint8(off) !== 0;
-        const [K,D] = Protocol.deviceLayout?.[id]||[tab.params.knobs.length,tab.params.dropdowns.length];
+        const K=tab.params.knobs.length,D=tab.params.dropdowns.length;
         for (let k = 0; k < Math.min(K,tab.params.knobs.length) && (1 + k) < flatCount; k++) {
           state.effectParams[id][`knob${k}`] = view.getUint8(off + 1 + k);
         }

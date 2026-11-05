@@ -15,6 +15,8 @@ try:
   browser=p.chromium.launch(executable_path='/usr/bin/chromium',headless=True,args=['--no-sandbox'])
   page=browser.new_page(viewport={'width':390,'height':844});errors=[]
   page.on('pageerror',lambda e:errors.append(str(e)))
+  mismatch=os.environ.get('JAMMATE_TEST_CONFIG_MISMATCH')=='1'
+  if mismatch:page.add_init_script('window.__configMismatch=true;')
   no_notify=os.environ.get('JAMMATE_TEST_NO_NOTIFY')=='1'
   lost_controls=os.environ.get('JAMMATE_TEST_LOST_CONTROLS')=='1'
   if no_notify:page.add_init_script('window.__noNotify=true;')
@@ -24,12 +26,17 @@ try:
   assert page.locator('#iirCanvas').is_visible()
   assert not errors,errors
   page.evaluate('''async () => {
-    const {app}=await import('./js/app.js?v=8.3');
-    const {BLEService:ble}=await import('./js/services/BLEService.js?v=8.3');
+    const {app}=await import('./js/app.js?v=8.4');
+    const {BLEService:ble}=await import('./js/services/BLEService.js?v=8.4');
     const {Protocol}=await import('./js/services/Protocol.js');
     const {Receiver,packet,unpack,crc16,DATA,ACK,HELLO}=await import('./js/services/Wire.js');
     window.__app=app;window.__ble=ble;window.__writes=[];
     let listener,tx=0,session=0,config=Protocol.buildConfigText(app.config),pending=[];
+    if(window.__configMismatch){
+      const lines=config.split('\\n');const fields=lines[17].split('|');
+      fields[1]=fields[1].split(',').slice(0,8).join(',');lines[17]=fields.join('|');config=lines.join('\\n');
+    }
+    window.__peerConfig=()=>config;
     let txTail=Promise.resolve(),ackWaiter=null,dropped=false,resource=null,savedResource=null,peerConnected=false,lastTx=Uint8Array.of(0),lastRx=Uint8Array.of(0);
     const emitMessage=(op,data)=>{
       const id=++tx,queuedSession=session;
@@ -95,6 +102,20 @@ try:
     }};
     await ble._connectGatt();
   }''')
+  if mismatch:
+   assert page.evaluate('window.__ble.isConnected&&!window.__ble.configReady')
+   assert page.evaluate("window.__statuses.includes('configuration-required')")
+   assert page.evaluate('window.__writes.every(p=>![0x30,0x37,0x39].includes(p[0]))')
+   page.evaluate("async()=>{let blocked=false;try{await window.__ble.sendMessage(0x25,Uint8Array.of(1,120,0));}catch(e){blocked=true;}if(!blocked)throw Error('Controls must stay locked until configuration is verified');}")
+   # Use the existing Setup action with its confirmation, as on the phone.
+   page.locator('#jmBack').click();page.locator('#jmBack').click()
+   page.locator('[data-screen="setup"]').click()
+   page.once('dialog',lambda dialog:dialog.accept())
+   page.locator('#btnUpdateConfig').click()
+   page.wait_for_function('window.__ble.configReady&&window.__app._configUploadPromise===null',timeout=120000)
+   page.locator('#jmBack').click();page.locator('[data-screen="fx"]').click();page.locator('[data-open-fx="5"]:visible').click()
+   assert page.evaluate("window.__writes.filter(p=>p[0]===0x30).length===1")
+   assert page.evaluate('window.__peerConfig()===window.__app.deviceConfigText')
   page.wait_for_function('window.__ble.configReady',timeout=120000)
   print('V8 CONFIG VERIFIED; waiting for 35 preset slots',flush=True)
   page.wait_for_function('window.__app.webSync.syncReceived===35',timeout=120000)
@@ -154,14 +175,14 @@ try:
     await window.__ble.uploadResource('nam',bytes,'model.nam',{items:1871});
     const back=await window.__ble.downloadResource('nam');
     if(back.length!==bytes.length||back.some((v,i)=>v!==bytes[i]))throw Error('resource round trip failed');
-    window.__ble.device.gatt.disconnect();
+    window.__statuses=[];window.__ble.device.gatt.disconnect();
   }""")
-  page.wait_for_function("window.__statuses.filter(s=>s==='connected').length===2",timeout=30000)
+  page.wait_for_function("window.__statuses.filter(s=>s==='connected').length===1",timeout=30000)
   assert page.evaluate("window.__statuses.includes('reconnecting')")
   assert page.evaluate('window.__ble.configReady')
   assert not errors,errors
   page.evaluate('window.__ble.shouldReconnect=false;window.__ble._handleDisconnect()')
   browser.close()
-  print('PASS browser no_notifications='+str(no_notify)+' lost_controls='+str(lost_controls)+': config read/update, 35 presets, resource round trip, reconnect, idle silence, actual looper enable/disable/REC'+('' if no_notify else ', CPU display and silent remote edits'))
+  print('PASS browser config_mismatch='+str(mismatch)+' no_notifications='+str(no_notify)+' lost_controls='+str(lost_controls)+': config read/update, 35 presets, resource round trip, reconnect, idle silence, actual looper enable/disable/REC'+('' if no_notify else ', CPU display and silent remote edits'))
 finally:
  server.shutdown();server.server_close()

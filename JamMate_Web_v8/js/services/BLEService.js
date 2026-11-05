@@ -1,6 +1,6 @@
-import {uploadResource,downloadResource} from './Resources.js?v=8.3';
-import {HEADER,MAX,DATA,ACK,HELLO,crc16,packet,unpack,Receiver} from './Wire.js?v=8.3';
-import {Protocol} from './Protocol.js?v=8.3';
+import {uploadResource,downloadResource} from './Resources.js?v=8.4';
+import {HEADER,MAX,DATA,ACK,HELLO,crc16,packet,unpack,Receiver} from './Wire.js?v=8.4';
+import {Protocol} from './Protocol.js?v=8.4';
 const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 const deadline=(action,label,ms=5000)=>{
  let timer;return Promise.race([Promise.resolve().then(action),new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error(label+' timed out')),ms);})]).finally(()=>clearTimeout(timer));
@@ -11,7 +11,7 @@ export const BLEService={
  CHARACTERISTIC_UUID:'8a8e0002-8a8e-4800-8000-4a616d4d6174',
  NOTIFY_UUID:'8a8e0003-8a8e-4800-8000-4a616d4d6174',
  device:null,isConnected:false,configReady:false,isSyncing:false,shouldReconnect:false,
- lastError:null,configurationError:null,onStatusChange:null,onDataReceived:null,onConfigProgress:null,
+ configUploading:false,_sessionReady:false,lastError:null,configurationError:null,onStatusChange:null,onDataReceived:null,onConfigProgress:null,
  _session:0,_epoch:0,_id:0,_att:20,_window:4,_rx:new Receiver(),_queue:[],_waiters:new Set(),
  _gattQueue:[],_gattBusy:false,_sending:false,_reconnecting:false,_pingBlocked:false,
  rxNotifications:0,rxRejected:0,rxReadbacks:0,
@@ -42,7 +42,7 @@ export const BLEService={
   await deadline(()=>notify.startNotifications(),'Notification subscription');check();
   this._session=crypto.getRandomValues(new Uint32Array(1))[0]||1;
   this._att=20;this._rx.reset();this._id=0;this.rxNotifications=this.rxRejected=0;
-  this.isConnected=true;this._lastNotifyAt=Date.now();this._recoverUntil=Date.now()+6000;this._usingReadback=false;this._readBusy=false;this.rxReadbacks=0;
+  this._sessionReady=false;this.isConnected=true;this._lastNotifyAt=Date.now();this._recoverUntil=Date.now()+6000;this._usingReadback=false;this._readBusy=false;this.rxReadbacks=0;
   clearTimeout(this._readTimer);this._readTimer=null;this._armReadback();
   this.configReady=false;this.configurationError=null;
   this._setStatus('syncing');
@@ -53,9 +53,13 @@ export const BLEService={
   if(caps.length!==7||caps[3]!==8)throw Error('ESP does not support JamMate v8');
   if(!(caps[4]&0x80))throw Error('Install firmware v8.3 for notification recovery');
   this._window=Math.max(1,Math.min(4,caps[4]&15));this._att=Math.max(20,Math.min(244,caps[5]|caps[6]<<8));
+  this._sessionReady=true;
   console.log(`[V8] session ready: ATT=${this._att}, window=${this._window}`);
-  await this._readConfiguration();
-  if(!this.configReady)throw Error(this.configurationError||'Device configuration not verified');
+  try{await this._readConfiguration();}catch(e){if(!this.isConnected)throw e;this.configurationError=e.message;}
+  if(!this.configReady){
+    this.lastError=this.configurationError||'Device configuration not verified';
+    this._setStatus('configuration-required');return;
+  }
   // The existing config callback requests current state. Wait for its completion.
   if(!this._stateReceived)await this._response(b=>b[0]===0x31,15000);
   if(epoch!==this._epoch)throw Error('Connection changed during sync');
@@ -130,7 +134,7 @@ export const BLEService={
  },
  sendMessage(op,data=new Uint8Array(),active=()=>true){
   if(!this.isConnected)return Promise.reject(Error('BLE disconnected'));
-  if(!this.configReady&&![0x01,0x52,0x54].includes(op))return Promise.reject(Error(this.configurationError||'Reading device configuration'));
+  if((!this.configReady||this.configUploading)&&![0x01,0x52,0x54].includes(op))return Promise.reject(Error(this.configurationError||'Reading device configuration'));
   if(data.length>MAX)return Promise.reject(Error('Transfer block exceeds negotiated message bound'));
   if(this._queue.length>=128)return Promise.reject(Error('Device command queue is full'));
   this._recoverUntil=Date.now()+6000;
@@ -191,12 +195,17 @@ export const BLEService={
   if(op===0x55&&data[0]===2)return; // config pages only reach their assembler
   this.onDataReceived?.({cmd:op,dataView:new DataView(data.buffer,data.byteOffset,data.length)});
  },
+ beginConfigurationUpload(){
+  if(!this.isConnected||!this._sessionReady)throw Error('Wait for the BLE session before uploading configuration');
+  this.configUploading=true;this.configReady=false;this._stateReceived=false;this._stateRecovery=null;
+  const keep=[];for(const q of this._queue){if(q.op===0x52||q.op===0x54)keep.push(q);else q.reject(Error('Configuration upload paused normal synchronization'));}this._queue=keep;
+ },
  uploadResource(kind,bytes,name,options){return uploadResource(this,kind,bytes,name,options);},
  downloadResource(kind,options){return downloadResource(this,kind,options);},
  async readCurrentState(timeout=15000){return this.request(Protocol.createGetState(),b=>b[0]===0x31,timeout);},
  async disconnect(){this.shouldReconnect=false;this.device?.gatt.disconnect();this._clear();this._setStatus('disconnected');},
  _clear(){
-  ++this._epoch;clearTimeout(this._readTimer);this._readTimer=null;this.isConnected=false;this.configReady=false;this._stateReceived=false;this._stateRecovery=null;this._session=0;this._rx.reset();this._wake?.();
+  ++this._epoch;clearTimeout(this._readTimer);this._readTimer=null;this.isConnected=false;this.configReady=false;this.configUploading=false;this._sessionReady=false;this._stateReceived=false;this._stateRecovery=null;this._session=0;this._rx.reset();this._wake?.();
   if(this.notifyCharacteristic&&this._dataListener)this.notifyCharacteristic.removeEventListener('characteristicvaluechanged',this._dataListener);
   this.characteristic=this.notifyCharacteristic=null;
   for(const q of this._gattQueue.splice(0))q.reject(Error('BLE disconnected'));

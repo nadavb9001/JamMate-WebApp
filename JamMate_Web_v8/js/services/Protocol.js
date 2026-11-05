@@ -14,7 +14,7 @@
 // Domain records are in-process values; Wire.js defines the v8 BLE format.
 // ================================================================
 
-import { APP_CONFIG, buildFlatParams } from '../config.js?v=8.3';
+import { APP_CONFIG, buildFlatParams } from '../config.js?v=8.4';
 
 export const Protocol = {
   CMD: {

@@ -1,8 +1,18 @@
-# JamMate v8.3
+# JamMate v8.4
 
 Use `JamMate_Web_v8/` with the v8 firmware `src/` and `include/` folders. The two projects are on `codex/jammate-v8`; v7 remains available separately. Build using the existing PlatformIO project, flash firmware, and deploy the complete web v8 folder. Do not erase or replace LittleFS. No PlatformIO configuration change is required.
 
 Web and LCD layouts, artwork, styles, icons, and control arrangements are preserved. `js/config.js` is byte-identical to v7. The paged configuration read, schema checking, ordered upload, flash read verification, applied checksum, and configuration readback are retained. Expression ADC polling remains removed. Audio capture/MP3 recording is deferred at the user's request.
+
+## 8.4 config upload and mismatch recovery
+
+A GNRC 8-knob/2-dropdown device can establish BLE but cannot decode the 10-knob web layout safely. It now stays connected in configuration repair mode instead of failing the connection. Controls and automatic preset sync remain locked; use Setup's existing upload configuration action to repair it.
+
+Uploads use an independent copy of the bundled `js/config.js`, so device-provided labels/options cannot overwrite the intended upload source. A single upload runs at a time, pauses normal sync, checks each acknowledgement and final applied checksum, and verifies the complete file by reading it back. Only then does the app request fresh state and restart preset synchronization. Readback during upload cannot start concurrent state/catalog transfers. Upload errors leave controls locked and explain the failure.
+
+The ESP validates the complete configuration before writing it, applies it directly into its existing fixed display label pool without allocating per-line Strings or reading another whole-file copy, and reports success only after the runtime layout matches. The upload staging buffer is fixed at 4097 bytes. The file format, config.js, chunk protocol and DSP protocol are unchanged. Historical GNRC 8/2 presets preserve their dropdown values when loaded with the 10/2 layout; new knobs start at zero.
+
+Deploy the complete v8.4 web folder and flash the matching firmware without erasing LittleFS. Check the console says `Web build v8.4`, connect, and if configuration repair is required use Setup to upload the bundled configuration. Software tests exercise the reported GNRC mismatch, upload/readback, normal sync and reconnect; physical ESP/phone validation is still required.
 
 ## 8.3 recover missing notifications without disconnecting on live state
 

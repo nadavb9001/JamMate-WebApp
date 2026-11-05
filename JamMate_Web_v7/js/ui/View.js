@@ -1,6 +1,6 @@
-import { Knob } from './Knob.js?v=8.4.1';
-import { IIRDesigner } from './IIRDesigner.js?v=8.4.1';
-import { upgradeSelects } from './CustomSelect.js?v=8.4.1';
+import { Knob } from './Knob.js?v=8.5';
+import { IIRDesigner } from './IIRDesigner.js?v=8.5';
+import { upgradeSelects } from './CustomSelect.js?v=8.5';
 
 export const View = {
     init(app) {
@@ -33,7 +33,7 @@ export const View = {
         switch (status) {
             case 'connected':    this.ledEl.classList.add('connected');  this.updateStatus('Connected to JamMate'); break;
             case 'connecting':   this.ledEl.classList.add('connecting'); this.updateStatus('Connecting…');         break;
-            case 'configuration-required': this.ledEl.classList.add('connected');this.updateStatus('Connected — upload bundled config.js in Setup to repair the configuration');break;
+            case 'recovering': this.ledEl.classList.add('connecting');this.updateStatus('Recovering BLE session…');break;
             case 'syncing': this.ledEl.classList.add('connecting'); this.updateStatus('Verifying device configuration and state…'); break;
             case 'reconnecting': this.ledEl.classList.add('connecting'); this.updateStatus('Reconnecting…'); break;
             case 'disconnected': this.updateStatus('Disconnected');                                                break;

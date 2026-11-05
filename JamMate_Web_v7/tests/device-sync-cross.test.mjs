@@ -7,7 +7,7 @@ import {fileURLToPath} from 'node:url';
 import {APP_CONFIG} from '../js/config.js';
 import {Protocol} from '../js/services/Protocol.js';
 import {WebSync} from '../js/services/WebSync.js';
-import {readDeviceConfig} from '../js/services/ConfigSync.js';
+import {parseDeviceConfig} from '../js/services/ConfigSync.js';
 const esp=process.env.JAMMATE_CTRL_DIR||fileURLToPath(new URL('../../../JamMate_Ctrl/',import.meta.url));
 const temp=fs.mkdtempSync(path.join(os.tmpdir(),'jammate-cross-'));
 try{
@@ -38,7 +38,7 @@ try{
  const canonical=fs.readFileSync(path.join(esp,'include/JmDefaultConfig.hpp'),'utf8').split('R"JMCFG(')[1].split(')JMCFG"')[0];
  assert.equal(canonical,Protocol.buildConfigText(APP_CONFIG),'firmware defaults must match web layout/labels/options');
  const clone=structuredClone(APP_CONFIG);
- readDeviceConfig(Uint8Array.from([1,...new TextEncoder().encode(canonical)]),clone);
+ assert.equal(parseDeviceConfig(Uint8Array.from([1,...new TextEncoder().encode(canonical)])).text,canonical);
  assert.deepEqual(clone,APP_CONFIG);
  const requests=[];globalThis.localStorage={getItem:()=>null,setItem(){}};
  const sync=new WebSync({send:b=>requests.push(b)});sync.start();

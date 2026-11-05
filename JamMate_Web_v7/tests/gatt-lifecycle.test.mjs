@@ -16,8 +16,8 @@ try{
  ble.shouldReconnect=false;ble.device={gatt:{disconnect(){}}};
  let late;ble.characteristic={writeValueWithoutResponse:()=>new Promise(r=>late=r)};
  const stuck=assert.rejects(ble._write(frame(DATA,4)),/BLE write timed out/);
- const queued=assert.rejects(ble._write(frame(ACK,5)),/disconnected/);await Promise.all([stuck,queued]);
- assert.equal(ble.isConnected,false);assert.equal(ble._gattQueue.length,0);
+ const queued=assert.rejects(ble._write(frame(ACK,5)),/Session reset/);await Promise.all([stuck,queued]);
+ assert.equal(ble.isConnected,true);assert.equal(ble.state,0);assert.equal(ble._gattQueue.length,0);
  ble.isConnected=true;const fresh={writeValueWithResponse:async()=>{}};ble.characteristic=fresh;
  await ble._write(frame(ACK,6));late();await new Promise(r=>setImmediate(r));assert.equal(ble.characteristic,fresh);assert.equal(ble.isConnected,true);
  ble._clear();ble.shouldReconnect=true;

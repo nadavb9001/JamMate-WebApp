@@ -13,17 +13,18 @@
  *     flatIdx 1..K   → knob k-1   value: 0–255
  *     flatIdx K+1..  → dropdown d value: selectedIndex
  */
-import { NamLoader } from './NamLoader.js?v=8.4.1';
-import { NamBrowserV2b } from './ui/NamBrowserV2b.js?v=8.4.1';
-import { APP_CONFIG } from './config.js?v=8.4.1';
-import { View } from './ui/View.js?v=8.4.1';
-import { Knob } from './ui/Knob.js?v=8.4.1';
-import { BLEService } from './services/BLEService.js?v=8.4.1';
-import { WebSync, crc16 } from './services/WebSync.js?v=8.4.1';
-import { readDeviceConfig } from './services/ConfigSync.js?v=8.4.1';
-import { Protocol } from './services/Protocol.js?v=8.4.1';
-import { upgradeSelects } from './ui/CustomSelect.js?v=8.4.1';
-import { installThemeManager } from './ui/ThemeManager.js?v=8.4.1';
+import { NamLoader } from './NamLoader.js?v=8.5';
+import { NamBrowserV2b } from './ui/NamBrowserV2b.js?v=8.5';
+import { APP_CONFIG } from './config.js?v=8.5';
+import { View } from './ui/View.js?v=8.5';
+import { Knob } from './ui/Knob.js?v=8.5';
+import { BLEService } from './services/BLEService.js?v=8.5';
+import { WebSync, crc16 } from './services/WebSync.js?v=8.5';
+import { parseDeviceConfig } from './services/ConfigSync.js?v=8.5';
+import { Protocol } from './services/Protocol.js?v=8.5';
+import {crc32} from './services/Resources.js?v=8.5';
+import { upgradeSelects } from './ui/CustomSelect.js?v=8.5';
+import { installThemeManager } from './ui/ThemeManager.js?v=8.5';
 
 const PRESETS_LOCKED = false;
 
@@ -98,7 +99,7 @@ export const app = {
     this.loopLength   = 0;
     this.loopTracks   = 1;
 
-    console.info("[JamMate] Web build v8.4.1");
+    console.info("[JamMate] Web build v8.5");
     View.init(this);
     this.webSync = new WebSync({
       send: packet => BLEService.send(packet).catch(e => console.warn('[SYNC] send',e)),
@@ -127,7 +128,7 @@ export const app = {
     BLEService.onStatusChange = (status) => {
       this.connectionError=BLEService.lastError||null;
       View.updateConnectionStatus(status);
-      if(status==='disconnected'||status==='reconnecting') {
+      if(status==='disconnected'||status==='reconnecting'||status==='recovering') {
         this.webSync.reset();this._remoteBank=null;this._remoteSlot=null;
         window.JamMateMobile?.setTelemetry({cpu:null});
         View.updateTuner(0);
@@ -165,21 +166,13 @@ export const app = {
         const { cmd, dataView } = packet;
 
         if(cmd===0x55){
-          if(BLEService.configUploading)return;
-          try {
+          try{
             const bytes=new Uint8Array(dataView.buffer,dataView.byteOffset,dataView.byteLength);
-            this.deviceConfigText=readDeviceConfig(bytes,this.config);
-            BLEService.configReady=true;BLEService.configurationError=null;
-            if(!this._readingDeviceState){
-              this._readingDeviceState=BLEService.readCurrentState()
-                .catch(e=>{if(!BLEService.configUploading)View.updateStatus('Connected, but ESP state sync failed: '+e.message);})
-                .finally(()=>{this._readingDeviceState=null;});
-            }
-            View.updateStatus('Device configuration verified');
-          }catch(e){BLEService.configReady=false;BLEService.configurationError=e.message;console.warn('[CONFIG]',e.message);View.updateStatus(e.message);}
+            this.deviceConfig=parseDeviceConfig(bytes);this.deviceConfigText=this.deviceConfig.text;
+          }catch(e){BLEService.configurationError=e.message;console.warn('[CONFIG]',e.message);}
           return;
         }
-        if(!BLEService.configReady)return;
+        if(!BLEService.configReady||BLEService.configUploading)return;
         if(cmd===0x49&&dataView.byteLength===11){
           const b=new Uint8Array(dataView.buffer,dataView.byteOffset,11);
           this.usbMode=b[2];this.uartEnabled=!!b[3];this.utilState.noise={enabled:!!b[4],level:b[5]};this.utilState.tone={enabled:!!b[6],level:b[7],freq:b[8]|b[9]<<8};this.presetsLocked=!!b[10];
@@ -959,34 +952,42 @@ export const app = {
   },
   async _uploadBundledConfig() {
     if(!BLEService.isConnected)throw Error('Connect first');
+    await BLEService.waitForConfigurationRead?.();
     BLEService.beginConfigurationUpload?.();
-    BLEService.configUploading=true;BLEService.configReady=false;
+    BLEService.configUploading=true;const uploadEpoch=BLEService._epoch;
     this.webSync?.reset();
     View.updateStatus('Uploading bundled config.js...');
+    let failed=false;
     try {
       const text=Protocol.buildConfigText(this.bundledConfig),bytes=new TextEncoder().encode(text);
       let offset=0,index=0;
       while(offset<bytes.length){
-        const {packet,isLast,nextOffset}=Protocol.createConfigChunk(bytes,index,offset,160);
+        const {packet,isLast,nextOffset}=Protocol.createConfigChunk(bytes,index,offset,1024);
         let ack;
         for(let attempt=0;attempt<3;attempt++){
           try{ack=await BLEService.request(packet,b=>b[0]===0x53&&b.length===6&&(b[2]|b[3]<<8)===index);break;}
-          catch(e){if(!BLEService.isConnected||attempt===2)throw e;}
+          catch(e){if(!BLEService.isConnected||BLEService._epoch!==uploadEpoch||attempt===2)throw e;}
         }
         if(ack[1]!==0)throw Error('ESP rejected config chunk: '+ack[1]);
         if(isLast&&(ack[4]|ack[5]<<8)!==crc16(bytes))throw Error('Applied configuration checksum differs');
         offset=nextOffset;index++;
       }
-      const reply=await BLEService._readConfiguration();
+      const checksum=await BLEService.readConfigChecksum();
+      if(checksum!==crc32(bytes))throw Error('Persisted configuration CRC32 differs');
+      const reply=await BLEService._readConfiguration(4000,checksum);
       if(reply[3]!==1||new TextDecoder().decode(reply.subarray(4))!==text)throw Error('Configuration readback differs');
-      readDeviceConfig(reply.subarray(3),this.config);
+      this.deviceConfig=parseDeviceConfig(reply.subarray(3));
       this.deviceConfigText=text;
       BLEService.configReady=true;BLEService.configurationError=null;BLEService.lastError=null;
     }catch(e){
-      BLEService.configReady=false;BLEService.configurationError=e.message;BLEService.lastError=e.message;
-      BLEService._setStatus?.('configuration-required');
+      failed=true;BLEService.configurationError=e.message;BLEService.lastError=e.message;
+      BLEService._setStatus?.(BLEService._sessionReady?'connected':'recovering');
       View.updateStatus('Configuration update failed: '+e.message);throw e;
-    }finally{BLEService.configUploading=false;}
+    }finally{
+      BLEService.configUploading=false;BLEService.configReady=!!BLEService._sessionReady;
+      if(failed&&BLEService._sessionReady&&BLEService._epoch===uploadEpoch)
+        BLEService.readCurrentState().catch(e=>console.warn('[CONFIG] State refresh:',e.message));
+    }
     // Read exactly one fresh state after verification; its callback starts a
     // new catalog sync. Config readback itself never starts state/catalog work.
     try{

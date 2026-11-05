@@ -13,17 +13,17 @@
  *     flatIdx 1..K   → knob k-1   value: 0–255
  *     flatIdx K+1..  → dropdown d value: selectedIndex
  */
-import { NamLoader } from './NamLoader.js?v=8.4';
-import { NamBrowserV2b } from './ui/NamBrowserV2b.js?v=8.4';
-import { APP_CONFIG } from './config.js?v=8.4';
-import { View } from './ui/View.js?v=8.4';
-import { Knob } from './ui/Knob.js?v=8.4';
-import { BLEService } from './services/BLEService.js?v=8.4';
-import { WebSync, crc16 } from './services/WebSync.js?v=8.4';
-import { readDeviceConfig } from './services/ConfigSync.js?v=8.4';
-import { Protocol } from './services/Protocol.js?v=8.4';
-import { upgradeSelects } from './ui/CustomSelect.js?v=8.4';
-import { installThemeManager } from './ui/ThemeManager.js?v=8.4';
+import { NamLoader } from './NamLoader.js?v=8.4.1';
+import { NamBrowserV2b } from './ui/NamBrowserV2b.js?v=8.4.1';
+import { APP_CONFIG } from './config.js?v=8.4.1';
+import { View } from './ui/View.js?v=8.4.1';
+import { Knob } from './ui/Knob.js?v=8.4.1';
+import { BLEService } from './services/BLEService.js?v=8.4.1';
+import { WebSync, crc16 } from './services/WebSync.js?v=8.4.1';
+import { readDeviceConfig } from './services/ConfigSync.js?v=8.4.1';
+import { Protocol } from './services/Protocol.js?v=8.4.1';
+import { upgradeSelects } from './ui/CustomSelect.js?v=8.4.1';
+import { installThemeManager } from './ui/ThemeManager.js?v=8.4.1';
 
 const PRESETS_LOCKED = false;
 
@@ -98,7 +98,7 @@ export const app = {
     this.loopLength   = 0;
     this.loopTracks   = 1;
 
-    console.info("[JamMate] Web build v8.4");
+    console.info("[JamMate] Web build v8.4.1");
     View.init(this);
     this.webSync = new WebSync({
       send: packet => BLEService.send(packet).catch(e => console.warn('[SYNC] send',e)),

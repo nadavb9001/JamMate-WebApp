@@ -1,4 +1,4 @@
-const CACHE='jammate-v8-ui-8.4';
+const CACHE='jammate-v8-ui-8.4.1';
 const SHELL=['./','./index.html','./manifest.webmanifest','./css/mobile-neon.css','./css/medieval.css','./css/metal.css','./js/ui/ThemeManager.js','./assets/medieval-filigree.svg','./assets/medieval-crest.svg','./assets/metal-grain.svg','./css/main.css','./css/components.css','./css/nam-v2b.css','./js/app.js','./js/services/WebSync.js','./js/services/Wire.js','./js/services/Resources.js','./js/services/ConfigSync.js','./js/services/BLEService.js','./js/services/Protocol.js','./js/ui/mobile-shell.js','./js/ui/IIRDesigner.js','./js/ui/CustomSelect.js'];
 self.addEventListener('install',event=>{event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(SHELL.map(url=>new Request(url,{cache:"reload"})))));self.skipWaiting();});
 self.addEventListener('activate',event=>{event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k.startsWith('jammate-v8-ui-')&&k!==CACHE).map(k=>caches.delete(k)))));self.clients.claim();});

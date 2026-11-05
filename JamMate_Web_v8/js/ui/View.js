@@ -1,6 +1,6 @@
-import { Knob } from './Knob.js?v=8.4';
-import { IIRDesigner } from './IIRDesigner.js?v=8.4';
-import { upgradeSelects } from './CustomSelect.js?v=8.4';
+import { Knob } from './Knob.js?v=8.4.1';
+import { IIRDesigner } from './IIRDesigner.js?v=8.4.1';
+import { upgradeSelects } from './CustomSelect.js?v=8.4.1';
 
 export const View = {
     init(app) {

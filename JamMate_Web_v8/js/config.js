@@ -216,7 +216,7 @@ export const APP_CONFIG = {
     "division":         ["1/32","1/16","1/16t","1/16d","1/8","1/8t","1/8d","1/4","1/4t","1/4d","1/2","1"],
     "generic1":         ["A1","B1","C1","D1","E1"],
     "generic2":         ["A2","B2","C2","D2","E2"],
-    "ReverbEngine":     ["Dattorro","FDN"],
+    "ReverbEngine":     ["Dattorro","FDN","Vintage"],
     "ReverbType":       ["None","Room","Hall","Plate","Spring","Pads"],
     "shift_direction":  ["up","down"],
     "shift_pedal_mode": ["Off","Free","Half","Full","Snap"],

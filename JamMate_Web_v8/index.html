@@ -2,6 +2,9 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
+  <style>/* Hide backing controls before first paint; the mobile shell owns the visible UI. */
+    #appShell,#status-bar{visibility:hidden}
+  </style>
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>JamMate · Stage Controller</title>
   <meta name="theme-color" content="#030b19" />
@@ -185,10 +188,9 @@
     </div>
   </div>
 
-  <script src="./js/ui/easy-popup.js"></script>
   <script type="module">
-    import { app } from './js/app.js?v=8.4.1';
-    import { installMobileShell } from './js/ui/mobile-shell.js?v=8.4.1';
+    import { app } from './js/app.js?v=8.5';
+    import { installMobileShell } from './js/ui/mobile-shell.js?v=8.5';
     window.app = app;
     document.addEventListener('DOMContentLoaded', () => {
       app.init();

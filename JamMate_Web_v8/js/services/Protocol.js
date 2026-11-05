@@ -14,7 +14,7 @@
 // Domain records are in-process values; Wire.js defines the v8 BLE format.
 // ================================================================
 
-import { APP_CONFIG, buildFlatParams } from '../config.js?v=8.4.1';
+import { APP_CONFIG, buildFlatParams } from '../config.js?v=8.5';
 
 export const Protocol = {
   CMD: {
@@ -222,12 +222,11 @@ export const Protocol = {
       const tab = APP_CONFIG.tabs[id];
       if (tab && flatCount >= 1) {
         state.effectStates[id].enabled = view.getUint8(off) !== 0;
-        const K = tab.params.knobs.length;
-        const D = tab.params.dropdowns.length;
-        for (let k = 0; k < K && (1 + k) < flatCount; k++) {
+        const [K,D] = Protocol.deviceLayout?.[id]||[tab.params.knobs.length,tab.params.dropdowns.length];
+        for (let k = 0; k < Math.min(K,tab.params.knobs.length) && (1 + k) < flatCount; k++) {
           state.effectParams[id][`knob${k}`] = view.getUint8(off + 1 + k);
         }
-        for (let d = 0; d < D && (1 + K + d) < flatCount; d++) {
+        for (let d = 0; d < Math.min(D,tab.params.dropdowns.length) && (1 + K + d) < flatCount; d++) {
           state.effectParams[id][`dropdown${d}`] = view.getUint8(off + 1 + K + d);
         }
       }

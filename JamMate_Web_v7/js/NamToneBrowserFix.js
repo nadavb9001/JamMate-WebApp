@@ -12,8 +12,8 @@
  * <script type="module" src="./js/NamSuccess.js"></script>
  * <script type="module" src="./js/NamToneBrowserFix.js"></script>
  */
-import { app } from './app.js?v=8.5';
-import { NamLoader } from './NamLoader.js?v=8.5';
+import { app } from './app.js?v=8.6';
+import { NamLoader } from './NamLoader.js?v=8.6';
 
 const FIX_ID = 'nam-tone-browser-fix-style';
 

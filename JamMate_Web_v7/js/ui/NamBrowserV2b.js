@@ -3,7 +3,7 @@
  * TONE3000-inspired selection UX: real tone thumbnails, pack details and
  * explicit A2 model selection. NamLoader retains OAuth, BLE and validation.
  */
-import { BLEService } from '../services/BLEService.js?v=8.5';
+import { BLEService } from '../services/BLEService.js?v=8.6';
 
 const $ = id => document.getElementById(id);
 const txt = (el, value) => { if (el) el.textContent = String(value ?? ''); return el; };
@@ -308,7 +308,7 @@ export const NamBrowserV2b = {
             (pct,msg) => this.loader._updateUIProgress(pct,msg),
             (ok,msg,details) => {
               this.loader._handleDone(ok,msg,details);
-              this.setDetailNotice(ok ? `${details?.name || chosen.name} loaded on JamMate` : (msg || 'Transfer failed'), !ok);
+              this.setDetailNotice(ok ? `${details?.name || chosen.name} sent to JamMate` : (msg || 'Transfer failed'), !ok);
             }
           );
         } finally {

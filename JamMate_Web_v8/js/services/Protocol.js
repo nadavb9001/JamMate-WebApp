@@ -14,7 +14,7 @@
 // Wire format: command byte, payload length (uint16 LE), payload bytes.
 // ================================================================
 
-import { APP_CONFIG, buildFlatParams } from '../config.js?v=8.6';
+import { APP_CONFIG, buildFlatParams } from '../config.js?v=8.7';
 
 export const Protocol = {
   CMD: {
@@ -170,7 +170,7 @@ export const Protocol = {
   // Splits flat params back into effectStates / effectParams using
   // APP_CONFIG tab definitions loaded at runtime.
   // ----------------------------------------------------------------
-  deserializeState(buffer) {
+  deserializeState(buffer,layout=null) {
     const view = new DataView(buffer);
     let off    = 0;
     const len  = buffer.byteLength;
@@ -222,7 +222,7 @@ export const Protocol = {
       const tab = APP_CONFIG.tabs[id];
       if (tab && flatCount >= 1) {
         state.effectStates[id].enabled = view.getUint8(off) !== 0;
-        const K=tab.params.knobs.length,D=tab.params.dropdowns.length;
+        const [K,D]=layout?.[id]||[tab.params.knobs.length,tab.params.dropdowns.length];
         for (let k = 0; k < Math.min(K,tab.params.knobs.length) && (1 + k) < flatCount; k++) {
           state.effectParams[id][`knob${k}`] = view.getUint8(off + 1 + k);
         }

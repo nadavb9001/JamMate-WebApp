@@ -2,8 +2,8 @@ from playwright.sync_api import sync_playwright
 from pathlib import Path
 import json
 base=Path(__file__).resolve().parent.parent
-js=(base/'js/ui/mobile-shell.js').read_text().replace('?v=8.6','').replace('export const FX_ORDER','const FX_ORDER').replace('export const BANKS','const BANKS').replace('export function installMobileShell','function installMobileShell') + '\nwindow.__createJamMate=installMobileShell;\n'
-css=(base/'css/mobile-neon.css').read_text().replace('?v=8.6','')
+js=(base/'js/ui/mobile-shell.js').read_text().replace('?v=8.7','').replace('export const FX_ORDER','const FX_ORDER').replace('export const BANKS','const BANKS').replace('export function installMobileShell','function installMobileShell') + '\nwindow.__createJamMate=installMobileShell;\n'
+css=(base/'css/mobile-neon.css').read_text().replace('?v=8.7','')
 with sync_playwright() as p:
  b=p.chromium.launch(headless=True,executable_path='/usr/bin/chromium',args=['--no-sandbox','--disable-dev-shm-usage'])
  for w,h in [(390,844),(320,700),(375,667),(430,932)]:

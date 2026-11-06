@@ -12,7 +12,7 @@
  * <script type="module" src="./js/NamSuccess.js"></script>
  * <script type="module" src="./js/NamTone3000InlineV3.js"></script>
  */
-import { NamLoader } from './NamLoader.js?v=8.6';
+import { NamLoader } from './NamLoader.js?v=8.7';
 
 const STYLE_ID = 'nam-inline-v3-style';
 const PAGE_SIZE = 20;

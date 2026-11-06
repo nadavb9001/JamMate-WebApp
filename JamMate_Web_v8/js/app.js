@@ -13,15 +13,15 @@
  *     flatIdx 1..K   → knob k-1   value: 0–255
  *     flatIdx K+1..  → dropdown d value: selectedIndex
  */
-import { NamLoader } from './NamLoader.js?v=8.6';
-import { NamBrowserV2b } from './ui/NamBrowserV2b.js?v=8.6';
-import { APP_CONFIG } from './config.js?v=8.6';
-import { View } from './ui/View.js?v=8.6';
-import { Knob } from './ui/Knob.js?v=8.6';
-import { BLEService } from './services/BLEService.js?v=8.6';
-import { Protocol } from './services/Protocol.js?v=8.6';
-import { upgradeSelects } from './ui/CustomSelect.js?v=8.6';
-import { installThemeManager } from './ui/ThemeManager.js?v=8.6';
+import { NamLoader } from './NamLoader.js?v=8.7';
+import { NamBrowserV2b } from './ui/NamBrowserV2b.js?v=8.7';
+import { APP_CONFIG } from './config.js?v=8.7';
+import { View } from './ui/View.js?v=8.7';
+import { Knob } from './ui/Knob.js?v=8.7';
+import { BLEService } from './services/BLEService.js?v=8.7';
+import { Protocol } from './services/Protocol.js?v=8.7';
+import { upgradeSelects } from './ui/CustomSelect.js?v=8.7';
+import { installThemeManager } from './ui/ThemeManager.js?v=8.7';
 
 const PRESETS_LOCKED = false;
 
@@ -96,13 +96,39 @@ export const app = {
     this.loopLength   = 0;
     this.loopTracks   = 1;
 
-    console.info("[JamMate] Web build v8.6");
+    console.info("[JamMate] Web build v8.7");
     View.init(this);
     BLEService.onStatusChange=status=>{
       this.connectionError=BLEService.lastError||null;View.updateConnectionStatus(status);
       if(status==='disconnected'||status==='reconnecting'){
         window.JamMateMobile?.setTelemetry({cpu:null});View.updateTuner(0);
       }
+    };
+
+    BLEService.onSyncError=message=>{console.warn('[SYNC]',message);View.updateStatus(message);};
+    BLEService.onSnapshot=bytes=>{
+      if(bytes.length<42||bytes[0]>6||bytes[1]>4)throw Error('Invalid active preset');
+      const layout=Array.from({length:18},(_,i)=>[bytes[2+2*i],bytes[3+2*i]]);
+      if(layout.some(([k,d])=>k>16||d>10))throw Error('Invalid active preset layout');
+      document.getElementById('presetBank').selectedIndex=bytes[0];document.getElementById('presetNum').selectedIndex=bytes[1];
+      this.loadStateFromBlob(bytes.slice(38).buffer,true,layout);
+      if(this.currentEffect!==null){
+        const fx=this.currentEffect,tab=this.config.tabs[fx],params=this.effectParams[fx]||{};
+        tab.params.knobs.forEach((_,i)=>window.JamMateMobile?.syncParam?.(fx,1+i,params['knob'+i]));
+        tab.params.dropdowns.forEach((_,i)=>window.JamMateMobile?.syncParam?.(fx,1+tab.params.knobs.length+i,params['dropdown'+i]));
+      }
+      window.dispatchEvent(new Event('jammate:remote-state'));
+    };
+    BLEService.onDelta=p=>{
+      if(p.fx===0xfe&&p.kind===3){if(p.index===0)this.syncMasterVolume(p.value);else if(p.index===1)this.syncRemoteBpm(p.value);return;}
+      if(p.fx===0xfd&&p.kind===4&&p.index<12&&p.bytes.length===5){
+        const b=p.bytes;this.currentEQPoints[p.index]={enabled:!!b[0],freq:b[1]|b[2]<<8,gain:b[3]>127?b[3]-256:b[3],q:b[4]/10};
+        this.isUpdatingUI=true;try{this.iirDesigner?.loadPoints(this.currentEQPoints);}finally{this.isUpdatingUI=false;}return;
+      }
+      const tab=this.config.tabs[p.fx];if(!tab)return;const k=tab.params.knobs.length,d=tab.params.dropdowns.length;
+      if(p.kind===0&&p.index===0)this.syncRemoteEffectParam(p.fx,0,p.value);
+      else if(p.kind===1&&p.index<k)this.syncRemoteEffectParam(p.fx,1+p.index,p.value);
+      else if(p.kind===2&&p.index<d)this.syncRemoteEffectParam(p.fx,1+k+p.index,p.value);
     };
 
     this.setupTabs();
@@ -355,7 +381,7 @@ export const app = {
     else this.effectParams[fx][`dropdown${flat-K-1}`]=value;
     View.updateEffectButtons(this.effectStates);
     window.JamMateMobile?.syncParam?.(fx,flat,value);
-    if(this.currentEffect===fx && flat!==0){
+    if(this.currentEffect===fx && flat!==0&&!document.body?.classList.contains('jm-mobile-active')){
       const legacy=document.querySelector('#effectControls');
       // Control widgets are rebuilt only after dragging ends; don't steal focus.
       if(legacy && !legacy.contains(document.activeElement)){
@@ -396,10 +422,10 @@ export const app = {
     window.dispatchEvent(new Event('jammate:master-volume'));
   },
 
-  loadStateFromBlob(blob, syncMaster = false) {
+  loadStateFromBlob(blob, syncMaster = false,layout=null) {
     this.isUpdatingUI = true;
     try {
-      const state = Protocol.deserializeState(blob);
+      const state = Protocol.deserializeState(blob,layout);
       if (syncMaster) this.syncMasterVolume(state.master);
 
       for (let i = 0; i < 18; i++) {
@@ -614,7 +640,7 @@ export const app = {
           this.currentEQPoints.push({ freq: 100, gain: 0, q: 1.4, enabled: true });
         }
         this.currentEQPoints[b] = { freq: f, gain: g, q: q, enabled: (en === 1 || en === true) };
-        if(BLEService.isConnected) BLEService.send(Protocol.createEQUpdate(b, en, f, g, q)).catch(e=>View.updateStatus(e.message));
+        if(!this.isUpdatingUI&&BLEService.isConnected) BLEService.send(Protocol.createEQUpdate(b, en, f, g, q)).catch(e=>View.updateStatus(e.message));
       }
     );
   },

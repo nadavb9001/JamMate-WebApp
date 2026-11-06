@@ -5,10 +5,10 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright
 
 ROOT=Path(__file__).resolve().parents[1]
-CSS=(ROOT/'css/main.css').read_text().replace('?v=8.6','')+'\n'+(ROOT/'css/mobile-neon.css').read_text().replace('?v=8.6','')
-SELECTJS=(ROOT/'js/ui/CustomSelect.js').read_text().replace('?v=8.6','').replace('export function upgradeSelects','function upgradeSelects').replace('export function disposeSelects','function disposeSelects')
-SHELL=(ROOT/'js/ui/mobile-shell.js').read_text().replace('?v=8.6','').replace("import { upgradeSelects, disposeSelects } from './CustomSelect.js';",'').replace("import { currentJamMateTheme } from './ThemeManager.js';",'').replace('export const FX_ORDER','const FX_ORDER').replace('export const BANKS','const BANKS').replace('export function installMobileShell','function installMobileShell')+'\nwindow.__make=installMobileShell;'
-CONFIG='window.__cfg = '+(ROOT/'js/config.js').read_text().replace('?v=8.6','').split('export const APP_CONFIG = ',1)[1].split(';\n',1)[0]+';'
+CSS=(ROOT/'css/main.css').read_text().replace('?v=8.7','')+'\n'+(ROOT/'css/mobile-neon.css').read_text().replace('?v=8.7','')
+SELECTJS=(ROOT/'js/ui/CustomSelect.js').read_text().replace('?v=8.7','').replace('export function upgradeSelects','function upgradeSelects').replace('export function disposeSelects','function disposeSelects')
+SHELL=(ROOT/'js/ui/mobile-shell.js').read_text().replace('?v=8.7','').replace("import { upgradeSelects, disposeSelects } from './CustomSelect.js';",'').replace("import { currentJamMateTheme } from './ThemeManager.js';",'').replace('export const FX_ORDER','const FX_ORDER').replace('export const BANKS','const BANKS').replace('export function installMobileShell','function installMobileShell')+'\nwindow.__make=installMobileShell;'
+CONFIG='window.__cfg = '+(ROOT/'js/config.js').read_text().replace('?v=8.7','').split('export const APP_CONFIG = ',1)[1].split(';\n',1)[0]+';'
 STUB='''<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><div id="statusLed"></div><div id="masterKnob"></div><div id="bpmKnob"></div><select id="presetBank"><option>Clean</option></select><select id="presetNum"><option>1</option></select>'''
 
 with sync_playwright() as pw:
@@ -70,7 +70,7 @@ with sync_playwright() as pw:
     page.locator('#jmClose').click()
     assert page.locator('#jmOverlay').is_hidden()
     for theme in ('metal','medieval'):
-      style=page.add_style_tag(content=(ROOT/'css'/f'{theme}.css').read_text().replace('?v=8.6',''))
+      style=page.add_style_tag(content=(ROOT/'css'/f'{theme}.css').read_text().replace('?v=8.7',''))
       page.evaluate('(theme)=>{document.documentElement.dataset.jmTheme=theme;}',theme)
       page.evaluate('window.JamMateMobile.setEasy(false)')
       page.locator('[data-screen="fx"]').click()

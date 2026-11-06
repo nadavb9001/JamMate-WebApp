@@ -19,5 +19,5 @@ export async function uploadResource(ble,kind,bytes,name,{items=0,onProgress=()=
   await ble.sendBatch(packets,(done)=>onProgress(Math.min(bytes.length,Math.max(0,done-1)*512),bytes.length));
   return {id,kind,bytes:bytes.length,crc:crc32(bytes),confirmed:false};
 
- }finally{ble._resourceBusy=false;}
+ }catch(e){ble._abortResourceId=id;throw e;}finally{ble._resourceBusy=false;}
 }

@@ -1,6 +1,6 @@
-import {uploadResource} from './Resources.js?v=8.7';
-import {APP_CONFIG} from '../config.js?v=8.7';
-import {ActiveSync} from './ActiveSync.js?v=8.7';
+import {uploadResource} from './Resources.js?v=8.7.1';
+import {APP_CONFIG} from '../config.js?v=8.7.1';
+import {ActiveSync} from './ActiveSync.js?v=8.7.1';
 const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 const bytes=b=>b instanceof Uint8Array?b:new Uint8Array(b);
 export const BLEService={
@@ -25,9 +25,11 @@ export const BLEService={
   const service=await server.getPrimaryService(this.SERVICE_UUID);check();
   const characteristic=await service.getCharacteristic(this.CHARACTERISTIC_UUID);check();
   if(this.characteristic&&this._notifyListener)this.characteristic.removeEventListener('characteristicvaluechanged',this._notifyListener);
-  this._notifyListener=e=>{if(epoch===this._epoch)this._sync?.handle(new Uint8Array(e.target.value.buffer,e.target.value.byteOffset,e.target.value.byteLength));};
-  characteristic.addEventListener('characteristicvaluechanged',this._notifyListener);
-  await characteristic.startNotifications();check();
+  const listener=e=>{if(epoch===this._epoch)this._sync?.handle(new Uint8Array(e.target.value.buffer,e.target.value.byteOffset,e.target.value.byteLength));};
+  characteristic.addEventListener('characteristicvaluechanged',listener);
+  try{await characteristic.startNotifications();check();}
+  catch(e){characteristic.removeEventListener('characteristicvaluechanged',listener);throw e;}
+  this._notifyListener=listener;
   this.characteristic=characteristic;this.isConnected=true;this._recoveries=0;this._writeFailed=false;this._tail=Promise.resolve();this.lastError=null;
   this._sync=new ActiveSync({send:p=>this.send(p),busy:()=>this._pendingJobs>0||this._writeFailed,
    onSnapshot:p=>{this._recoveries=0;this.onSnapshot?.(p);},onDelta:p=>this.onDelta?.(p),onError:e=>this.onSyncError?.(e)});

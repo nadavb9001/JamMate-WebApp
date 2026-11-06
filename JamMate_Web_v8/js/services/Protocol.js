@@ -14,7 +14,7 @@
 // Wire format: command byte, payload length (uint16 LE), payload bytes.
 // ================================================================
 
-import { APP_CONFIG, buildFlatParams } from '../config.js?v=8.7';
+import { APP_CONFIG, buildFlatParams } from '../config.js?v=8.7.1';
 
 export const Protocol = {
   CMD: {

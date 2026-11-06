@@ -17,9 +17,9 @@ try:
   if os.environ.get('JAMMATE_TEST_MIN_ATT')=='1':page.add_init_script('window.__minSync=true;')
   page.goto(f'http://127.0.0.1:{server.server_port}/',wait_until='networkidle')
   page.evaluate('''async()=>{
-   const {BLEService:ble}=await import('./js/services/BLEService.js?v=8.7');
-   const {Protocol}=await import('./js/services/Protocol.js?v=8.7');
-   const {crc16}=await import('./js/services/ActiveSync.js?v=8.7');
+   const {BLEService:ble}=await import('./js/services/BLEService.js?v=8.7.1');
+   const {Protocol}=await import('./js/services/Protocol.js?v=8.7.1');
+   const {crc16}=await import('./js/services/ActiveSync.js?v=8.7.1');
    window.__ble=ble;window.__records=[];window.__config=[];window.__connects=0;
    let pending=[],disconnectListener=null,notify=null,revision=1,bank=2,slot=3;
    const state={name:'Device preset',bpm:137,master:38,effectStates:{16:{enabled:true}},effectParams:{16:{knob0:71,dropdown0:2}},eqPoints:Array.from({length:12},()=>({freq:440,gain:0,q:1.4,enabled:true}))};

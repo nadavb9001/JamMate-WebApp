@@ -1,6 +1,12 @@
-# JamMate v8.7 — lightweight active-preset sync
+# JamMate v8.7.1 — lightweight active-preset sync
 
 The original topology stays intact: service `6e400001-b5a3-f393-e0a9-e50e24dcca9f`, one shared control characteristic `6e400002-b5a3-f393-e0a9-e50e24dcca9f`. The web uses confirmed, serialized writes and subscribes to notifications on that same characteristic. No separate TX service/characteristic, config handshake, config download, preset-bank catalog, CPU/tuner feed or drum/looper beat stream is added. Graphics and DSP protocol are unchanged; Vintage remains reverb engine index 2.
+
+## 8.7.1 web recovery fixes
+
+Update the web directory; the existing v8.7 ESP firmware is unchanged and compatible. A completed/requested snapshot cancels an older revision-check timeout, preventing unnecessary follow-up downloads. Identical duplicate snapshot fragments are ignored without extending the transfer deadline; conflicting duplicate bytes still trigger recovery. Async failures from a previous sync run cannot cancel the new run. Failed/cancelled notification subscriptions remove their listeners. An interrupted resource upload only schedules an abort for the connection that started it, so stale failures cannot affect the next connection.
+
+Regression tests reproduce these cases. All original v8.7 sync behavior, UUIDs, graphics and configuration remain unchanged.
 
 ## State and traffic
 
@@ -28,6 +34,6 @@ Configuration and NAM/IR/MIDI uploads stay explicitly initiated, serialized batc
 
 ## Install and validation
 
-Update the complete `JamMate_Web_v8/` directory plus firmware `src/` and `include/`, rebuild/flash using the existing PlatformIO project, and confirm `Web build v8.7`. Update both peers. Do not erase LittleFS. LCD navigation/parameter editing fixes, the startup GUI-flash fix and deferred audio recording are preserved.
+Update the complete `JamMate_Web_v8/` directory plus firmware `src/` and `include/`, rebuild/flash using the existing PlatformIO project, and confirm `Web build v8.7.1`. Install v8.7 firmware when upgrading from an older firmware revision; existing v8.7 firmware needs no reflash. Do not erase LittleFS. LCD navigation/parameter editing fixes, the startup GUI-flash fix and deferred audio recording are preserved.
 
 Software tests cover native change detection and idle silence, actual ESP-generated packets decoded by the web at minimum MTU, checksum/revision handling, typed parameter mapping, physical/web changes without echo, active preset changes, visible control refresh, missing final deltas, dropped snapshot fragments, transient write recovery, config upload and physical reconnect. Physical ESP/phone validation remains required.

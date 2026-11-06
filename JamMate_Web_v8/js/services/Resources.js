@@ -7,6 +7,7 @@ export async function uploadResource(ble,kind,bytes,name,{items=0,onProgress=()=
  kind=kinds[kind]||kind;bytes=bytes instanceof Uint8Array?bytes:new Uint8Array(bytes);
  if(![1,2,3].includes(kind)||!bytes.length||bytes.length>131072)throw Error('Unsupported resource or size');
  if(ble._resourceBusy)throw Error('Another resource transfer is active');ble._resourceBusy=true;
+ const epoch=ble._epoch;
  const id=crypto.getRandomValues(new Uint32Array(1))[0]||1;
  const filename=new TextEncoder().encode(String(name||'resource').replace(/[\x00-\x1f]/g,'').slice(0,48)).slice(0,64);
  const begin=new Uint8Array(18+filename.length),v=view(begin);v.setUint32(0,id,true);begin[4]=kind;v.setUint32(5,bytes.length,true);v.setUint32(9,crc32(bytes),true);v.setUint32(13,items,true);begin[17]=filename.length;begin.set(filename,18);
@@ -19,5 +20,5 @@ export async function uploadResource(ble,kind,bytes,name,{items=0,onProgress=()=
   await ble.sendBatch(packets,(done)=>onProgress(Math.min(bytes.length,Math.max(0,done-1)*512),bytes.length));
   return {id,kind,bytes:bytes.length,crc:crc32(bytes),confirmed:false};
 
- }catch(e){ble._abortResourceId=id;throw e;}finally{ble._resourceBusy=false;}
+ }catch(e){if(ble.isConnected&&ble._epoch===epoch)ble._abortResourceId=id;throw e;}finally{ble._resourceBusy=false;}
 }

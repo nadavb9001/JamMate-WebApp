@@ -9,7 +9,8 @@ export async function uploadResource(ble,kind,bytes,name,{items=0,onProgress=()=
  if(ble._resourceBusy)throw Error('Another resource transfer is active');ble._resourceBusy=true;
  const epoch=ble._epoch;
  const id=crypto.getRandomValues(new Uint32Array(1))[0]||1;
- const filename=new TextEncoder().encode(String(name||'resource').replace(/[\x00-\x1f]/g,'').slice(0,48)).slice(0,64);
+ const filename=new TextEncoder().encode(String(name||'resource').replace(/[\x00-\x1f]/g,''));
+ if(filename.length>64){ble._resourceBusy=false;throw Error('Filename exceeds 64 UTF-8 bytes; rename the file before uploading');}
  const begin=new Uint8Array(18+filename.length),v=view(begin);v.setUint32(0,id,true);begin[4]=kind;v.setUint32(5,bytes.length,true);v.setUint32(9,crc32(bytes),true);v.setUint32(13,items,true);begin[17]=filename.length;begin.set(filename,18);
  const packets=[record(0x90,begin)];
  try{

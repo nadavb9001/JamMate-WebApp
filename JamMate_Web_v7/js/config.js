@@ -113,7 +113,7 @@ export const APP_CONFIG = {
       "params": {
         "checkbox": "enable",
         "knobs": ["dry", "wet", "pedal", "tight", "human", "width", "base_delay", "tone"],
-        "dropdowns": ["shift_semitone", "shift_direction", "shift_pedal_mode"]
+        "dropdowns": ["shift_semitone", "shift_direction", "shift_pedal_mode", "doubler_voices"]
       }
     },
     {
@@ -218,6 +218,7 @@ export const APP_CONFIG = {
     "generic2":         ["A2","B2","C2","D2","E2"],
     "ReverbEngine":     ["Dattorro","FDN","Vintage"],
     "ReverbType":       ["None","Room","Hall","Plate","Spring","Pads"],
+    "doubler_voices":   ["1","2","3"], // Byte 16: dropdown index 0..2
     "shift_direction":  ["up","down"],
     "shift_pedal_mode": ["Off","Free","Half","Full","Snap"],
     "shift_semitone":   ["detune","1","2","3","4","5","6","7","8","9","10","11","12","24","Doubler"],

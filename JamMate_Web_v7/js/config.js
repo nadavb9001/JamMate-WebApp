@@ -112,7 +112,7 @@ export const APP_CONFIG = {
       "dsp_tag": "OCTV",
       "params": {
         "checkbox": "enable",
-        "knobs": ["dry", "wet", "pedal"],
+        "knobs": ["dry", "wet", "pedal", "tight", "human", "width", "base_delay", "tone"],
         "dropdowns": ["shift_semitone", "shift_direction", "shift_pedal_mode"]
       }
     },
@@ -220,7 +220,7 @@ export const APP_CONFIG = {
     "ReverbType":       ["None","Room","Hall","Plate","Spring","Pads"],
     "shift_direction":  ["up","down"],
     "shift_pedal_mode": ["Off","Free","Half","Full","Snap"],
-    "shift_semitone":   ["detune","1","2","3","4","5","6","7","8","9","10","11","12","24"],
+    "shift_semitone":   ["detune","1","2","3","4","5","6","7","8","9","10","11","12","24","Doubler"],
     "phaser_poles":     ["1","2","3","4"],
     "Harm1":        	["-12","-2","-3","-4","-5","-6","2","3","4","5","6","12"],
     "Harm2":       		["-12","-2","-3","-4","-5","-6","2","3","4","5","6","12"],

@@ -1,9 +1,10 @@
 // Shared insertion drag for legacy FX, mobile FX and Easy Mode. Settings stay
 // keyed by effect identity; DOM movement previews a permutation, never a swap.
 export function bindEffectReorder(root,{gridSelector,itemSelector,id,onCommit}){
- let drag=null,suppressUntil=0;
+ let drag=null,pending=null,suppressUntil=0;
  const children=grid=>Array.from(grid.children).filter(el=>el.matches(itemSelector));
  const reset=cancel=>{
+  if(pending){pending.item.draggable=true;pending=null;}
   if(!drag)return;
   const d=drag;drag=null;d.ghost?.remove();d.item.classList.remove('jm-order-placeholder');d.item.draggable=true;
   if(cancel)for(const key of d.original){const item=children(d.grid).find(el=>id(el)===key);if(item)d.grid.append(item);}
@@ -56,38 +57,42 @@ export function bindEffectReorder(root,{gridSelector,itemSelector,id,onCommit}){
  root.addEventListener('click',e=>{
   if(Date.now()<suppressUntil||e.target.closest('[data-order-handle]')){e.preventDefault();e.stopImmediatePropagation();}
  },true);
- root.addEventListener('dragstart',e=>{
-  if(drag){e.preventDefault();return;}
-  const item=e.target.closest(itemSelector),grid=item?.closest(gridSelector);
-  if(!item||!grid||!root.contains(grid)||!start(item,grid))return;
-  e.dataTransfer.effectAllowed='move';e.dataTransfer.setData('text/plain',String(id(item)));
- });
- root.addEventListener('dragover',e=>{if(!drag||drag.pointer!==undefined)return;e.preventDefault();e.dataTransfer.dropEffect='move';preview(e.clientX,e.clientY);});
- root.addEventListener('drop',e=>{if(!drag||drag.pointer!==undefined)return;e.preventDefault();e.stopPropagation();preview(e.clientX,e.clientY);finish(e.clientX,e.clientY);});
- root.addEventListener('dragend',()=>reset(true));
- root.addEventListener('pointerdown',e=>{
-  const handle=e.target.closest('[data-order-handle]');if(!handle||e.button!==0)return;
-  const item=handle.closest(itemSelector),grid=item?.closest(gridSelector);
-  if(!item||!grid||!start(item,grid))return;
+ // Moving the source DOM node during native HTML drag can terminate the
+ // browser drag before drop. Use pointer capture for both cards and handles.
+ root.addEventListener('dragstart',e=>{if(pending||drag)e.preventDefault();});
+ const beginPointer=(item,grid,e)=>{
+  if(!start(item,grid))return;
   e.preventDefault();item.draggable=false;drag.pointer=e.pointerId;
-  // Capture on the stationary root: moving a card in the DOM must not cancel
-  // pointer capture and restore its old position halfway through the drag.
   drag.handle=root;root.setPointerCapture(e.pointerId);
   const r=item.getBoundingClientRect(),ghost=item.cloneNode(true);ghost.classList.remove('jm-order-placeholder');
   ghost.classList.add('jm-order-ghost');Object.assign(ghost.style,{position:'fixed',width:r.width+'px',height:r.height+'px',left:r.left+'px',top:r.top+'px'});
   ghost.removeAttribute('id');ghost.querySelectorAll('[id]').forEach(el=>el.removeAttribute('id'));document.body.append(ghost);
   drag.ghost=ghost;drag.dx=e.clientX-r.left;drag.dy=e.clientY-r.top;
+ };
+ root.addEventListener('pointerdown',e=>{
+  if(e.button!==0||drag||pending)return;
+  const handle=e.target.closest('[data-order-handle]'),item=e.target.closest(itemSelector),grid=item?.closest(gridSelector);
+  if(!item||!grid||!root.contains(grid))return;
+  if(handle){beginPointer(item,grid,e);return;}
+  // Touch users scroll on the card and drag with its handle. A normal mouse
+  // click still opens the effect; only movement past six pixels starts a drag.
+  if(e.pointerType!=='mouse'||e.target.closest('input,select,textarea,a,[data-toggle-fx]'))return;
+  item.draggable=false;pending={item,grid,pointer:e.pointerId,x:e.clientX,y:e.clientY};
  });
  root.addEventListener('pointermove',e=>{
+  if(pending&&e.pointerId===pending.pointer&&Math.hypot(e.clientX-pending.x,e.clientY-pending.y)>=6){
+   const p=pending;pending=null;beginPointer(p.item,p.grid,e);
+  }
   if(!drag||e.pointerId!==drag.pointer)return;e.preventDefault();
   drag.ghost.style.left=(e.clientX-drag.dx)+'px';drag.ghost.style.top=(e.clientY-drag.dy)+'px';preview(e.clientX,e.clientY);
   const scroll=drag.grid.closest('.jm-scroll,.jm-sheet-body')??document.scrollingElement;
   const r=scroll===document.scrollingElement?{top:0,bottom:innerHeight}:scroll.getBoundingClientRect();
   if(e.clientY<r.top+45)scroll.scrollTop-=18;else if(e.clientY>r.bottom-45)scroll.scrollTop+=18;
  });
- root.addEventListener('pointerup',e=>{if(drag&&e.pointerId===drag.pointer){e.preventDefault();finish(e.clientX,e.clientY);}});
+ root.addEventListener('pointerup',e=>{if(pending&&e.pointerId===pending.pointer){pending.item.draggable=true;pending=null;}if(drag&&e.pointerId===drag.pointer){e.preventDefault();finish(e.clientX,e.clientY);}});
  root.addEventListener('pointercancel',()=>reset(true));
  root.addEventListener('lostpointercapture',()=>reset(true));
+ window.addEventListener('pointerup',()=>{if(pending){pending.item.draggable=true;pending=null;}});
  window.addEventListener('blur',()=>reset(true));
  window.addEventListener('keydown',e=>{if(e.key==='Escape')reset(true);});
 }

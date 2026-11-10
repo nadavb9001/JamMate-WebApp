@@ -20,6 +20,8 @@ export const Protocol = {
   CMD: {
     PING:                0x01,
     SET_PARAM:           0x20,
+    SET_EFFECT_ORDER:    0x2a, // tokenLE16, count16, stable DSP ids
+    GET_EFFECT_ORDER:    0x2b, // tokenLE16; waits for DSP ORDR
     SET_EQ_BAND:         0x22,
     SET_UTIL:            0x23,
     SET_BYPASS:          0x24,

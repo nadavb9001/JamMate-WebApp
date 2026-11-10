@@ -1,3 +1,4 @@
+import { EffectOrderTransport } from './EffectOrder.js?v=8.7.1';
 import {uploadResource} from './Resources.js?v=8.7.1';
 import {APP_CONFIG} from '../config.js?v=8.7.1';
 import {ActiveSync} from './ActiveSync.js?v=8.7.1';
@@ -25,16 +26,19 @@ export const BLEService={
   const service=await server.getPrimaryService(this.SERVICE_UUID);check();
   const characteristic=await service.getCharacteristic(this.CHARACTERISTIC_UUID);check();
   if(this.characteristic&&this._notifyListener)this.characteristic.removeEventListener('characteristicvaluechanged',this._notifyListener);
-  const listener=e=>{if(epoch===this._epoch)this._sync?.handle(new Uint8Array(e.target.value.buffer,e.target.value.byteOffset,e.target.value.byteLength));};
+  const listener=e=>{if(epoch!==this._epoch)return;const b=new Uint8Array(e.target.value.buffer,e.target.value.byteOffset,e.target.value.byteLength);if(b[0]===0xa8)this._order?.handle(b);else this._sync?.handle(b);};
   characteristic.addEventListener('characteristicvaluechanged',listener);
   try{await characteristic.startNotifications();check();}
   catch(e){characteristic.removeEventListener('characteristicvaluechanged',listener);throw e;}
   this._notifyListener=listener;
   this.characteristic=characteristic;this.isConnected=true;this._recoveries=0;this._writeFailed=false;this._tail=Promise.resolve();this.lastError=null;
+  this._order=new EffectOrderTransport(p=>this.send(p));
   this._sync=new ActiveSync({send:p=>this.send(p),busy:()=>this._pendingJobs>0||this._writeFailed,
    onSnapshot:p=>{this._recoveries=0;this.onSnapshot?.(p);},onDelta:p=>this.onDelta?.(p),onError:e=>this.onSyncError?.(e)});
   this._sync.start();this._setStatus('connected');
  },
+ setEffectOrder(ids){return this._order?this._order.request(ids):Promise.reject(Error('BLE disconnected'));},
+ getEffectOrder(){return this._order?this._order.request():Promise.reject(Error('BLE disconnected'));},
  send(data){return this.sendBatch([data]);},
  sendMessage(op,data=new Uint8Array()){
   const payload=bytes(data),record=new Uint8Array(payload.length+3);record[0]=op;record[1]=payload.length&255;record[2]=payload.length>>8;record.set(payload,3);return this.send(record);
@@ -82,7 +86,7 @@ export const BLEService={
    if(this._sync){this._sync.attempts=0;this._sync.requestSnapshot();}
   },2200);
  },
- _clear(){this._abortResourceId=null;this._sync?.stop();clearTimeout(this._writeRecovery);this._writeRecovery=null;if(this.characteristic&&this._notifyListener)this.characteristic.removeEventListener('characteristicvaluechanged',this._notifyListener);++this._epoch;this.isConnected=false;this.characteristic=null;this._writeFailed=false;this._tail=Promise.resolve();},
+ _clear(){this._order?.fail(Error('BLE disconnected'));this._order=null;this._abortResourceId=null;this._sync?.stop();clearTimeout(this._writeRecovery);this._writeRecovery=null;if(this.characteristic&&this._notifyListener)this.characteristic.removeEventListener('characteristicvaluechanged',this._notifyListener);++this._epoch;this.isConnected=false;this.characteristic=null;this._writeFailed=false;this._tail=Promise.resolve();},
  _handleDisconnect(){this._clear();this._setStatus(this.shouldReconnect?'reconnecting':'disconnected');if(this.shouldReconnect)this._reconnect();},
  async _reconnect(){
   if(this._reconnecting)return;this._reconnecting=true;

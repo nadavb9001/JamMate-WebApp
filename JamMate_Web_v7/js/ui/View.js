@@ -1,3 +1,4 @@
+import { bindEffectReorder } from './EffectReorder.js?v=8.7.1';
 import { Knob } from './Knob.js?v=8.7.1';
 import { IIRDesigner } from './IIRDesigner.js?v=8.7.1';
 import { upgradeSelects } from './CustomSelect.js?v=8.7.1';
@@ -8,6 +9,10 @@ export const View = {
         this.statusEl = document.getElementById('statusMessage');
         this.ledEl    = document.getElementById('statusLed');
         this.statusTimer = null;
+        bindEffectReorder(document.getElementById('effectsGrid'),{
+            gridSelector:'#effectsGrid',itemSelector:'.effect-btn',id:el=>Number(el.dataset.effectId),
+            onCommit:order=>this.app.setEffectOrder(order)
+        });
     },
 
     // =========================================================
@@ -63,13 +68,19 @@ export const View = {
     setupEffectsGrid(config) {
         const grid = document.getElementById('effectsGrid');
         grid.innerHTML = '';
-        config.tabs.forEach((effect, idx) => {
+        (this.app.effectOrder??config.tabs.map((_,i)=>i)).forEach(idx => {
+            const effect=config.tabs[idx];
             const btn = document.createElement('div');
             btn.className        = 'effect-btn';
             btn.dataset.index    = idx;
             btn.dataset.effectId = idx;
             btn.draggable        = true;
-            btn.textContent      = effect.title;
+            const title=document.createElement('span');title.textContent=effect.title;
+            const handle=document.createElement('button');handle.type='button';handle.dataset.orderHandle='';
+            handle.className='jm-order-handle';handle.textContent='\u2194';handle.setAttribute('aria-label','Move '+effect.title);
+            btn.append(title,handle);
+            btn.classList.toggle('enabled',!!this.app.effectStates[idx]?.enabled);
+            btn.classList.toggle('selected',!!this.app.effectStates[idx]?.selected);
 
             // Single click = select | Double click = toggle enable
             let clickTimeout = null;
@@ -91,36 +102,13 @@ export const View = {
                 }
             });
 
-            // Drag & drop reorder
-            btn.addEventListener('dragstart', (e) => {
-                e.dataTransfer.effectAllowed = 'move';
-                e.dataTransfer.setData('effectIndex', idx);
-                btn.classList.add('dragging');
-            });
-            btn.addEventListener('dragend', () => {
-                btn.classList.remove('dragging');
-                document.querySelectorAll('.effect-btn').forEach(b => b.classList.remove('drag-over'));
-            });
-            btn.addEventListener('dragover', (e) => {
-                e.preventDefault();
-                e.dataTransfer.dropEffect = 'move';
-                btn.classList.add('drag-over');
-            });
-            btn.addEventListener('dragleave', () => btn.classList.remove('drag-over'));
-            btn.addEventListener('drop', (e) => {
-                e.preventDefault(); e.stopPropagation();
-                const src = parseInt(e.dataTransfer.getData('effectIndex'));
-                if (src !== idx) this.app.reorderEffects(src, idx);
-                btn.classList.remove('drag-over');
-            });
-
             grid.appendChild(btn);
         });
     },
 
     updateEffectButtons(effectStates) {
         document.querySelectorAll('.effect-btn').forEach((btn, i) => {
-            const s = effectStates[i];
+            const s = effectStates[Number(btn.dataset.effectId)];
             if (!s) return;
             btn.classList.toggle('selected', !!s.selected);
             btn.classList.toggle('enabled',  !!s.enabled);

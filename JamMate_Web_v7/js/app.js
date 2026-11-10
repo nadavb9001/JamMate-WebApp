@@ -23,6 +23,8 @@ import { Protocol } from './services/Protocol.js?v=8.7.1';
 import { upgradeSelects } from './ui/CustomSelect.js?v=8.7.1';
 import { installThemeManager } from './ui/ThemeManager.js?v=8.7.1';
 
+import { defaultEffectOrder, wireOrder, mergeDspOrder, insertEffect } from './services/EffectOrder.js?v=8.7.1';
+
 const PRESETS_LOCKED = false;
 
 export const app = {
@@ -81,6 +83,8 @@ export const app = {
       this.effectOrder.push(i);
     }
 
+    this.effectOrder = defaultEffectOrder(this.config.tabs);
+
     // Drum state defaults
     this.drumEnabled  = false;
     this.drumLevel    = 50;
@@ -100,6 +104,7 @@ export const app = {
     View.init(this);
     BLEService.onStatusChange=status=>{
       this.connectionError=BLEService.lastError||null;View.updateConnectionStatus(status);
+      if(status==='connected')this.syncEffectOrder();
       if(status==='disconnected'||status==='reconnecting'){
         window.JamMateMobile?.setTelemetry({cpu:null});View.updateTuner(0);
       }
@@ -1077,86 +1082,44 @@ export const app = {
   // ============================================================
   // reorderEffects
   // ============================================================
-  reorderEffects(fromIdx, toIdx) {
-    console.log(`[APP] Before swap: ${this.effectOrder.join(',')}`);
-    [this.effectStates, this.effectParams, this.effectOrder].forEach(obj => {
-      const tmp      = obj[fromIdx];
-      obj[fromIdx]   = obj[toIdx];
-      obj[toIdx]     = tmp;
-    });
-    console.log(`[APP] After swap: ${this.effectOrder.join(',')}`);
-    this.rebuildEffectsUI();
-    const fromName = this.config.tabs[fromIdx]?.title || 'Effect';
-    const toName   = this.config.tabs[toIdx]?.title   || 'Effect';
-    View.updateStatus(`Reordered: ${fromName} ↔ ${toName}`);
+  reorderEffects(fromId, beforeId) {
+    return this.setEffectOrder(insertEffect(this.effectOrder,fromId,beforeId));
   },
-
-  // ============================================================
-  // rebuildEffectsUI
-  // ============================================================
+  notifyEffectOrder() {
+    this.rebuildEffectsUI();
+    window.dispatchEvent(new Event('jammate:effect-order'));
+  },
+  async setEffectOrder(next) {
+    let ids;
+    try{ids=wireOrder(this.config.tabs,next);}catch(e){View.updateStatus(e.message);this.notifyEffectOrder();return false;}
+    if(this._orderPending){View.updateStatus('Wait for DSP order confirmation');this.notifyEffectOrder();return false;}
+    if(next.every((v,i)=>v===this.effectOrder[i]))return true;
+    const previous=this.effectOrder.slice();
+    this.effectOrder=next.slice();this.notifyEffectOrder();
+    if(!BLEService.isConnected){this._orderDirty=true;View.updateStatus('Order preview: connect to apply to DSP');return true;}
+    this._orderPending=true;
+    View.updateStatus('Applying effect order...');
+    try{
+      const result=await BLEService.setEffectOrder(ids);
+      if(result.ids.some((v,i)=>v!==ids[i])){const e=Error('DSP reported a different order');e.ids=result.ids;throw e;}
+      this.effectOrder=mergeDspOrder(this.config.tabs,this.effectOrder,result.ids);
+      this._orderDirty=false;View.updateStatus('Effect order confirmed by DSP');return true;
+    }catch(e){
+      this.effectOrder=e.ids?mergeDspOrder(this.config.tabs,previous,e.ids):previous;
+      View.updateStatus('Order not confirmed: '+e.message);return false;
+    }finally{this._orderPending=false;this.notifyEffectOrder();}
+  },
+  async syncEffectOrder() {
+    if(this._orderPending||!BLEService.isConnected)return;
+    const dirty=this._orderDirty,desired=this.effectOrder.slice();this._orderPending=true;
+    try{
+      const result=await (dirty?BLEService.setEffectOrder(wireOrder(this.config.tabs,desired)):BLEService.getEffectOrder());
+      this.effectOrder=mergeDspOrder(this.config.tabs,desired,result.ids);this._orderDirty=false;
+    }catch(e){View.updateStatus('DSP order unavailable: '+e.message);}
+    finally{this._orderPending=false;this.notifyEffectOrder();}
+  },
   rebuildEffectsUI() {
-    const grid = document.getElementById('effectsGrid');
-    grid.innerHTML = '';
-
-    this.effectOrder.forEach((idx) => {
-      if (!this.effectStates[idx]) {
-        this.effectStates[idx] = { enabled: false, selected: false };
-      }
-
-      const effect = this.config.tabs[idx];
-      const state  = this.effectStates[idx];
-
-      const btn = document.createElement('div');
-      btn.className      = 'effect-btn';
-      btn.dataset.index  = idx;
-      btn.dataset.effectId = idx;
-      btn.draggable      = true;
-      btn.textContent    = effect.title;
-      if (state.selected) btn.classList.add('selected');
-      if (state.enabled)  btn.classList.add('enabled');
-
-      let clickCount = 0, clickTimeout = null;
-      btn.addEventListener('click', () => {
-        const isEasyMode = document.getElementById('effects-tab').classList.contains('easy-mode');
-        if (window.soloEffectOpen) window.closeSoloEffect();
-        clickCount++;
-        if (clickCount === 1) {
-          clickTimeout = setTimeout(() => {
-            this.selectEffect(idx);
-            if (isEasyMode) window.showSoloEffect(effect.title, idx);
-            clickCount = 0;
-          }, 250);
-        } else if (clickCount >= 2) {
-          clearTimeout(clickTimeout);
-          this.toggleEffectEnabled(idx);
-          clickCount = 0;
-        }
-      });
-
-      btn.addEventListener('dragstart', (e) => {
-        e.dataTransfer.effectAllowed = 'move';
-        e.dataTransfer.setData('effectIndex', idx);
-        btn.classList.add('dragging');
-      });
-      btn.addEventListener('dragend', () => {
-        btn.classList.remove('dragging');
-        document.querySelectorAll('.effect-btn').forEach(b => b.classList.remove('drag-over'));
-      });
-      btn.addEventListener('dragover', (e) => {
-        e.preventDefault();
-        e.dataTransfer.dropEffect = 'move';
-        btn.classList.add('drag-over');
-      });
-      btn.addEventListener('dragleave', () => btn.classList.remove('drag-over'));
-      btn.addEventListener('drop', (e) => {
-        e.preventDefault(); e.stopPropagation();
-        btn.classList.remove('drag-over');
-        const src = parseInt(e.dataTransfer.getData('effectIndex'));
-        if (src !== idx) this.reorderEffects(src, idx);
-      });
-
-      grid.appendChild(btn);
-    });
+    View.setupEffectsGrid(this.config);
   },
 };
 
